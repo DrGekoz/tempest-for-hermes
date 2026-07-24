@@ -1166,6 +1166,21 @@ export function WorkspaceView({ zen, name, path }: Props) {
     }
   }
 
+  // Pick a display name that is not already taken by another row at this path —
+  // live tabs and the ghosts of closed sessions alike. Counting every session at
+  // the path instead numbered a first Claude "#2" whenever a terminal or a diff
+  // tab happened to be open, and ignoring ghosts minted duplicate "#2"s.
+  function uniqueSessionName(baseName: string, cwd: string, isRootSession?: boolean): string {
+    const persisted = isRootSession ? getRootSessionsForProject(cwd) : getBranchSessions(cwd);
+    const taken = new Set([
+      ...sessions.filter((s) => s.cwd === cwd).map((s) => s.name),
+      ...persisted.map((s) => s.name),
+    ]);
+    let name = baseName;
+    for (let n = 2; taken.has(name); n++) name = `${baseName} #${n}`;
+    return name;
+  }
+
   async function launchTerminalWorktree() {
     const activePath = getActivePath();
     const workingProjectId = pendingProjectId;
@@ -1191,13 +1206,11 @@ export function WorkspaceView({ zen, name, path }: Props) {
       const fullName = branchPrefix ? `${branchPrefix}${terminalName}` : terminalName;
       branchName = fullName;
     }
-    // For sessions opened in an existing worktree, generate a numbered name so they're
-    // distinct from the parent session. "#2", "#3", etc. count all live sessions at that path.
+    // For sessions opened in an existing worktree, suffix the name so it stays
+    // distinct from the sessions already there ("Claude", "Claude #2", …).
     let sessionName: string;
     if (directWorktreePath) {
-      const existingCount = sessions.filter((s) => s.cwd === directWorktreePath).length;
-      const agentLabel = pendingAgent?.name ?? "Terminal";
-      sessionName = existingCount > 0 ? `${agentLabel} #${existingCount + 1}` : agentLabel;
+      sessionName = uniqueSessionName(pendingAgent?.name ?? "Terminal", directWorktreePath);
     } else {
       sessionName = branchName || (pendingAgent ? pendingAgent.name : "Terminal");
     }
@@ -1489,7 +1502,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
   // Spawn a session directly in an existing worktree (or project root). No
   // createWorktree / naming modal — the destination is already known. Sessions
-  // after the first at a path get a numbered suffix so they stay distinct.
+  // after the first of their name at a path get a numbered suffix.
   async function launchInWorktree(
     worktreePath: string,
     projectId: string,
@@ -1497,9 +1510,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
     prompt?: string,
     isRootSession?: boolean
   ) {
-    const existingCount = sessions.filter((s) => s.cwd === worktreePath).length;
-    const baseName = agent ? agent.name : "Terminal";
-    const sessionName = existingCount > 0 ? `${baseName} #${existingCount + 1}` : baseName;
+    const sessionName = uniqueSessionName(agent ? agent.name : "Terminal", worktreePath, isRootSession);
     try {
       // The branch-level "+" always opens a top-level tab. Nesting as a sub-session
       // is reserved for splitPane(); if we auto-nested here whenever a live session
