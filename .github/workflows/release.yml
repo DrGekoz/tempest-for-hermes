@@ -33,7 +33,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            bundles: nsis
+            bundles: nsis,msi
           - os: ubuntu-22.04
             bundles: appimage,deb
           - os: macos-latest
@@ -90,6 +90,8 @@ jobs:
             "src-tauri/target/release/tempest.exe"
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.exe.sig
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.msi.sig
           )
           gh release upload ${{ github.ref_name }} "${files[@]}" --clobber
         env:
