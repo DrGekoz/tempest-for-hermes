@@ -81,7 +81,9 @@ export function BranchSessionMenu({
       setView("menu");
       setPromptAgent(null);
       setActiveIndex(navigable[0] ?? 0);
-      setClamped(null); // re-measure against the new anchor before paint
+      // NOTE: don't reset `clamped` here — this passive effect runs *after* the
+      // layout effect below has already measured and positioned the menu, so
+      // clearing it would drop the correction and leave the menu overflowing.
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
