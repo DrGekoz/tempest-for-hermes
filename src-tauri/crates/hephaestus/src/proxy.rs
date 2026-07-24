@@ -19,7 +19,7 @@
 /// In [`Monitor`](crate::SandboxMode::Monitor) mode all requests are logged
 /// but `407` is never returned.
 use std::io::{self, BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -28,6 +28,15 @@ use std::thread;
 use std::time::Duration;
 
 use crate::{HephaestusError, NetworkPolicy, SandboxMode};
+
+/// How long a client has to send its request line and headers before the
+/// connection is dropped. Bounds a slow-loris to one thread.
+///
+/// It applies to the *handshake only* — [`relay`] clears it before tunnelling.
+#[cfg(not(test))]
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(300);
 
 // ─── ProxyConfig ─────────────────────────────────────────────────────────────
 
@@ -163,8 +172,8 @@ fn handle_connection(
     policy: &NetworkPolicy,
     mode: SandboxMode,
 ) -> io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(30)))?;
+    stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
+    stream.set_write_timeout(Some(HANDSHAKE_TIMEOUT))?;
 
     // Clone before the BufReader consumes the stream.
     let write_half = stream.try_clone()?;
@@ -271,6 +280,17 @@ fn handle_plain_http(
 
 /// Relay bytes between `client` and `upstream` until either side closes.
 fn relay(client_r: TcpStream, client_w: TcpStream, upstream: TcpStream) -> io::Result<()> {
+    // [`HANDSHAKE_TIMEOUT`] must not survive into the tunnel. A tunnel is idle
+    // in one direction for as long as the far end takes to answer, and an agent
+    // streaming a long completion leaves client→upstream silent for minutes. A
+    // read timeout there ends that pump permanently — the tunnel stays half
+    // alive, so the next request the client sends on the reused connection is
+    // never forwarded and the agent reports an opaque API error.
+    let _ = client_r.set_read_timeout(None);
+    let _ = client_r.set_write_timeout(None);
+    let _ = client_w.set_read_timeout(None);
+    let _ = client_w.set_write_timeout(None);
+
     let upstream_r = upstream.try_clone()?;
     let upstream_w = upstream;
 
@@ -278,14 +298,20 @@ fn relay(client_r: TcpStream, client_w: TcpStream, upstream: TcpStream) -> io::R
     let t1 = thread::spawn(move || {
         let mut r = client_r;
         let mut w = upstream_w;
-        io::copy(&mut r, &mut w)
+        let _ = io::copy(&mut r, &mut w);
+        // Propagate EOF as a half-close. `try_clone` hands out a second
+        // descriptor onto the same socket, so dropping this end sends nothing —
+        // without an explicit shutdown the opposite thread blocks forever and
+        // the connection leaks for the life of the process.
+        let _ = w.shutdown(Shutdown::Write);
     });
 
     // upstream → client
     let t2 = thread::spawn(move || {
         let mut r = upstream_r;
         let mut w = client_w;
-        io::copy(&mut r, &mut w)
+        let _ = io::copy(&mut r, &mut w);
+        let _ = w.shutdown(Shutdown::Write);
     });
 
     let _ = t1.join();
@@ -320,6 +346,9 @@ fn policy_allows(host: &str, policy: &NetworkPolicy, mode: SandboxMode) -> bool 
 /// the response can tell the user exactly which host to add to the allow-list,
 /// rather than surfacing an opaque connection failure.
 fn write_deny(stream: &mut TcpStream, host: &str) {
+    // The only trace a block leaves; without it a policy denial reaches the user
+    // as an unexplained agent-side network failure.
+    eprintln!("[hephaestus] network policy blocked {host}");
     let body = format!(
         "Blocked by Hephaestus sandbox.\n\n\
          Host: {host}\n\
@@ -366,6 +395,95 @@ fn collect_headers(reader: &mut BufReader<TcpStream>) -> io::Result<Vec<String>>
         headers.push(trimmed.to_string());
     }
     Ok(headers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    /// A CONNECT tunnel must survive a gap longer than [`HANDSHAKE_TIMEOUT`] in
+    /// either direction — the shape of every streaming agent request.
+    #[test]
+    fn tunnel_outlives_the_handshake_timeout() {
+        // Upstream: echo one line, pause past the timeout, echo the next.
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream.local_addr().unwrap();
+        thread::spawn(move || {
+            let (sock, _) = upstream.accept().unwrap();
+            let mut w = sock.try_clone().unwrap();
+            let mut r = BufReader::new(sock);
+            let mut line = String::new();
+            while r.read_line(&mut line).unwrap() > 0 {
+                w.write_all(line.as_bytes()).unwrap();
+                line.clear();
+            }
+        });
+
+        let proxy = ConnectProxy::start(ProxyConfig::enforce(NetworkPolicy::allow_all())).unwrap();
+        let mut client = TcpStream::connect(("127.0.0.1", proxy.port())).unwrap();
+        write!(client, "CONNECT {upstream_addr} HTTP/1.1\r\n\r\n").unwrap();
+
+        let mut reader = BufReader::new(client.try_clone().unwrap());
+        let mut status = String::new();
+        reader.read_line(&mut status).unwrap();
+        assert!(status.contains("200"), "tunnel refused: {status}");
+        drain_headers(&mut reader).unwrap();
+
+        client.write_all(b"first\n").unwrap();
+        let mut echoed = String::new();
+        reader.read_line(&mut echoed).unwrap();
+        assert_eq!(echoed, "first\n");
+
+        // The gap that used to kill the client→upstream pump for good.
+        thread::sleep(HANDSHAKE_TIMEOUT * 3);
+
+        client.write_all(b"second\n").unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        echoed.clear();
+        reader.read_line(&mut echoed).unwrap();
+        assert_eq!(echoed, "second\n", "tunnel died while idle");
+    }
+
+    /// Closing the client must tear the tunnel down rather than park a thread on
+    /// a socket `try_clone` keeps open.
+    #[test]
+    fn client_close_propagates_to_upstream() {
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let (mut sock, _) = upstream.accept().unwrap();
+            let mut buf = Vec::new();
+            // Returns only once the proxy forwards the client's EOF.
+            sock.read_to_end(&mut buf).unwrap();
+            tx.send(()).unwrap();
+        });
+
+        let proxy = ConnectProxy::start(ProxyConfig::enforce(NetworkPolicy::allow_all())).unwrap();
+        let mut client = TcpStream::connect(("127.0.0.1", proxy.port())).unwrap();
+        write!(client, "CONNECT {upstream_addr} HTTP/1.1\r\n\r\n").unwrap();
+        let mut reader = BufReader::new(client.try_clone().unwrap());
+        let mut status = String::new();
+        reader.read_line(&mut status).unwrap();
+        drain_headers(&mut reader).unwrap();
+
+        client.shutdown(Shutdown::Write).unwrap();
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("client EOF never reached upstream");
+    }
+
+    #[test]
+    fn blocked_host_gets_403() {
+        let proxy = ConnectProxy::start(ProxyConfig::enforce(NetworkPolicy::deny_all())).unwrap();
+        let mut client = TcpStream::connect(("127.0.0.1", proxy.port())).unwrap();
+        write!(client, "CONNECT blocked.example.com:443 HTTP/1.1\r\n\r\n").unwrap();
+        let mut status = String::new();
+        BufReader::new(client).read_line(&mut status).unwrap();
+        assert!(status.contains("403"), "expected a policy block: {status}");
+    }
 }
 
 fn target_to_addr(target: &str, default_port: u16) -> String {
