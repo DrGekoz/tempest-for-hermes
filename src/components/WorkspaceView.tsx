@@ -10,6 +10,7 @@ import { getOpenProjects, saveOpenProjects } from "../store/openProjects";
 import { getSession, getBranchSessions, getWorktreeAgentSession, getRootSessionsForProject, getAllSessions, getBranchPath, getProjectPath, saveSession, setSessionConversationId, markSessionClosed, markSessionOpen, removeBranchByPath, pruneSessions, type WorktreeSession } from "../store/sessions";
 import { getRuntimeState, setRuntimeState } from "../lib/runtimeState";
 import { loadProjectSettings } from "./ProjectSettingsPanel/useProjectSettings";
+import { loadTempestConfig } from "../lib/tempestConfig";
 import { getTabs, upsertTab, removeTab, type PersistedTab } from "../store/tabs";
 import { saveChatHistory } from "../lib/chatHistory";
 import type { BranchInfo } from "../types/git";
@@ -853,7 +854,11 @@ export function WorkspaceView({ zen, name, path }: Props) {
       // terminals alike. Loaded once here and mapped into the two backend
       // params below; previously only `database.isolationEnabled` was read and
       // the rest of the panel had no effect on anything.
-      const projectSettings = await loadProjectSettings(projectId);
+      // The project root — not `cwd`, which may be a worktree. tempest.yml lives
+      // at the root and governs every worktree cut from it.
+      const projectRoot = getProjectPath(projectId);
+      const projectSettings = await loadProjectSettings(projectId, projectRoot);
+      const tempestConfig = await loadTempestConfig(projectRoot ?? "");
 
       // The global "isolate agents" switch is the master off-switch. With it on,
       // the per-project sandbox mode decides the posture. Terminals are no
@@ -897,6 +902,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
           sandbox: sandboxParam,
           policy: policyParam,
           dbIsolation: projectSettings.database.isolationEnabled,
+          env: tempestConfig.env ?? null,
           onEvent: channel,
         });
       } catch (e) {
@@ -1027,14 +1033,19 @@ export function WorkspaceView({ zen, name, path }: Props) {
     openDiffTab(cwd, project.id);
   }
 
-  function openPreviewTab(projectId: string, cwd = "") {
+  async function openPreviewTab(projectId: string, cwd = "") {
     const existing = sessionsRef.current.find((s) => s.kind === "preview" && s.projectId === projectId && s.cwd === cwd);
     if (existing) { setActiveSessionId(existing.id); return; }
     const sessionId = crypto.randomUUID();
-    const tab: PersistedTab = { instanceId: sessionId, kind: "preview", projectId, cwd, name: "Live Preview" };
+    // A project that declares its dev-server port in tempest.yml opens straight
+    // at the app instead of the port picker.
+    const port = (await loadTempestConfig(getProjectPath(projectId) ?? "")).preview?.port;
+    const previewUrl = port ? `http://localhost:${port}` : undefined;
+    const tab: PersistedTab = { instanceId: sessionId, kind: "preview", projectId, cwd, name: "Live Preview", previewUrl };
     upsertTab(tab);
     setSessions((prev) => [...prev, {
       id: sessionId, instanceId: sessionId, name: "Live Preview", cwd, projectId, kind: "preview",
+      previewUrl,
       createdAt: new Date().toISOString(),
       metadata: { resumeCount: 0, hasBeenResumed: false },
     }]);

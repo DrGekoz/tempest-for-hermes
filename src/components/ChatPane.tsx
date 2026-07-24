@@ -8,6 +8,7 @@ import { streamChat } from "../lib/chat";
 import { createChatTools } from "../lib/chatTools";
 import type { CommitInfo, GitStatusEntry } from "../lib/chatTools";
 import { getRuntimeState, setRuntimeState } from "../lib/runtimeState";
+import { loadTempestConfig } from "../lib/tempestConfig";
 import {
   CDN,
   CHAT_PROVIDERS,
@@ -134,8 +135,20 @@ export function ChatPane({ hidden, projectPath, atlasIndexed, onLaunchAgent }: P
     return () => { cancelled = true; };
   }, [projectPath]);
 
+  // A repo that ships `instructions:` in tempest.yml owns the system prompt for
+  // this project — repo conventions travel with the code, so the file wins over
+  // whatever this machine has saved. Falls back to the stored prompt otherwise.
+  // ponytail: yml-owned prompts are still editable in the settings popover; the
+  //   edit persists but the file keeps winning on reload. Add a read-only state
+  //   when the popover learns about config-owned fields.
   useEffect(() => {
+    let cancelled = false;
     setSystemPrompt(getSystemPrompt(projectPath));
+    if (!projectPath) return;
+    loadTempestConfig(projectPath).then((cfg) => {
+      if (!cancelled && cfg.instructions) setSystemPrompt(cfg.instructions);
+    });
+    return () => { cancelled = true; };
   }, [projectPath]);
 
   useEffect(() => {

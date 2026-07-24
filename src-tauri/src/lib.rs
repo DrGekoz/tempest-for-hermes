@@ -2689,6 +2689,9 @@ async fn create_pty_session(
     sandbox: Option<SandboxSpec>,
     policy: Option<SessionPolicy>,
     db_isolation: Option<bool>,
+    // Extra environment from the project's `tempest.yml`. Names are validated and
+    // loader/DB variables stripped on the frontend before they reach here.
+    env: Option<std::collections::HashMap<String, String>>,
     on_event: Channel<PtyOutputPayload>,
     state: tauri::State<'_, PtyState>,
 ) -> Result<(), String> {
@@ -2897,6 +2900,14 @@ async fn create_pty_session(
             c.cwd(&cwd);
             c
         };
+
+        // Project env from tempest.yml. Applied before the DB block below so an
+        // isolated session's DATABASE_URL can never be shadowed by the repo.
+        if let Some(ref extra) = env {
+            for (k, v) in extra {
+                cmd.env(k, v);
+            }
+        }
 
         // Inject DB isolation env vars so agents see an isolated DATABASE_URL.
         if let Some(ref b) = db_branch {

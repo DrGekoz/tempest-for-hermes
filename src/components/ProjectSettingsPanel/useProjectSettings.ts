@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { dbLoadAppState, dbSetAppState } from "../../lib/db";
 import { AGENT_CONFIGS } from "../NewSessionMenu";
+import { clampSecurity, loadTempestConfig } from "../../lib/tempestConfig";
 
 // Per-project settings blob. Persisted as a single JSON row in the `app_state`
 // table (key = "project-settings:{projectId}"), same key/value pattern as
-// runtimeState.ts. One row per project, so tempest.yml can later override on top.
+// runtimeState.ts. One row per project; a repo's `tempest.yml` is clamped over
+// the top of it at load (see `clampSecurity` — the file may only tighten).
 export interface ProjectSettings {
   sandbox: { mode: "off" | "monitor" | "enforce" };
   network: { policy: "permissive" | "restrictive"; allowHosts: string[]; blockHosts: string[] };
-  filesystem: { rwPaths: string[]; roPaths: string[]; denyPaths: string[] };
+  filesystem: { rwPaths: string[]; roPaths: string[] };
   permissions: { allowSkipPermissions: boolean };
   agents: { permitted: string[] };
   database: { isolationEnabled: boolean };
@@ -25,7 +27,7 @@ export interface ProjectSettings {
 const DEFAULTS: ProjectSettings = {
   sandbox: { mode: "monitor" },
   network: { policy: "permissive", allowHosts: ["api.anthropic.com", "*.github.com"], blockHosts: [] },
-  filesystem: { rwPaths: ["."], roPaths: [], denyPaths: [] },
+  filesystem: { rwPaths: ["."], roPaths: [] },
   permissions: { allowSkipPermissions: true },
   agents: { permitted: AGENT_CONFIGS.map((a) => a.hint) },
   database: { isolationEnabled: false },
@@ -55,13 +57,23 @@ function withDefaults(p: Partial<ProjectSettings>): ProjectSettings {
 /// defaults — a project that has never opened the settings panel still gets a
 /// complete, enforceable blob rather than `undefined`.
 ///
+/// `projectPath` is optional only because callers that have no path on hand
+/// still deserve the DB blob; pass it wherever it is known so the repo's
+/// `tempest.yml` is honoured.
+///
 /// Never throws: a missing or corrupt row falls back to defaults, because
 /// failing to parse settings must not stop a terminal from opening.
-export async function loadProjectSettings(projectId: string): Promise<ProjectSettings> {
+export async function loadProjectSettings(
+  projectId: string,
+  projectPath?: string,
+): Promise<ProjectSettings> {
   try {
     const rows = await dbLoadAppState();
     const raw = new Map(rows).get(keyFor(projectId));
-    return withDefaults(raw ? (JSON.parse(raw) as Partial<ProjectSettings>) : {});
+    const base = withDefaults(raw ? (JSON.parse(raw) as Partial<ProjectSettings>) : {});
+    if (!projectPath) return base;
+    const cfg = await loadTempestConfig(projectPath);
+    return clampSecurity(base, cfg.security);
   } catch (e) {
     console.error("[projectSettings] load failed, using defaults:", e);
     return DEFAULTS;
@@ -69,7 +81,12 @@ export async function loadProjectSettings(projectId: string): Promise<ProjectSet
 }
 
 export function useProjectSettings(projectId: string, projectPath: string) {
-  const [settings, setSettings] = useState<ProjectSettings>(DEFAULTS);
+  // `base` is the user's own settings — the only thing ever written back. The
+  // repo's tempest.yml is clamped over it for display and enforcement but is
+  // deliberately NOT persisted: baking the file's tightening into the DB row
+  // would leave it stuck there after the file is edited or removed.
+  const [base, setBase] = useState<ProjectSettings>(DEFAULTS);
+  const [yml, setYml] = useState<Partial<ProjectSettings>>({});
   const loaded = useRef(false);
 
   // Load from DB on mount (and whenever the project changes).
@@ -83,9 +100,11 @@ export function useProjectSettings(projectId: string, projectPath: string) {
         // runtimeState.ts does. Add a single-key getter if the table gets large.
         const raw = new Map(rows).get(keyFor(projectId));
         const fromDb = raw ? (JSON.parse(raw) as Partial<ProjectSettings>) : {};
-        // tempest.yml: load from projectPath here and merge OVER the DB blob
-        //   (yml wins) before withDefaults — the file is the source of truth once it exists.
-        if (!cancelled) setSettings(withDefaults(fromDb));
+        const cfg = await loadTempestConfig(projectPath);
+        if (!cancelled) {
+          setBase(withDefaults(fromDb));
+          setYml(cfg.security);
+        }
       } catch (e) {
         console.error("[projectSettings] load failed:", e);
       } finally {
@@ -101,9 +120,12 @@ export function useProjectSettings(projectId: string, projectPath: string) {
   //   text field straight to settings instead of local input state.
   useEffect(() => {
     if (!loaded.current) return;
-    dbSetAppState(keyFor(projectId), JSON.stringify(settings))
+    dbSetAppState(keyFor(projectId), JSON.stringify(base))
       .catch((e) => console.error("[projectSettings] persist failed:", e));
-  }, [projectId, settings]);
+  }, [projectId, base]);
 
-  return [settings, setSettings] as const;
+  // ponytail: the panel shows clamped values but edits write `base`, so a
+  //   yml-pinned field appears to ignore the user. Add a read-only affordance
+  //   once the sections need to distinguish the two.
+  return [clampSecurity(base, yml), setBase] as const;
 }
