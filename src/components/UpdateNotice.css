@@ -1,0 +1,65 @@
+/* Update notice — inherits the status bar's 11px type so it reads as one row
+   with the Indexed / Isolated badges rather than as an interruption. */
+.update-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--tempest-font-sans, "Geist", sans-serif);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Overview footer only: the notice owns the full bar, so the sentence stays
+   left and the action pair is pushed to the far edge. In the status bar cycle
+   the notice stays a compact group, right-aligned with the badges. */
+.canvas-wrap-footer--notice .update-notice {
+  flex: 1;
+}
+
+.canvas-wrap-footer--notice .update-notice-action {
+  margin-left: auto;
+}
+
+.update-notice-text,
+.update-notice-action,
+.update-notice-close {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.update-notice-text {
+  color: var(--tempest-fg-muted);
+  letter-spacing: 0.01em;
+}
+
+.update-notice-text:hover {
+  color: var(--tempest-fg-default);
+}
+
+/* The only control that starts an upgrade. */
+.update-notice-action {
+  color: var(--tempest-accent-blue);
+  text-decoration: none;
+}
+
+.update-notice-action:hover {
+  text-decoration: underline;
+}
+
+.update-notice-close {
+  display: flex;
+  align-items: center;
+  color: var(--tempest-fg-subtle);
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.update-notice-close:hover {
+  opacity: 1;
+  color: var(--tempest-fg-default);
+}

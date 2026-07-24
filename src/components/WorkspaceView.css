@@ -570,6 +570,38 @@
   padding: 0 20px;
 }
 
+/* Overview only — the footer does not otherwise exist here, so it drops in
+   from behind the canvas carrying the update line on the left. */
+.canvas-wrap-footer--notice {
+  justify-content: flex-start;
+  overflow: hidden;
+  animation: canvas-footer-drop 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* ✕ — retracts up behind the canvas, which glides down into the space.
+   Needs its own keyframe name rather than `canvas-footer-drop reverse`:
+   re-running an identically named animation is treated as the same, already
+   finished animation, so it snaps to the end state instead of playing. */
+.canvas-wrap-footer--notice-closing {
+  animation: canvas-footer-retract 0.45s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes canvas-footer-drop {
+  from { height: 0; opacity: 0; }
+  to   { height: 30px; opacity: 1; }
+}
+
+@keyframes canvas-footer-retract {
+  from { height: 30px; opacity: 1; }
+  to   { height: 0; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-wrap-footer--notice {
+    animation: none;
+  }
+}
+
 /* Nav buttons */
 
 /* Wrapper that holds the scroll area + fade overlays */

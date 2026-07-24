@@ -15,6 +15,7 @@ import { saveChatHistory } from "../lib/chatHistory";
 import type { BranchInfo } from "../types/git";
 import type { Session, Worktree, Project, NavSection } from "../types/workspace";
 import { DeleteWorkspaceDialog, type DeleteDialogState } from "./WorkspaceView/DeleteWorkspaceDialog";
+import { UpdateConfirmDialog } from "./WorkspaceView/UpdateConfirmDialog";
 import { DiffPickerModal } from "./WorkspaceView/DiffPickerModal";
 import { PromptPickerPopover } from "./WorkspaceView/PromptPickerPopover";
 import { TerminalNamingModal } from "./WorkspaceView/TerminalNamingModal";
@@ -72,6 +73,8 @@ import { getPrompts, type PromptEntry } from "../store/prompts";
 import { useTheme, builtinThemes } from "../themes/ThemeContext";
 import { Mark } from "../assets/Mark";
 import { StatusBar } from "./StatusBar";
+import { UpdateNotice } from "./UpdateNotice";
+import { useAvailableUpdate, dismissUpdate, startUpdateChecks, installUpdate, openReleaseNotes } from "../store/updates";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
 import { Toolbar } from "./Toolbar";
@@ -79,6 +82,7 @@ import AgentTabs from "./AgentTabs";
 import IconCapsule from "./IconCapsule";
 import { SidebarWorkBadge, ProjectWorkBadge, AttentionPill } from "./SessionBadges";
 import "./StatusBar.css";
+import "./UpdateNotice.css";
 import "./TopBar.css";
 import "./WorkspaceView.css";
 import "./Toolbar.css";
@@ -227,9 +231,29 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
   // Delete workspace dialog state
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
-  /// Message from a project-policy refusal at spawn time. Rendered as a
-  /// dismissible notice near the bottom of the window.
+  /// Message from a project-policy refusal at spawn time, or a failed update.
+  /// Rendered as a dismissible notice near the bottom of the window.
   const [policyError, setPolicyError] = useState<string | null>(null);
+
+  // Update checks: one now, then daily for as long as the app stays open.
+  const availableUpdate = useAvailableUpdate();
+  useEffect(() => { startUpdateChecks(); }, []);
+
+  /// The Overview footer has to stay mounted while it retracts, so ✕ sets this
+  /// instead of dismissing outright; the dismissal lands on animation end.
+  const [noticeClosing, setNoticeClosing] = useState(false);
+
+  /// Non-null while the workspace update confirmation is open.
+  const [updateConfirm, setUpdateConfirm] = useState<{ installing: boolean; error: string | null } | null>(null);
+
+  // Same line, two homes: the footer that drops in on Overview, and the
+  // status bar cycle once the user is inside a session.
+  const updateProps = availableUpdate && {
+    version: availableUpdate.version,
+    onNotes: () => openReleaseNotes(availableUpdate),
+    onUpdate: () => { installUpdate(availableUpdate).catch((e) => setPolicyError(String(e))); },
+    onDismiss: dismissUpdate,
+  };
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [inlineCreateProjectId, setInlineCreateProjectId] = useState<string | null>(null);
@@ -2718,9 +2742,27 @@ export function WorkspaceView({ zen, name, path }: Props) {
             );
           })()}
             </div>{/* canvas */}
+            {/* Overview has no footer of its own, so one drops in to carry the
+                notice. Only here — inside a session the status bar cycle takes
+                over rather than shifting the canvas out from under the user. */}
+            {!activeSessionId && activeSection === "overview" && updateProps && (
+              <div
+                className={`canvas-wrap-footer canvas-wrap-footer--notice${noticeClosing ? " canvas-wrap-footer--notice-closing" : ""}`}
+                onAnimationEnd={() => {
+                  if (!noticeClosing) return;
+                  setNoticeClosing(false);
+                  dismissUpdate();
+                }}
+              >
+                <UpdateNotice {...updateProps} onDismiss={() => setNoticeClosing(true)} />
+              </div>
+            )}
             {activeSession && (!activeSession.kind || activeSession.kind === "diff" || activeSession.kind === "terminal") && (atlasEnabled && activeProjectPath) && (
               <div className="canvas-wrap-footer">
                 <StatusBar
+                  // Sessions are running here, so the word opens a confirmation
+                  // rather than restarting the app under the user.
+                  update={updateProps ? { ...updateProps, onUpdate: () => setUpdateConfirm({ installing: false, error: null }) } : undefined}
                   sandboxed={activeSession?.sandboxed}
                   atlasEnabled={atlasEnabled && activeProjectPath ? true : undefined}
                   atlasIndexed={atlasEnabled && isAtlasIndexed ? true : undefined}
@@ -2837,6 +2879,23 @@ export function WorkspaceView({ zen, name, path }: Props) {
           {policyError}
           <span style={{ opacity: 0.55, marginLeft: 8, fontSize: 11 }}>click to dismiss</span>
         </div>
+      )}
+
+      {updateConfirm && availableUpdate && (
+        <UpdateConfirmDialog
+          version={availableUpdate.version}
+          sessionCount={sessions.length}
+          workingCount={sessions.filter((s) => s.agent && getWorkState(s.id) === "working").length}
+          installing={updateConfirm.installing}
+          error={updateConfirm.error}
+          onCancel={() => setUpdateConfirm(null)}
+          onConfirm={() => {
+            setUpdateConfirm({ installing: true, error: null });
+            installUpdate(availableUpdate).catch((e) =>
+              setUpdateConfirm({ installing: false, error: String(e) })
+            );
+          }}
+        />
       )}
 
       {/* Delete workspace dialog */}

@@ -1,5 +1,21 @@
+import { useState, useEffect, useRef } from "react";
 import { Shield, Cpu, RefreshCw } from "lucide-react";
 import { Tooltip } from "./Tooltip";
+import { UpdateNotice } from "./UpdateNotice";
+
+/// How long each row is held before the track rotates to the other one.
+const CYCLE_MS = 7000;
+
+/// Matches the track's transition in StatusBar.css — long enough for the
+/// update row to finish sliding away before it is torn down.
+const SLIDE_MS = 500;
+
+export interface StatusBarUpdate {
+  version: string;
+  onNotes: () => void;
+  onUpdate: () => void;
+  onDismiss: () => void;
+}
 
 interface Props {
   sandboxed?: boolean;
@@ -7,16 +23,42 @@ interface Props {
   atlasIndexing?: boolean;
   atlasEnabled?: boolean;
   onSyncAtlas?: () => void;
+  /// When set, the badge row rotates between the badges and an update line.
+  /// Absent (the usual case) leaves the bar exactly as it was.
+  update?: StatusBarUpdate;
 }
 
-export function StatusBar({ sandboxed, atlasIndexed, atlasIndexing, atlasEnabled, onSyncAtlas }: Props) {
+export function StatusBar({ sandboxed, atlasIndexed, atlasIndexing, atlasEnabled, onSyncAtlas, update }: Props) {
   const showShield = sandboxed !== undefined;
   const showAtlas = atlasEnabled !== undefined;
 
+  // Rotate rather than interrupt: the user is mid-session here, so the update
+  // takes its turn alongside the badges instead of claiming the bar outright.
+  // The badges hold the bar first — the notice arrives on the first rotation.
+  const [showUpdate, setShowUpdate] = useState(false);
+  const cycleRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!update) return;
+    setShowUpdate(false);
+    cycleRef.current = setInterval(() => setShowUpdate((v) => !v), CYCLE_MS);
+    return () => { if (cycleRef.current) clearInterval(cycleRef.current); };
+  }, [update]);
+
+  /// Slide the update row away first, then tear it down — dismissing on the
+  /// click would swap the whole track out mid-transition. The rotation is
+  /// stopped so the timer cannot flip it back on the way out.
+  function handleDismiss() {
+    if (!update) return;
+    if (cycleRef.current) clearInterval(cycleRef.current);
+    setShowUpdate(false);
+    setTimeout(update.onDismiss, SLIDE_MS);
+  }
+
   if (!showShield && !showAtlas) return null;
 
-  return (
-    <div className="status-bar" role="status">
+  const badges = (
+    <>
       {showAtlas && (
         atlasIndexing ? (
           <Tooltip content="Indexing codebase…" placement="top">
@@ -61,6 +103,28 @@ export function StatusBar({ sandboxed, atlasIndexed, atlasIndexing, atlasEnabled
           </span>
         </Tooltip>
       )}
+    </>
+  );
+
+  if (!update) {
+    return <div className="status-bar" role="status">{badges}</div>;
+  }
+
+  return (
+    <div className="status-bar" role="status">
+      <div className="status-bar-cycle">
+        <div className={`status-bar-cycle-track${showUpdate ? " status-bar-cycle-track--alt" : ""}`}>
+          <div className="status-bar-cycle-row">{badges}</div>
+          <div className="status-bar-cycle-row">
+            <UpdateNotice
+              version={update.version}
+              onNotes={update.onNotes}
+              onUpdate={update.onUpdate}
+              onDismiss={handleDismiss}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

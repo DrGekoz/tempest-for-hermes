@@ -54,3 +54,37 @@
 .status-bar-badge-icon--spin {
   animation: status-bar-spin 1.4s linear infinite;
 }
+
+/* ── Cycling track ─────────────────────────────────────────────────────────
+   A one-row viewport over a two-row column. Shifting the track by half its
+   height swaps badges for the update line and back — no interruption, no
+   layout shift, and the bar stays exactly 16px tall either way. */
+.status-bar-cycle {
+  height: 16px;
+  overflow: hidden;
+}
+
+.status-bar-cycle-track {
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.status-bar-cycle-track--alt {
+  transform: translateY(-50%);
+}
+
+.status-bar-cycle-row {
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-bar-cycle-track {
+    transition: none;
+  }
+}
