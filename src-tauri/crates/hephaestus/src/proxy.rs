@@ -150,6 +150,15 @@ fn accept_loop(
         }
         match listener.accept() {
             Ok((stream, _)) => {
+                // Winsock hands the accepted socket the listener's non-blocking
+                // mode; POSIX does not. The listener is non-blocking only so the
+                // loop above can poll `shutdown`, and every handler below is
+                // written against a blocking socket — inherited, it makes each
+                // read return `WouldBlock` instantly, which `io::copy` reports as
+                // an error and the relay turns into an immediate teardown. The
+                // client sees the tunnel abort mid-handshake as ECONNRESET.
+                let _ = stream.set_nonblocking(false);
+
                 let policy = Arc::clone(&policy);
                 thread::spawn(move || {
                     let _ = handle_connection(stream, &policy, mode);
@@ -216,13 +225,24 @@ fn handle_connect(
     let read_half = reader.into_inner();
 
     if !policy_allows(host, policy, mode) {
-        write_deny(&mut { write_half }, host);
+        // `&mut { write_half }` would move into a temporary dropped at the end of
+        // the statement, closing the socket the instant the body is written — with
+        // client bytes still unread, Windows answers that with an RST and the
+        // explanatory body never arrives.
+        write_deny(&mut write_half, host);
         return Ok(());
     }
 
-    let mut upstream = TcpStream::connect(target).map_err(|e| {
-        io::Error::new(io::ErrorKind::ConnectionRefused, format!("upstream {target}: {e}"))
-    })?;
+    let mut upstream = match TcpStream::connect(target) {
+        Ok(s) => s,
+        Err(e) => {
+            // Returning here would drop the client socket with nothing written,
+            // which a client reports as a bare connection reset. Name the reason
+            // instead: an upstream failure is not a policy decision.
+            write_gateway_error(&mut write_half, host, &e.to_string());
+            return Ok(());
+        }
+    };
 
     // Acknowledge the tunnel to the client.
     write_half.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
@@ -361,6 +381,24 @@ fn write_deny(stream: &mut TcpStream, host: &str) {
         "HTTP/1.1 403 Blocked by sandbox policy\r\n\
          X-Hephaestus-Block: true\r\n\
          X-Hephaestus-Block-Host: {host}\r\n\
+         Content-Type: text/plain; charset=utf-8\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\r\n",
+        body.len()
+    );
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(body.as_bytes());
+}
+
+/// Report an upstream connection failure as a `502` rather than a silent close.
+///
+/// Without this the agent sees only a reset socket and cannot tell a sandbox
+/// problem apart from a network one.
+fn write_gateway_error(stream: &mut TcpStream, host: &str, reason: &str) {
+    eprintln!("[hephaestus] upstream {host} unreachable: {reason}");
+    let body = format!("Hephaestus could not reach {host}.\n\n{reason}\n");
+    let header = format!(
+        "HTTP/1.1 502 Bad Gateway\r\n\
          Content-Type: text/plain; charset=utf-8\r\n\
          Content-Length: {}\r\n\
          Connection: close\r\n\r\n",
