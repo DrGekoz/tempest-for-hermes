@@ -150,32 +150,30 @@ jobs:
           version = tag.lstrip("v")
           base_url = f"https://github.com/tempestai-dev/tempest/releases/download/{tag}"
 
+          # Returns (signature, asset filename). The filename is derived from the
+          # .sig rather than rebuilt from the version, because GitHub asset URLs
+          # are case-sensitive and the bundler names artifacts after `productName`
+          # ("Tempest_..."), not the crate ("tempest_..."). Rebuilding the name
+          # produced a manifest that generated cleanly and 404'd on download.
           def read_sig(pattern):
               files = glob.glob(f"sigs/{pattern}")
-              return open(files[0]).read().strip() if files else None
+              if not files:
+                  return None, None
+              return open(files[0]).read().strip(), os.path.basename(files[0])[:-4]
 
           platforms = {}
 
-          sig = read_sig(f"*{version}*x64-setup.exe.sig")
+          sig, asset = read_sig(f"*{version}*x64-setup.exe.sig")
           if sig:
-              platforms["windows-x86_64"] = {
-                  "signature": sig,
-                  "url": f"{base_url}/tempest_{version}_x64-setup.exe"
-              }
+              platforms["windows-x86_64"] = {"signature": sig, "url": f"{base_url}/{asset}"}
 
-          sig = read_sig(f"*{version}*amd64.AppImage.sig")
+          sig, asset = read_sig(f"*{version}*amd64.AppImage.sig")
           if sig:
-              platforms["linux-x86_64"] = {
-                  "signature": sig,
-                  "url": f"{base_url}/tempest_{version}_amd64.AppImage"
-              }
+              platforms["linux-x86_64"] = {"signature": sig, "url": f"{base_url}/{asset}"}
 
-          sig = read_sig(f"*.app.tar.gz.sig")
+          sig, asset = read_sig(f"*.app.tar.gz.sig")
           if sig:
-              platforms["darwin-aarch64"] = {
-                  "signature": sig,
-                  "url": f"{base_url}/tempest.app.tar.gz"
-              }
+              platforms["darwin-aarch64"] = {"signature": sig, "url": f"{base_url}/{asset}"}
 
           manifest = {
               "version": version,
