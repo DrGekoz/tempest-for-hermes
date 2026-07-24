@@ -86,6 +86,21 @@
   min-width: 228px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   z-index: 302;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.nsm-submenu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.nsm-submenu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nsm-submenu::-webkit-scrollbar-thumb {
+  background: var(--tempest-border-subtle);
+  border-radius: 2px;
 }
 
 .nsm-subitem {

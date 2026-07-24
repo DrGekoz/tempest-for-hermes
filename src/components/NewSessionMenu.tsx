@@ -168,6 +168,7 @@ export function NewSessionMenu({
   onLivePreview,
 }: Props) {
   const [agentHovered, setAgentHovered] = useState(false);
+  const [subRect, setSubRect] = useState<DOMRect | null>(null);
   const available = useAgentAvailability();
 
   useEffect(() => {
@@ -181,10 +182,34 @@ export function NewSessionMenu({
 
   if (!open || !anchorRect) return null;
 
+  // Keep the menu inside the viewport: clamp horizontally, and anchor to the
+  // anchor's opposite edge when there isn't room on the preferred side.
+  const GAP = 8;
+  const MENU_W = 248;
+  const SUB_W = 228;
+  const rawLeft = placement === "right" ? anchorRect.right + 4 : anchorRect.left;
+  const left = Math.max(GAP, Math.min(rawLeft, window.innerWidth - MENU_W - GAP));
+  const downTop = placement === "right" ? anchorRect.top : anchorRect.bottom + 2;
+  const upBottom = placement === "right" ? anchorRect.bottom : anchorRect.top - 2;
+  const spaceBelow = window.innerHeight - downTop - GAP;
+  const spaceAbove = upBottom - GAP;
   const pos =
-    placement === "right"
-      ? { top: anchorRect.top, left: anchorRect.right + 4 }
-      : { top: anchorRect.bottom + 2, left: anchorRect.left };
+    spaceBelow < 220 && spaceAbove > spaceBelow
+      ? { bottom: window.innerHeight - upBottom, left }
+      : { top: downTop, left };
+
+  // The agent list is long enough to run off-screen, so cap it to the space
+  // available from where it opens and let it scroll. Flips up / to the left
+  // when the other side has more room.
+  const subTop = subRect ? subRect.top - 4 : 0;
+  const subBelow = window.innerHeight - subTop - GAP;
+  const subAbove = (subRect ? subRect.bottom + 4 : window.innerHeight) - GAP;
+  const subUp = subBelow < 200 && subAbove > subBelow;
+  const subLeft = left + MENU_W + 4 + SUB_W > window.innerWidth - GAP;
+  const subStyle = {
+    ...(subUp ? { top: "auto", bottom: -4, maxHeight: subAbove } : { maxHeight: subBelow }),
+    ...(subLeft ? { left: "auto", right: "calc(100% + 4px)" } : {}),
+  };
 
   return createPortal(
     <div className="nsm-overlay" onClick={onClose}>
@@ -203,7 +228,7 @@ export function NewSessionMenu({
 
         <div
           className="nsm-item nsm-item--sub"
-          onMouseEnter={() => setAgentHovered(true)}
+          onMouseEnter={(e) => { setSubRect(e.currentTarget.getBoundingClientRect()); setAgentHovered(true); }}
           onMouseLeave={() => setAgentHovered(false)}
         >
           <Bot size={14} className="nsm-item-icon" />
@@ -213,7 +238,7 @@ export function NewSessionMenu({
           </div>
           <ChevronRight size={12} className="nsm-item-chevron" />
           {agentHovered && (
-            <div className="nsm-submenu">
+            <div className="nsm-submenu" style={subStyle}>
               {AGENT_CONFIGS.map((a) => {
                 const isAvailable = available[a.hint] !== false; // true until confirmed absent
                 return (

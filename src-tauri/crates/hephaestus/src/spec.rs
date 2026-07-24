@@ -125,14 +125,27 @@ impl From<String> for HostPattern {
 pub struct NetworkPolicy {
     /// Patterns of hosts the sandboxed process may reach.
     ///
-    /// An empty list blocks all outbound traffic (except the loopback proxy).
+    /// Consulted only when `default_allow` is `false`. An empty list then
+    /// blocks all outbound traffic (except the loopback proxy).
     pub allowed: Vec<HostPattern>,
+
+    /// Patterns of hosts the sandboxed process may never reach.
+    ///
+    /// Evaluated *before* `allowed`, so a block always wins — including when
+    /// `default_allow` is `true`.
+    pub blocked: Vec<HostPattern>,
+
+    /// Baseline posture.
+    ///
+    /// `false` (the default) is deny-by-default: only `allowed` gets through.
+    /// `true` is allow-by-default: everything gets through except `blocked`.
+    pub default_allow: bool,
 }
 
 impl NetworkPolicy {
     /// A policy that blocks all outbound traffic.
     pub fn deny_all() -> Self {
-        Self { allowed: vec![] }
+        Self { allowed: vec![], blocked: vec![], default_allow: false }
     }
 
     /// A policy that allows all outbound traffic.
@@ -140,7 +153,7 @@ impl NetworkPolicy {
     /// Use with care — this gives the process unrestricted network access.
     /// Prefer an explicit allow-list in production.
     pub fn allow_all() -> Self {
-        Self { allowed: vec![HostPattern::Regex(".*".into())] }
+        Self { allowed: vec![], blocked: vec![], default_allow: true }
     }
 
     /// Add a host pattern to the allow-list.
@@ -152,28 +165,95 @@ impl NetworkPolicy {
         self
     }
 
-    /// Returns `true` if this policy would allow the given exact hostname.
+    /// Add a host pattern to the block-list. Blocks beat allows.
+    pub fn block(mut self, pattern: impl Into<HostPattern>) -> Self {
+        self.blocked.push(pattern.into());
+        self
+    }
+
+    /// Set the baseline posture. See [`default_allow`](Self::default_allow).
+    #[must_use]
+    pub fn with_default_allow(mut self, allow: bool) -> Self {
+        self.default_allow = allow;
+        self
+    }
+
+    /// Returns `true` if this policy permits traffic to `host`.
     ///
-    /// Syntactic check only — `Regex` patterns with non-trivial expressions are
-    /// not evaluated. The exception is the `".*"` sentinel produced by
-    /// [`allow_all`](Self::allow_all), which is treated as a blanket allow.
-    pub fn allows_exact(&self, host: &str) -> bool {
-        self.allowed.iter().any(|p| match p {
-            HostPattern::Exact(h) => h.eq_ignore_ascii_case(host),
-            HostPattern::Subdomain(domain) => {
-                host.strip_suffix(domain.as_str())
-                    .and_then(|prefix| prefix.strip_suffix('.'))
-                    .map(|sub| !sub.contains('.'))
-                    .unwrap_or(false)
-            }
-            HostPattern::Suffix(domain) => {
-                host.eq_ignore_ascii_case(domain)
-                    || host.ends_with(&format!(".{domain}"))
-            }
-            // ".*" is the allow-all sentinel from `NetworkPolicy::allow_all()`.
-            HostPattern::Regex(r) if r == ".*" => true,
-            HostPattern::Regex(_) => false,
-        })
+    /// `host` may carry a port (`example.com:8443`) and/or IPv6 brackets
+    /// (`[::1]`); both are normalized away before matching. Matching is
+    /// case-insensitive.
+    ///
+    /// `Regex` patterns are **not** evaluated — matching one always returns
+    /// `false`. The sole exception is the `".*"` sentinel, treated as a blanket
+    /// allow. Hephaestus deliberately carries no regex dependency; use
+    /// `Exact` / `Subdomain` / `Suffix`, which cover every pattern the
+    /// `From<&str>` parser can produce.
+    pub fn is_allowed(&self, host: &str) -> bool {
+        let host = normalize_host(host);
+
+        // A block always wins, in either posture.
+        if self.blocked.iter().any(|p| host_matches(p, &host)) {
+            return false;
+        }
+        if self.default_allow {
+            return true;
+        }
+        self.allowed.iter().any(|p| host_matches(p, &host))
+    }
+}
+
+/// Strip IPv6 brackets and any trailing `:port` so patterns match the bare
+/// hostname. A trailing colon group is only treated as a port when it is
+/// all-digits, so bare IPv6 literals survive intact.
+fn normalize_host(host: &str) -> String {
+    let host = host.trim();
+
+    // `[::1]:443` / `[::1]` → `::1`
+    if let Some(rest) = host.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            return rest[..end].to_ascii_lowercase();
+        }
+    }
+
+    match host.rsplit_once(':') {
+        Some((h, port))
+            if !port.is_empty()
+                && port.bytes().all(|b| b.is_ascii_digit())
+                // A remaining colon means this is a bare IPv6 literal
+                // (`fe80::1`), not `host:port` — its final group is an address
+                // group, not a port. Ports on IPv6 must be bracketed.
+                && !h.contains(':') =>
+        {
+            h.to_ascii_lowercase()
+        }
+        _ => host.to_ascii_lowercase(),
+    }
+}
+
+/// Match one pattern against an already-normalized (lowercase, port-free) host.
+fn host_matches(pattern: &HostPattern, host: &str) -> bool {
+    match pattern {
+        HostPattern::Exact(h) => h.trim().eq_ignore_ascii_case(host),
+
+        // `*.example.com` — exactly one extra label.
+        HostPattern::Subdomain(domain) => {
+            let domain = domain.trim().to_ascii_lowercase();
+            host.strip_suffix(&domain)
+                .and_then(|prefix| prefix.strip_suffix('.'))
+                .map(|sub| !sub.is_empty() && !sub.contains('.'))
+                .unwrap_or(false)
+        }
+
+        // `**.example.com` — the apex or any depth beneath it.
+        HostPattern::Suffix(domain) => {
+            let domain = domain.trim().to_ascii_lowercase();
+            host == domain || host.ends_with(&format!(".{domain}"))
+        }
+
+        // ".*" is the legacy allow-all sentinel; see `is_allowed` docs.
+        HostPattern::Regex(r) if r == ".*" => true,
+        HostPattern::Regex(_) => false,
     }
 }
 
@@ -395,6 +475,21 @@ impl EnvironmentSpecBuilder {
         self
     }
 
+    /// Block a host pattern. Blocks are evaluated before allows, so this wins
+    /// over both [`allow_host`](Self::allow_host) and an allow-by-default
+    /// baseline.
+    pub fn block_host(mut self, pattern: impl Into<HostPattern>) -> Self {
+        self.network.blocked.push(pattern.into());
+        self
+    }
+
+    /// Set the network baseline: `true` allows everything except blocked hosts,
+    /// `false` (the default) denies everything except allowed hosts.
+    pub fn network_default_allow(mut self, allow: bool) -> Self {
+        self.network.default_allow = allow;
+        self
+    }
+
     /// Replace the entire network policy.
     pub fn network(mut self, policy: NetworkPolicy) -> Self {
         self.network = policy;
@@ -445,3 +540,126 @@ impl EnvironmentSpecBuilder {
 
 /// Backward-compatible alias for [`EnvironmentSpec`].
 pub type BranchSpec = EnvironmentSpec;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Pattern parsing ──────────────────────────────────────────────────────
+
+    #[test]
+    fn parses_prefixes_into_variants() {
+        assert!(matches!(HostPattern::from("**.example.com"), HostPattern::Suffix(_)));
+        assert!(matches!(HostPattern::from("*.example.com"), HostPattern::Subdomain(_)));
+        assert!(matches!(HostPattern::from("example.com"), HostPattern::Exact(_)));
+    }
+
+    // ── Restrictive baseline (deny by default) ───────────────────────────────
+
+    #[test]
+    fn empty_allow_list_denies_everything() {
+        assert!(!NetworkPolicy::deny_all().is_allowed("example.com"));
+    }
+
+    #[test]
+    fn exact_matches_only_itself() {
+        let p = NetworkPolicy::deny_all().allow("api.anthropic.com");
+        assert!(p.is_allowed("api.anthropic.com"));
+        assert!(!p.is_allowed("anthropic.com"));
+        assert!(!p.is_allowed("evil.com"));
+    }
+
+    /// The classic allow-list bypass: a suffix check without a boundary would
+    /// let an attacker-controlled domain end with the allowed one.
+    #[test]
+    fn exact_rejects_suffix_impersonation() {
+        let p = NetworkPolicy::deny_all().allow("api.anthropic.com");
+        assert!(!p.is_allowed("api.anthropic.com.evil.com"));
+        assert!(!p.is_allowed("notapi.anthropic.com"));
+    }
+
+    #[test]
+    fn subdomain_is_exactly_one_label() {
+        let p = NetworkPolicy::deny_all().allow("*.example.com");
+        assert!(p.is_allowed("api.example.com"));
+        assert!(!p.is_allowed("example.com"), "apex is not a subdomain match");
+        assert!(!p.is_allowed("a.b.example.com"), "two labels is not one label");
+        assert!(!p.is_allowed(".example.com"), "empty label must not match");
+    }
+
+    #[test]
+    fn suffix_covers_apex_and_any_depth() {
+        let p = NetworkPolicy::deny_all().allow("**.example.com");
+        assert!(p.is_allowed("example.com"));
+        assert!(p.is_allowed("api.example.com"));
+        assert!(p.is_allowed("a.b.c.example.com"));
+        assert!(!p.is_allowed("notexample.com"));
+    }
+
+    // ── Permissive baseline (allow by default) ───────────────────────────────
+
+    #[test]
+    fn permissive_allows_unlisted_hosts() {
+        let p = NetworkPolicy::allow_all();
+        assert!(p.is_allowed("anything.example.com"));
+    }
+
+    #[test]
+    fn block_beats_permissive_baseline() {
+        let p = NetworkPolicy::allow_all().block("*.tracker.com");
+        assert!(p.is_allowed("example.com"));
+        assert!(!p.is_allowed("ads.tracker.com"));
+    }
+
+    /// A block must win even against an explicit allow of the same host —
+    /// otherwise a broad allow silently re-opens something deliberately shut.
+    #[test]
+    fn block_beats_explicit_allow() {
+        let p = NetworkPolicy::deny_all()
+            .allow("**.example.com")
+            .block("secrets.example.com");
+        assert!(p.is_allowed("api.example.com"));
+        assert!(!p.is_allowed("secrets.example.com"));
+    }
+
+    // ── Normalization ────────────────────────────────────────────────────────
+
+    #[test]
+    fn matching_ignores_case() {
+        let p = NetworkPolicy::deny_all().allow("API.Example.COM");
+        assert!(p.is_allowed("api.example.com"));
+        assert!(p.is_allowed("API.EXAMPLE.COM"));
+    }
+
+    #[test]
+    fn port_is_stripped_before_matching() {
+        let p = NetworkPolicy::deny_all().allow("example.com");
+        assert!(p.is_allowed("example.com:443"));
+        assert!(p.is_allowed("example.com:8443"));
+    }
+
+    #[test]
+    fn ipv6_brackets_are_stripped() {
+        let p = NetworkPolicy::deny_all().allow("::1");
+        assert!(p.is_allowed("[::1]"));
+        assert!(p.is_allowed("[::1]:8080"));
+    }
+
+    /// A bare IPv6 literal must not have its last group mistaken for a port.
+    #[test]
+    fn bare_ipv6_is_not_truncated_as_port() {
+        let p = NetworkPolicy::deny_all().allow("fe80::1");
+        assert!(p.is_allowed("fe80::1"));
+    }
+
+    // ── Regex variant ────────────────────────────────────────────────────────
+
+    #[test]
+    fn regex_patterns_do_not_match_but_wildcard_sentinel_does() {
+        let unevaluated = NetworkPolicy::deny_all().allow(HostPattern::regex("^example\\.com$"));
+        assert!(!unevaluated.is_allowed("example.com"), "no regex engine is linked");
+
+        let sentinel = NetworkPolicy::deny_all().allow(HostPattern::regex(".*"));
+        assert!(sentinel.is_allowed("anything.com"));
+    }
+}

@@ -207,7 +207,7 @@ fn handle_connect(
     let read_half = reader.into_inner();
 
     if !policy_allows(host, policy, mode) {
-        write_deny(&mut { write_half });
+        write_deny(&mut { write_half }, host);
         return Ok(());
     }
 
@@ -246,7 +246,7 @@ fn handle_plain_http(
         .unwrap_or("");
 
     if !policy_allows(host, policy, mode) {
-        write_deny(&mut write_half);
+        write_deny(&mut write_half, host);
         return Ok(());
     }
 
@@ -307,21 +307,38 @@ fn policy_allows(host: &str, policy: &NetworkPolicy, mode: SandboxMode) -> bool 
         // Log-only: always forward, never block.
         return true;
     }
-    policy.allows_exact(host)
+    policy.is_allowed(host)
 }
 
-fn write_deny(stream: &mut TcpStream) {
-    let body = b"Blocked by Hephaestus sandbox";
+/// Refuse the request with a self-identifying response.
+///
+/// `403` rather than `407`: the request is denied by policy, not missing proxy
+/// credentials. `407` makes curl and other clients prompt for a proxy password
+/// and retry, which turns a clear policy block into a confusing auth loop.
+///
+/// The host and the reason are echoed in the body so an agent CLI that reads
+/// the response can tell the user exactly which host to add to the allow-list,
+/// rather than surfacing an opaque connection failure.
+fn write_deny(stream: &mut TcpStream, host: &str) {
+    let body = format!(
+        "Blocked by Hephaestus sandbox.\n\n\
+         Host: {host}\n\
+         This environment's network policy does not permit traffic to this host.\n\n\
+         To unblock, add it to the allowed hosts for this project \
+         (wildcards accepted, e.g. `*.{host}`), or set the network policy to \
+         permissive.\n"
+    );
     let header = format!(
-        "HTTP/1.1 407 Proxy Authentication Required\r\n\
+        "HTTP/1.1 403 Blocked by sandbox policy\r\n\
          X-Hephaestus-Block: true\r\n\
-         Content-Type: text/plain\r\n\
+         X-Hephaestus-Block-Host: {host}\r\n\
+         Content-Type: text/plain; charset=utf-8\r\n\
          Content-Length: {}\r\n\
          Connection: close\r\n\r\n",
         body.len()
     );
     let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(body);
+    let _ = stream.write_all(body.as_bytes());
 }
 
 fn drain_headers(reader: &mut BufReader<TcpStream>) -> io::Result<()> {

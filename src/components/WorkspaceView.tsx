@@ -9,7 +9,7 @@ import { addRecent, getRecents, removeRecent } from "../store/recents";
 import { getOpenProjects, saveOpenProjects } from "../store/openProjects";
 import { getSession, getBranchSessions, getWorktreeAgentSession, getRootSessionsForProject, getAllSessions, getBranchPath, getProjectPath, saveSession, setSessionConversationId, markSessionClosed, markSessionOpen, removeBranchByPath, pruneSessions, type WorktreeSession } from "../store/sessions";
 import { getRuntimeState, setRuntimeState } from "../lib/runtimeState";
-import { dbLoadAppState } from "../lib/db";
+import { loadProjectSettings } from "./ProjectSettingsPanel/useProjectSettings";
 import { getTabs, upsertTab, removeTab, type PersistedTab } from "../store/tabs";
 import { saveChatHistory } from "../lib/chatHistory";
 import type { BranchInfo } from "../types/git";
@@ -227,6 +227,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
   // Delete workspace dialog state
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
+  /// Message from a project-policy refusal at spawn time. Rendered as a
+  /// dismissible notice near the bottom of the window.
+  const [policyError, setPolicyError] = useState<string | null>(null);
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [inlineCreateProjectId, setInlineCreateProjectId] = useState<string | null>(null);
@@ -822,49 +825,62 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
       const channel = new Channel<{ session_id: string; data: string }>();
 
-      // Build isolation spec for ALL PTY sessions when isolation is enabled.
-      // Agent sessions: full sandbox (network filter on Linux/macOS, Job Object on Windows).
-      // Terminal sessions: lifecycle-only (Job Object on Windows, process group on Linux/macOS).
-      const shouldIsolate = getSettings().isolateAgents;
-      const sandboxParam = shouldIsolate ? (agent ? {
-        mode: "enforce",
-        allowed_hosts: [
-          "*.anthropic.com",
-          "*.openai.com",
-          "*.google.com",
-          "*.googleapis.com",
-          "github.com",
-          "*.github.com",
-          "*.githubusercontent.com",
-          "registry.npmjs.org",
-          "*.npmjs.org",
-          "pypi.org",
-          "*.pypi.org",
-        ],
-        rw_paths: [cwd],
-        ro_paths: [] as string[],
-      } : {
-        mode: "lifecycle",
-        allowed_hosts: [] as string[],
-        rw_paths: [] as string[],
-        ro_paths: [] as string[],
-      }) : null;
+      // Project settings govern every PTY session — agent tabs and plain
+      // terminals alike. Loaded once here and mapped into the two backend
+      // params below; previously only `database.isolationEnabled` was read and
+      // the rest of the panel had no effect on anything.
+      const projectSettings = await loadProjectSettings(projectId);
 
-      await invoke<void>("create_pty_session", {
-        sessionId,
-        cwd,
-        rows: 24,
-        cols: 80,
-        command: agent ?? null,
-        args,
-        sandbox: sandboxParam,
-        dbIsolation: await dbLoadAppState().then(rows => {
-          const raw = new Map(rows).get(`project-settings:${projectId}`);
-          const s = raw ? (JSON.parse(raw) as { database?: { isolationEnabled?: boolean } }) : {};
-          return s.database?.isolationEnabled ?? false;
-        }).catch(() => false),
-        onEvent: channel,
-      });
+      // The global "isolate agents" switch is the master off-switch. With it on,
+      // the per-project sandbox mode decides the posture. Terminals are no
+      // longer pinned to lifecycle-only: a shell can reach the network exactly
+      // as an agent can, so it is governed exactly as an agent is.
+      const shouldIsolate = getSettings().isolateAgents;
+      const sandboxParam = shouldIsolate ? {
+        mode: projectSettings.sandbox.mode === "off" ? "lifecycle" : projectSettings.sandbox.mode,
+        allowed_hosts: projectSettings.network.allowHosts,
+        block_hosts: projectSettings.network.blockHosts,
+        network_default_allow: projectSettings.network.policy === "permissive",
+        // Filesystem confinement has no Windows implementation yet, so these
+        // are carried for the platforms that can honour them and are inert here.
+        rw_paths: [cwd, ...projectSettings.filesystem.rwPaths.filter((p) => p !== ".")],
+        ro_paths: projectSettings.filesystem.roPaths,
+        resources: {
+          max_memory_mb: projectSettings.resources.maxMemoryMb,
+          max_processes: projectSettings.resources.maxProcesses,
+          max_disk_write_mb: projectSettings.resources.maxDiskWriteMb,
+          cpu_weight: projectSettings.resources.cpuWeight,
+        },
+      } : null;
+
+      // Launch policy — what may start, as opposed to how it is confined.
+      // Enforced in Rust before the PTY is opened; the menu filtering is only
+      // presentation.
+      const policyParam = {
+        permitted_agents: projectSettings.agents.permitted,
+        allow_skip_permissions: projectSettings.permissions.allowSkipPermissions,
+        skip_permission_flags: AGENT_CONFIGS.flatMap((a) => a.autoApproveArgs ?? []),
+      };
+
+      try {
+        await invoke<void>("create_pty_session", {
+          sessionId,
+          cwd,
+          rows: 24,
+          cols: 80,
+          command: agent ?? null,
+          args,
+          sandbox: sandboxParam,
+          policy: policyParam,
+          dbIsolation: projectSettings.database.isolationEnabled,
+          onEvent: channel,
+        });
+      } catch (e) {
+        // Surface the reason, then rethrow so the tab is never added and the
+        // existing caller-side cleanup still runs.
+        setPolicyError(String(e));
+        throw e;
+      }
 
       // Hand the channel to the Session Manager. It owns the subscription, runs
       // work-done detection on raw bytes, and maintains the replay buffer.
@@ -2154,7 +2170,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                                 key={g.id}
                                                 className="sb-dropdown-item sb-dropdown-item--ghost"
                                                 onClick={() => { openSession(g.name, wt.path, project.id, g.agent, undefined, undefined, g.conversationId, undefined, undefined, false, g.id).catch(() => {}); markSessionOpen(g.id); }}
-                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null)}
+                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null, false, false, g.id)}
                                               >
                                                 <AgentIcon hint={g.agent} size={11} />
                                                 <span className="sb-dropdown-item-name">{g.name}</span>
@@ -2184,7 +2200,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                                 key={g.id}
                                                 className="sb-dropdown-item sb-dropdown-item--ghost"
                                                 onClick={() => { openSession(g.name, wt.path, project.id, undefined, undefined, undefined, undefined, undefined, undefined, false, g.id).catch(() => {}); markSessionOpen(g.id); }}
-                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null)}
+                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null, false, false, g.id)}
                                               >
                                                 <TerminalSquare size={11} />
                                                 <span className="sb-dropdown-item-name">{g.name}</span>
@@ -2797,6 +2813,30 @@ export function WorkspaceView({ zen, name, path }: Props) {
           onRemoveProject={removeProject}
           onAtlasIndexingStart={(path) => setAtlasIndexingPaths((prev) => prev.includes(path) ? prev : [...prev, path])}
         />
+      )}
+
+      {/* Launch refused by project policy (non-permitted agent, blocked
+          skip-permissions flag). The spawn throws before any PTY exists and
+          every caller swallows that rejection, so without this the click would
+          appear to do nothing at all. */}
+      {policyError && (
+        <div
+          role="alert"
+          onClick={() => setPolicyError(null)}
+          style={{
+            position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)",
+            zIndex: 9999, maxWidth: 460, cursor: "pointer",
+            padding: "10px 14px", borderRadius: 8,
+            background: "var(--tempest-bg-elevated)",
+            border: "1px solid var(--tempest-border-default)",
+            color: "var(--tempest-fg-default)",
+            font: "13px/1.5 var(--tempest-font-sans)",
+            boxShadow: "0 6px 24px rgba(0,0,0,0.28)",
+          }}
+        >
+          {policyError}
+          <span style={{ opacity: 0.55, marginLeft: 8, fontSize: 11 }}>click to dismiss</span>
+        </div>
       )}
 
       {/* Delete workspace dialog */}

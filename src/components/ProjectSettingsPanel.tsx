@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Shield, Globe, HardDrive, Lock, Database, Bot } from "lucide-react";
+import { X, Shield, Globe, HardDrive, Lock, Database, Bot, Gauge } from "lucide-react";
 import { SandboxSection }     from "./ProjectSettingsPanel/SandboxSection";
 import { NetworkSection }     from "./ProjectSettingsPanel/NetworkSection";
 import { FilesystemSection }  from "./ProjectSettingsPanel/FilesystemSection";
 import { PermissionsSection } from "./ProjectSettingsPanel/PermissionsSection";
+import { ResourcesSection }   from "./ProjectSettingsPanel/ResourcesSection";
 import { DatabaseSection }    from "./ProjectSettingsPanel/DatabaseSection";
 import { AgentSection }       from "./ProjectSettingsPanel/AgentSection";
 import { useProjectSettings } from "./ProjectSettingsPanel/useProjectSettings";
@@ -13,7 +14,7 @@ import "./ProjectSettingsPanel.css";
 
 type Section =
   | "sandbox" | "network" | "filesystem" | "permissions"
-  | "database" | "agent";
+  | "resources" | "database" | "agent";
 
 interface Props {
   projectId: string;
@@ -54,6 +55,7 @@ export function ProjectSettingsPanel({ projectId, projectPath, projectName, onCl
             <NavItem icon={<Globe size={14} />}     label="Network"     active={activeSection === "network"}     onClick={() => setActiveSection("network")} />
             <NavItem icon={<HardDrive size={14} />} label="Filesystem"  active={activeSection === "filesystem"}  onClick={() => setActiveSection("filesystem")} />
             <NavItem icon={<Lock size={14} />}      label="Permissions" active={activeSection === "permissions"} onClick={() => setActiveSection("permissions")} />
+            <NavItem icon={<Gauge size={14} />}     label="Resources"   active={activeSection === "resources"}   onClick={() => setActiveSection("resources")} />
 
             <div className="sp-nav-group-label sp-nav-group-label--lower">Agent</div>
             <NavItem icon={<Bot size={14} />}       label="Agents"   active={activeSection === "agent"}    onClick={() => setActiveSection("agent")} />
@@ -67,6 +69,7 @@ export function ProjectSettingsPanel({ projectId, projectPath, projectName, onCl
             {activeSection === "network"     && <NetworkSection     value={settings.network}     onChange={(network) => setSettings({ ...settings, network })} />}
             {activeSection === "filesystem"  && <FilesystemSection  value={settings.filesystem}  onChange={(filesystem) => setSettings({ ...settings, filesystem })} />}
             {activeSection === "permissions" && <PermissionsSection value={settings.permissions} onChange={(permissions) => setSettings({ ...settings, permissions })} />}
+            {activeSection === "resources"   && <ResourcesSection   value={settings.resources}   onChange={(resources) => setSettings({ ...settings, resources })} />}
             {activeSection === "agent"       && <AgentSection       value={settings.agents}      onChange={(agents) => setSettings({ ...settings, agents })} />}
             {activeSection === "database"    && <DatabaseSection workspacePath={projectPath} projectName={projectName} value={settings.database} onChange={(database) => setSettings({ ...settings, database })} />}
           </div>

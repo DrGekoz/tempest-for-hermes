@@ -2454,10 +2454,88 @@ struct SandboxSpec {
     mode: String,
     /// Hostname patterns the process may reach (e.g. `**.github.com`).
     allowed_hosts: Vec<String>,
+    /// Hostname patterns the process may never reach. Beats `allowed_hosts`.
+    #[serde(default)]
+    block_hosts: Vec<String>,
+    /// `true` mirrors the "permissive — allow all, block specific" policy;
+    /// `false` mirrors "restrictive — block all, allow specific".
+    #[serde(default)]
+    network_default_allow: bool,
     /// Paths mounted read-write inside the sandbox.
     rw_paths: Vec<String>,
     /// Paths mounted read-only inside the sandbox.
     ro_paths: Vec<String>,
+    /// OS-level resource quotas. Enforced on Windows via the Job Object.
+    #[serde(default)]
+    resources: SandboxResources,
+}
+
+/// Project policy governing *what may be launched*, as distinct from
+/// [`SandboxSpec`], which governs how a running process is confined.
+///
+/// Checked before the PTY is opened so a refusal costs nothing. This is the
+/// authoritative gate: the frontend also hides non-permitted agents, but that
+/// is presentation, and presentation is not enforcement.
+///
+/// Both checks apply only to *agent* sessions — those spawned with an explicit
+/// `command`. A plain shell session has no agent to vet, and an agent the user
+/// types by hand into that shell bypasses this gate entirely; catching those
+/// needs process-level interception, which is not wired up.
+#[derive(serde::Deserialize, Default)]
+struct SessionPolicy {
+    /// Agent CLI names (`AGENT_CONFIGS[].hint`) permitted in this project.
+    #[serde(default)]
+    permitted_agents: Vec<String>,
+    /// When `false`, an agent invocation carrying any flag in
+    /// `skip_permission_flags` is refused.
+    #[serde(default)]
+    allow_skip_permissions: bool,
+    /// The bypass flags to look for, sourced from `AGENT_CONFIGS[].autoApproveArgs`
+    /// so the list stays single-sourced in the frontend rather than duplicated here.
+    #[serde(default)]
+    skip_permission_flags: Vec<String>,
+}
+
+/// Per-session resource quotas. Every field is optional; `None` leaves the
+/// corresponding limit at the OS default.
+#[derive(serde::Deserialize, Default)]
+struct SandboxResources {
+    #[serde(default)]
+    max_memory_mb: Option<u64>,
+    #[serde(default)]
+    max_processes: Option<u32>,
+    /// Accepted and carried through, but no Windows Job Object limit
+    /// corresponds to lifetime disk-write bytes — enforced on Linux only.
+    #[serde(default)]
+    max_disk_write_mb: Option<u64>,
+    /// Relative CPU share, 1–10 000 (cgroups scale). The Windows backend maps
+    /// this onto the 1–9 weight that job CPU rate control accepts.
+    #[serde(default)]
+    cpu_weight: Option<u32>,
+}
+
+impl SandboxResources {
+    /// Convert to the SDK's limit type. MB → bytes happens here so the spec
+    /// stays in hephaestus' canonical unit.
+    ///
+    /// Applied on every isolation path, including lifecycle-only sessions:
+    /// a quota is a property of the session, not of its network posture.
+    fn to_limits(&self) -> hephaestus::ResourceLimits {
+        let mut b = hephaestus::ResourceLimits::builder();
+        if let Some(mb) = self.max_memory_mb {
+            b = b.max_memory_bytes(mb.saturating_mul(1024 * 1024));
+        }
+        if let Some(n) = self.max_processes {
+            b = b.max_processes(n);
+        }
+        if let Some(mb) = self.max_disk_write_mb {
+            b = b.max_disk_write_bytes(mb.saturating_mul(1024 * 1024));
+        }
+        if let Some(w) = self.cpu_weight {
+            b = b.cpu_weight(w);
+        }
+        b.build()
+    }
 }
 
 struct PtySession {
@@ -2609,10 +2687,38 @@ async fn create_pty_session(
     command: Option<String>,
     args: Option<Vec<String>>,
     sandbox: Option<SandboxSpec>,
+    policy: Option<SessionPolicy>,
     db_isolation: Option<bool>,
     on_event: Channel<PtyOutputPayload>,
     state: tauri::State<'_, PtyState>,
 ) -> Result<(), String> {
+    // ── Launch policy ────────────────────────────────────────────────────────
+    // Refuse disallowed launches before any resource is acquired: no PTY, no
+    // Docker branch, no Job Object. Only agent sessions are vetted — `command`
+    // is `None` for a plain shell.
+    if let (Some(pol), Some(agent)) = (policy.as_ref(), command.as_ref()) {
+        if !pol.permitted_agents.iter().any(|a| a == agent) {
+            return Err(format!(
+                "`{agent}` is not a permitted agent for this project. \
+                 Enable it in Project Settings → Agents."
+            ));
+        }
+
+        if !pol.allow_skip_permissions {
+            if let Some(args) = args.as_ref() {
+                if let Some(flag) = args
+                    .iter()
+                    .find(|a| pol.skip_permission_flags.iter().any(|f| f == *a))
+                {
+                    return Err(format!(
+                        "`{flag}` is blocked for this project. \
+                         Enable it in Project Settings → Permissions."
+                    ));
+                }
+            }
+        }
+    }
+
     // Resolve (and cache) the shell once. Cheap if already populated; the first
     // call performs the ~100–200ms probe so no individual session pays for it twice.
     SHELL.get_or_init(resolve_shell);
@@ -2708,6 +2814,15 @@ async fn create_pty_session(
                     if cfg!(windows) {
                         let isolate = ISOLATE.get_or_init(hephaestus::platform);
                         let spec = hephaestus::EnvironmentSpec::builder(env_id.as_str(), &cwd)
+                            // Explicitly Off. The builder defaults to Enforce with an
+                            // empty (deny-all) policy — which, now that the Windows
+                            // backend honours network policy, would start a CONNECT
+                            // proxy and block every request on a session the user
+                            // asked NOT to sandbox. The Job Object is created either
+                            // way, so kill-on-close is unaffected.
+                            .mode(hephaestus::SandboxMode::Off)
+                            // Quotas still apply: they are independent of sandbox mode.
+                            .resources(sb.resources.to_limits())
                             .build()
                             .map_err(|e| e.to_string())?;
                         let handle = isolate.create(spec).map_err(|e| e.to_string())?;
@@ -2728,10 +2843,14 @@ async fn create_pty_session(
                         "monitor" => hephaestus::SandboxMode::Monitor,
                         _ => hephaestus::SandboxMode::Enforce,
                     };
-                    let mut builder =
-                        hephaestus::EnvironmentSpec::builder(env_id.as_str(), &cwd).mode(mode);
+                    let mut builder = hephaestus::EnvironmentSpec::builder(env_id.as_str(), &cwd)
+                        .mode(mode)
+                        .network_default_allow(sb.network_default_allow);
                     for host in &sb.allowed_hosts {
                         builder = builder.allow_host(host.as_str());
+                    }
+                    for host in &sb.block_hosts {
+                        builder = builder.block_host(host.as_str());
                     }
                     for p in &sb.rw_paths {
                         builder = builder.mount(hephaestus::PathMount::rw(p));
@@ -2739,6 +2858,8 @@ async fn create_pty_session(
                     for p in &sb.ro_paths {
                         builder = builder.mount(hephaestus::PathMount::ro(p));
                     }
+
+                    builder = builder.resources(sb.resources.to_limits());
                     let spec = builder.build().map_err(|e| e.to_string())?;
                     let handle = isolate.create(spec).map_err(|e| e.to_string())?;
 

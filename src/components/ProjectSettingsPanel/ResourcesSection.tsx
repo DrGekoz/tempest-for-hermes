@@ -1,4 +1,4 @@
-import { useState } from "react";
+import type { ProjectSettings } from "./useProjectSettings";
 
 function NumericField({
   label, desc, unit, value, onChange, min, max, placeholder,
@@ -27,51 +27,65 @@ function NumericField({
   );
 }
 
-export function ResourcesSection() {
-  const [maxMemory,  setMaxMemory]  = useState("");
-  const [maxProcs,   setMaxProcs]   = useState("");
-  const [diskLimit,  setDiskLimit]  = useState("");
-  const [cpuWeight,  setCpuWeight]  = useState("");
+type Resources = ProjectSettings["resources"];
+
+/// Blank input → `null` (no limit). Anything unparseable is also `null` rather
+/// than `NaN`, so a half-typed value never reaches the backend as a quota.
+const toValue = (s: string): number | null => {
+  const n = Number(s);
+  return s.trim() === "" || !Number.isFinite(n) ? null : n;
+};
+
+const toInput = (n: number | null): string => (n === null ? "" : String(n));
+
+export function ResourcesSection({
+  value, onChange,
+}: {
+  value: Resources;
+  onChange: (v: Resources) => void;
+}) {
+  const set = <K extends keyof Resources>(key: K) => (raw: string) =>
+    onChange({ ...value, [key]: toValue(raw) });
 
   return (
     <div className="sp-section">
       <div className="sp-section-heading">Resource Limits</div>
       <p className="sp-section-desc">
-        Cap what agent sessions can consume per project. Leave blank for no limit.
+        Cap what sessions can consume per project. Leave blank for no limit.
         Enforced via OS-level Job Objects; applied at session spawn.
       </p>
       <div className="psp-fields">
         <NumericField
           label="Max memory"
-          desc="Peak RSS limit per agent process."
+          desc="Peak memory limit per process in the session."
           unit="MB"
-          value={maxMemory}
-          onChange={setMaxMemory}
+          value={toInput(value.maxMemoryMb)}
+          onChange={set("maxMemoryMb")}
           min={64}
         />
         <NumericField
           label="Max processes"
-          desc="Maximum child processes an agent may spawn."
-          value={maxProcs}
-          onChange={setMaxProcs}
+          desc="Maximum concurrent processes the session may run."
+          value={toInput(value.maxProcesses)}
+          onChange={set("maxProcesses")}
           min={1}
         />
         <NumericField
           label="Disk write limit"
-          desc="Total bytes written to disk per session."
+          desc="Total bytes written to disk per session. Not enforced on Windows."
           unit="MB"
-          value={diskLimit}
-          onChange={setDiskLimit}
+          value={toInput(value.maxDiskWriteMb)}
+          onChange={set("maxDiskWriteMb")}
           min={1}
         />
         <NumericField
           label="CPU weight"
-          desc="Relative scheduling priority (1–1024). Lower = less CPU share."
-          value={cpuWeight}
-          onChange={setCpuWeight}
+          desc="Relative scheduling share (1–10000). Lower = less CPU."
+          value={toInput(value.cpuWeight)}
+          onChange={set("cpuWeight")}
           min={1}
-          max={1024}
-          placeholder="1024"
+          max={10000}
+          placeholder="OS default"
         />
       </div>
     </div>

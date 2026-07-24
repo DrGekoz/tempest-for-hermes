@@ -12,6 +12,13 @@ export interface ProjectSettings {
   permissions: { allowSkipPermissions: boolean };
   agents: { permitted: string[] };
   database: { isolationEnabled: boolean };
+  /// OS-level quotas per session. `null` leaves a limit at the OS default.
+  resources: {
+    maxMemoryMb: number | null;
+    maxProcesses: number | null;
+    maxDiskWriteMb: number | null;
+    cpuWeight: number | null;
+  };
 }
 
 // Defaults mirror each section's former local-useState initial values.
@@ -22,6 +29,7 @@ const DEFAULTS: ProjectSettings = {
   permissions: { allowSkipPermissions: true },
   agents: { permitted: AGENT_CONFIGS.map((a) => a.hint) },
   database: { isolationEnabled: false },
+  resources: { maxMemoryMb: null, maxProcesses: null, maxDiskWriteMb: null, cpuWeight: null },
 };
 
 const keyFor = (projectId: string) => `project-settings:${projectId}`;
@@ -36,7 +44,28 @@ function withDefaults(p: Partial<ProjectSettings>): ProjectSettings {
     permissions: { ...DEFAULTS.permissions, ...p.permissions },
     agents: { ...DEFAULTS.agents, ...p.agents },
     database: { ...DEFAULTS.database, ...p.database },
+    resources: { ...DEFAULTS.resources, ...p.resources },
   };
+}
+
+/// Read a project's settings outside React.
+///
+/// The spawn path needs these before a PTY exists, where the hook cannot run.
+/// Shares `keyFor` and `withDefaults` with the hook so both paths agree on
+/// defaults — a project that has never opened the settings panel still gets a
+/// complete, enforceable blob rather than `undefined`.
+///
+/// Never throws: a missing or corrupt row falls back to defaults, because
+/// failing to parse settings must not stop a terminal from opening.
+export async function loadProjectSettings(projectId: string): Promise<ProjectSettings> {
+  try {
+    const rows = await dbLoadAppState();
+    const raw = new Map(rows).get(keyFor(projectId));
+    return withDefaults(raw ? (JSON.parse(raw) as Partial<ProjectSettings>) : {});
+  } catch (e) {
+    console.error("[projectSettings] load failed, using defaults:", e);
+    return DEFAULTS;
+  }
 }
 
 export function useProjectSettings(projectId: string, projectPath: string) {

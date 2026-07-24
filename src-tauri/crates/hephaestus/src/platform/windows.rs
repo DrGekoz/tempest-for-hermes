@@ -67,10 +67,13 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
+    JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+    JOB_OBJECT_CPU_RATE_CONTROL_WEIGHT_BASED, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+    JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOB_OBJECT_LIMIT_PROCESS_MEMORY,
 };
 use windows::Win32::System::Threading::{
     OpenProcess, TerminateProcess, PROCESS_ALL_ACCESS, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
@@ -78,7 +81,8 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::IO::DeviceIoControl;
 
 use crate::{
-    EnvironmentSpec, HephaestusError, Isolate, IsolateHandle, SandboxedCommand,
+    proxy::{ConnectProxy, ProxyConfig},
+    EnvironmentSpec, HephaestusError, Isolate, IsolateHandle, SandboxMode, SandboxedCommand,
 };
 
 // ─── RAII HANDLE wrapper ───────────────────────────────────────────────────────
@@ -115,6 +119,18 @@ struct WindowsEnvState {
     spec: EnvironmentSpec,
     /// The Job Object all processes in this environment are assigned to.
     job: JobHandle,
+    /// In-process CONNECT proxy enforcing [`NetworkPolicy`](crate::NetworkPolicy).
+    ///
+    /// `None` when the environment is in [`SandboxMode::Off`] or the proxy
+    /// failed to bind. Dropped with this state, which stops the accept thread.
+    ///
+    /// Unlike macOS (Seatbelt) and Linux (netns), Windows has no kernel
+    /// mechanism to *force* traffic through this proxy — Job Objects carry no
+    /// network dimension. Confinement here is by `http_proxy` environment
+    /// injection in [`WindowsIsolate::prepare`], which every mainstream HTTP
+    /// client honours but a process can deliberately ignore. Treat it as a
+    /// policy filter, not a containment boundary.
+    proxy: Option<ConnectProxy>,
 }
 
 // ─── WindowsIsolate ──────────────────────────────────────────────────────────
@@ -134,6 +150,23 @@ impl WindowsIsolate {
 impl Isolate for WindowsIsolate {
     fn create(&self, spec: EnvironmentSpec) -> Result<IsolateHandle, HephaestusError> {
         let id = spec.id.clone();
+
+        // Start the CONNECT proxy unless sandboxing is off. Mirrors the macOS
+        // and Linux backends so network policy behaves identically on all three.
+        //
+        // A proxy that fails to bind degrades to "no network filtering" rather
+        // than failing the spawn: losing the terminal outright is a worse
+        // outcome than losing the filter, and `prepare` simply injects no proxy
+        // variables when this is `None`.
+        let proxy = if spec.mode == SandboxMode::Off {
+            None
+        } else {
+            let cfg = match spec.mode {
+                SandboxMode::Monitor => ProxyConfig::monitor(spec.network.clone()),
+                _ => ProxyConfig::enforce(spec.network.clone()),
+            };
+            ConnectProxy::start(cfg).ok()
+        };
 
         // SAFETY: every Win32 call below operates on a handle we create and own
         // in this scope; on any error path we close the handle before returning.
@@ -173,10 +206,36 @@ impl Isolate for WindowsIsolate {
                 ));
             }
 
+            // CPU weight lives in a separate information class from the
+            // extended limits above, so it needs its own call.
+            //
+            // Windows weight-based CPU rate control accepts 1–9, while
+            // `ResourceLimits::cpu_weight` is documented as a cgroups-style
+            // 1–10 000. Map proportionally and clamp — the value is a relative
+            // share on both sides, so the scale change is lossy but faithful.
+            //
+            // Failure here is non-fatal: CPU rate control is unavailable on
+            // some editions and older builds, and losing a scheduling hint is
+            // not worth failing the whole environment for.
+            if let Some(weight) = spec.resources.cpu_weight {
+                let scaled = ((u64::from(weight) * 9) / 10_000).clamp(1, 9) as u32;
+                let cpu_info = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
+                    ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
+                        | JOB_OBJECT_CPU_RATE_CONTROL_WEIGHT_BASED,
+                    Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 { Weight: scaled },
+                };
+                let _ = SetInformationJobObject(
+                    job,
+                    JobObjectCpuRateControlInformation,
+                    &cpu_info as *const _ as *const core::ffi::c_void,
+                    size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+                );
+            }
+
             self.envs
                 .lock()
                 .unwrap()
-                .insert(id.clone(), WindowsEnvState { spec, job: JobHandle(job) });
+                .insert(id.clone(), WindowsEnvState { spec, job: JobHandle(job), proxy });
         }
 
         Ok(IsolateHandle::new(id))
@@ -191,12 +250,36 @@ impl Isolate for WindowsIsolate {
         let envs = self.envs.lock().unwrap();
         let state = envs.get(handle.id()).ok_or(HephaestusError::HandleNotFound)?;
 
-        // No argv wrapping is needed on Windows: confinement is enforced by
-        // assigning the spawned process to the Job Object in `post_spawn`.
+        // No argv wrapping is needed on Windows: process confinement is enforced
+        // by assigning the spawned process to the Job Object in `post_spawn`.
+        //
+        // Network policy is the exception — Job Objects have no network
+        // dimension, so it rides on proxy environment variables pointing at the
+        // in-process CONNECT proxy started in `create`. Both cases are emitted:
+        // curl, git and the Unix-derived toolchain read the lowercase names,
+        // while Node, .NET and PowerShell read the uppercase ones.
+        let mut env: HashMap<OsString, OsString> = HashMap::new();
+        if let Some(proxy) = &state.proxy {
+            let url: OsString = proxy.url().into();
+            env.insert("http_proxy".into(), url.clone());
+            env.insert("https_proxy".into(), url.clone());
+            env.insert("HTTP_PROXY".into(), url.clone());
+            env.insert("HTTPS_PROXY".into(), url.clone());
+            env.insert("ALL_PROXY".into(), url.clone());
+            env.insert("all_proxy".into(), url);
+
+            // Keep loopback traffic off the proxy: dev servers, language
+            // servers and the app's own IPC would otherwise round-trip through
+            // it and be judged against the host policy.
+            let no_proxy: OsString = "localhost,127.0.0.1,::1".into();
+            env.insert("NO_PROXY".into(), no_proxy.clone());
+            env.insert("no_proxy".into(), no_proxy);
+        }
+
         Ok(SandboxedCommand {
             program: program.to_os_string(),
             args: args.to_vec(),
-            env: HashMap::new(),
+            env,
             working_dir: Some(state.spec.root.clone()),
         })
     }
@@ -227,10 +310,11 @@ impl Isolate for WindowsIsolate {
     }
 
     fn destroy(&self, handle: IsolateHandle) -> Result<(), HephaestusError> {
-        // Removing the state drops `WindowsEnvState`, which drops `JobHandle`,
-        // which calls `CloseHandle`. Because the job was created with
-        // `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, closing the last handle
-        // terminates every process still assigned to the job.
+        // Removing the state drops `WindowsEnvState`, which drops both:
+        //   * `JobHandle` → `CloseHandle`. Because the job was created with
+        //     `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, closing the last handle
+        //     terminates every process still assigned to the job.
+        //   * `ConnectProxy` → signals the accept thread to stop and joins it.
         self.envs.lock().unwrap().remove(handle.id());
         Ok(())
     }
