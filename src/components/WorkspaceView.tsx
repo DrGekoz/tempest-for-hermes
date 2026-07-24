@@ -98,6 +98,19 @@ interface Props {
 // treated as git worktrees in the sidebar.
 const TEMPEST_INTERNAL_DIRS = new Set(["atlas", "logs"]);
 
+// One sidebar row: either a live session or the ghost of a closed one.
+type SbRow = { id: string; at: string; live?: Session; ghost?: WorktreeSession };
+
+// Interleave live and ghost rows in creation order. Rendering live rows first
+// and ghosts after made a session jump position the moment it was closed or
+// re-opened; ordering both by the persisted createdAt keeps every row put.
+function sbRows(live: Session[], ghosts: WorktreeSession[]): SbRow[] {
+  return [
+    ...live.map((s): SbRow => ({ id: s.id, at: s.createdAt, live: s })),
+    ...ghosts.map((g): SbRow => ({ id: g.id, at: g.createdAt, ghost: g })),
+  ].sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+}
+
 import { folderName, timeAgo } from "../lib/format";
 import { buildAgentArgs } from "../lib/agentArgs";
 import {
@@ -350,14 +363,16 @@ export function WorkspaceView({ zen, name, path }: Props) {
       }
       pruneSessions(validIds);
 
-      // Collect restore items in saved tab-bar order; active session opened last so
-      // its setActiveSessionId call wins and it is visually focused on launch.
+      // Collect restore items in saved tab-bar order. Focus is restored in one
+      // explicit call after the loop — opening the active session last would
+      // shuffle it to the end of the order, and that mutated order is what the
+      // sessionOrder effect writes back, so the tab bar drifted every launch.
       const { sessionOrder, activeInstanceId: savedActiveId } = getRuntimeState();
       const savedTabs = getTabs();
       const orderMap = new Map(sessionOrder.map((id, i) => [id, i]));
       const openedIds = new Set<string>();
 
-      type RestoreItem = { id: string; isActive: boolean; sortIndex: number; open: () => Promise<void> };
+      type RestoreItem = { id: string; sortIndex: number; open: () => Promise<void> };
       const items: RestoreItem[] = [];
 
       for (const { project, wts } of allProjectData) {
@@ -368,7 +383,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
             if (saved.closed === true) continue;
             items.push({
               id: saved.id,
-              isActive: saved.id === savedActiveId,
               sortIndex: orderMap.get(saved.id) ?? Infinity,
               open: () => openSession(
                 saved.name, wt.path, project.id, saved.agent,
@@ -386,7 +400,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
           if (saved.closed === true) continue;
           items.push({
             id: saved.id,
-            isActive: saved.id === savedActiveId,
             sortIndex: orderMap.get(saved.id) ?? Infinity,
             open: () => openSession(
               saved.name, project.path, project.id, saved.agent,
@@ -405,16 +418,16 @@ export function WorkspaceView({ zen, name, path }: Props) {
       // re-open a tab the user explicitly closed. The ghost handles re-entry instead.
       const openProjectIds = new Set(projects.map((p) => p.id));
       for (const tab of savedTabs.filter((t) => openProjectIds.has(t.projectId) && t.kind !== "chat")) {
-        const newId = crypto.randomUUID();
         items.push({
           id: tab.instanceId,
-          isActive: tab.instanceId === savedActiveId,
           sortIndex: orderMap.get(tab.instanceId) ?? Infinity,
           open: async () => {
             setSessions((prev) => {
               if (prev.some((s) => s.instanceId === tab.instanceId)) return prev;
               return [...prev, {
-                id: newId,
+                // id === instanceId, as everywhere else a tab is opened. Minting a
+                // separate id here left the saved active id unresolvable.
+                id: tab.instanceId,
                 instanceId: tab.instanceId,
                 name: tab.name,
                 cwd: tab.cwd,
@@ -425,16 +438,12 @@ export function WorkspaceView({ zen, name, path }: Props) {
                 metadata: { resumeCount: 0, hasBeenResumed: false },
               }];
             });
-            setActiveSessionId(newId);
+            setActiveSessionId(tab.instanceId);
           },
         });
       }
 
-      items.sort((a, b) => {
-        if (a.isActive !== b.isActive) return a.isActive ? 1 : -1;
-        if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
-        return 0;
-      });
+      items.sort((a, b) => a.sortIndex - b.sortIndex);
 
       // Open all top-level sessions in order.
       for (const item of items) { await item.open(); openedIds.add(item.id); }
@@ -465,10 +474,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
         }
       }
 
-      // Opening sub-sessions moves focus; restore it to the saved active session
-      // when that is a real (persisted) session — tabs are already handled by the
-      // active-opened-last ordering above.
-      if (savedActiveId && getSession(savedActiveId) && openedIds.has(savedActiveId)) {
+      // Every open above moved focus; put it back on the saved active session.
+      // Covers tab kinds too, now that a restored tab's id is its instanceId.
+      if (savedActiveId && openedIds.has(savedActiveId)) {
         setActiveSessionId(savedActiveId);
       }
     }
@@ -967,7 +975,10 @@ export function WorkspaceView({ zen, name, path }: Props) {
         noGit,
         sandboxed: shouldIsolate ? true : false,
         parentSessionId,
-        createdAt: new Date().toISOString(),
+        // The persisted stamp, not "now" — a restored or re-opened session must
+        // keep the creation order the sidebar lists it in. saveSession/the mirror
+        // already hold it by this point; the fallback covers unpersisted sessions.
+        createdAt: getSession(sessionId)?.createdAt ?? new Date().toISOString(),
         metadata: { resumeCount: 0, hasBeenResumed: false },
       };
 
@@ -1875,22 +1886,18 @@ export function WorkspaceView({ zen, name, path }: Props) {
                 {projects.map((project) => {
                   const projectSessions = sessions.filter((s) => s.projectId === project.id);
 
-                  // Canonical root session map
+                  // Root rows — live sessions plus the ghosts of closed ones, in
+                  // one creation-ordered list so neither group jumps the other.
                   const liveRootSessions = projectSessions.filter((s) => s.isRootSession && s.kind !== "diff" && !s.parentSessionId);
+                  const liveRootIds = new Set(liveRootSessions.map((s) => s.id));
                   const storedRootEntries = getRootSessionsForProject(project.path);
-                  const canonRoots = new Map<string, { session?: Session; ghost?: WorktreeSession }>();
-                  for (const s of liveRootSessions) canonRoots.set(s.id, { session: s });
-                  for (const g of storedRootEntries) {
-                    if (!canonRoots.has(g.id)) canonRoots.set(g.id, { ghost: g });
-                  }
+                  const rootRows = sbRows(liveRootSessions, storedRootEntries.filter((g) => !liveRootIds.has(g.id)));
 
                   const rootKey = project.path + "::root";
                   const rootExpanded = expandedWorktrees.has(rootKey);
-                  const liveRoots = [...canonRoots.values()].filter((e) => e.session).map((e) => e.session!);
-                  const ghostRoots = [...canonRoots.values()].filter((e) => !e.session && e.ghost);
-                  const rootAgents = liveRoots.filter((s) => s.agent);
-                  const rootTerminals = liveRoots.filter((s) => !s.agent);
-                  const primaryRootAgent = rootAgents[0];
+                  const rootAgentRows    = rootRows.filter((r) => !!(r.live ?? r.ghost)!.agent);
+                  const rootTerminalRows = rootRows.filter((r) =>  !(r.live ?? r.ghost)!.agent);
+                  const primaryRootAgent = rootAgentRows.find((r) => r.live)?.live;
                   const isGitProject = gitProjectIds.has(project.id) ||
                     project.worktrees.length > 0 ||
                     liveRootSessions.some((s) => !s.noGit) ||
@@ -1951,8 +1958,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
                           <Cpu size={11} className="sidebar-project-atlas-icon" aria-label="Token Intelligence indexed" />
                         )}
                         <ProjectWorkBadge sessionIds={sessions.filter((s) => s.projectId === project.id).map((s) => s.id)} />
-                        {(isGitProject || canonRoots.size > 0) && (
-                          <span className="sidebar-project-count">{project.worktrees.length + (canonRoots.size > 0 ? 1 : 0)}</span>
+                        {(isGitProject || rootRows.length > 0) && (
+                          <span className="sidebar-project-count">{project.worktrees.length + (rootRows.length > 0 ? 1 : 0)}</span>
                         )}
                         <Tooltip content="Project settings" placement="right">
                           <button
@@ -1987,7 +1994,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                       {project.expanded && (
                         <div className="sidebar-project-sessions">
                           {/* Root sessions — expandable row */}
-                          {(isGitProject || canonRoots.size > 0) && (
+                          {(isGitProject || rootRows.length > 0) && (
                             <div className="sb-worktree">
                               <div
                                 className="sb-worktree-row"
@@ -2006,8 +2013,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                 </button>
                               </div>
                               {rootExpanded && (() => {
-                                const rootAgentsEmpty = rootAgents.length === 0 && !ghostRoots.some((e) => !!e.ghost!.agent);
-                                const rootTerminalsEmpty = rootTerminals.length === 0 && !ghostRoots.some((e) => !e.ghost!.agent);
+                                const rootAgentsEmpty = rootAgentRows.length === 0;
+                                const rootTerminalsEmpty = rootTerminalRows.length === 0;
                                 return (
                                   <div className="sb-worktree-dropdown">
                                     {rootAgentsEmpty && rootTerminalsEmpty ? (
@@ -2018,7 +2025,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                       <>
                                         <div className="sb-dropdown-section">
                                           <span className="sb-dropdown-label">Agent Sessions</span>
-                                          {rootAgents.map((s) => (
+                                          {rootAgentRows.map(({ live: s, ghost }) => s ? (
                                             <button
                                               key={s.id}
                                               className={`sb-dropdown-item${s.id === activeSessionId ? " sb-dropdown-item--active" : ""}`}
@@ -2032,21 +2039,17 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                               )}
                                               <SidebarWorkBadge sessionId={s.id} />
                                             </button>
+                                          ) : (
+                                            <button
+                                              key={ghost!.id}
+                                              className="sb-dropdown-item sb-dropdown-item--ghost"
+                                              onClick={() => openSession(ghost!.name, project.path, project.id, ghost!.agent, undefined, undefined, ghost!.conversationId, true, ghost!.noGit, false, ghost!.id).catch(() => {})}
+                                              onContextMenu={(e) => openCtxMenu(e, null, project.path, project.id, null, false, true, ghost!.id)}
+                                            >
+                                              <AgentIcon hint={ghost!.agent} size={11} />
+                                              <span className="sb-dropdown-item-name">{ghost!.name}</span>
+                                            </button>
                                           ))}
-                                          {ghostRoots.filter((e) => !!e.ghost!.agent).map((entry) => {
-                                            const ghost = entry.ghost!;
-                                            return (
-                                              <button
-                                                key={ghost.id}
-                                                className="sb-dropdown-item sb-dropdown-item--ghost"
-                                                onClick={() => openSession(ghost.name, project.path, project.id, ghost.agent, undefined, undefined, ghost.conversationId, true, ghost.noGit, false, ghost.id).catch(() => {})}
-                                                onContextMenu={(e) => openCtxMenu(e, null, project.path, project.id, null, false, true, ghost.id)}
-                                              >
-                                                <AgentIcon hint={ghost.agent} size={11} />
-                                                <span className="sb-dropdown-item-name">{ghost.name}</span>
-                                              </button>
-                                            );
-                                          })}
                                           {rootAgentsEmpty && (
                                             <div className="sb-dropdown-empty-box">
                                               <span className="sb-dropdown-empty-text">No agent sessions</span>
@@ -2055,7 +2058,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                         </div>
                                         <div className="sb-dropdown-section">
                                           <span className="sb-dropdown-label">Terminals</span>
-                                          {rootTerminals.map((s) => (
+                                          {rootTerminalRows.map(({ live: s, ghost }) => s ? (
                                             <button
                                               key={s.id}
                                               className={`sb-dropdown-item${s.id === activeSessionId ? " sb-dropdown-item--active" : ""}`}
@@ -2065,21 +2068,17 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                               <TerminalSquare size={11} />
                                               <span className="sb-dropdown-item-name">{s.name}</span>
                                             </button>
+                                          ) : (
+                                            <button
+                                              key={ghost!.id}
+                                              className="sb-dropdown-item sb-dropdown-item--ghost"
+                                              onClick={() => openSession(ghost!.name, project.path, project.id, undefined, undefined, undefined, undefined, true, ghost!.noGit, false, ghost!.id).catch(() => {})}
+                                              onContextMenu={(e) => openCtxMenu(e, null, project.path, project.id, null, false, true, ghost!.id)}
+                                            >
+                                              <TerminalSquare size={11} />
+                                              <span className="sb-dropdown-item-name">{ghost!.name}</span>
+                                            </button>
                                           ))}
-                                          {ghostRoots.filter((e) => !e.ghost!.agent).map((entry) => {
-                                            const ghost = entry.ghost!;
-                                            return (
-                                              <button
-                                                key={ghost.id}
-                                                className="sb-dropdown-item sb-dropdown-item--ghost"
-                                                onClick={() => openSession(ghost.name, project.path, project.id, undefined, undefined, undefined, undefined, true, ghost.noGit, false, ghost.id).catch(() => {})}
-                                                onContextMenu={(e) => openCtxMenu(e, null, project.path, project.id, null, false, true, ghost.id)}
-                                              >
-                                                <TerminalSquare size={11} />
-                                                <span className="sb-dropdown-item-name">{ghost.name}</span>
-                                              </button>
-                                            );
-                                          })}
                                           {rootTerminalsEmpty && (
                                             <div className="sb-dropdown-empty-box">
                                               <span className="sb-dropdown-empty-text">No terminals</span>
@@ -2099,17 +2098,17 @@ export function WorkspaceView({ zen, name, path }: Props) {
                             const wtSessions = projectSessions.filter((s) => s.cwd === wt.path && !s.parentSessionId);
                             const subSessions = projectSessions.filter((s) => s.parentSessionId && wtSessions.some((ws) => ws.id === s.parentSessionId));
                             const allAtPath = [...wtSessions, ...subSessions];
-                            const wtAgents = allAtPath.filter((s) => s.agent);
-                            const wtTerminals = allAtPath.filter((s) => !s.agent && !s.kind);
                             const wtKindTabs = allAtPath.filter((s) => !s.agent && !!s.kind);
-                            const primaryAgent = wtAgents[0] ?? null;
                             // Every persisted non-sub session in this branch. Anything not
                             // matched by a live session id renders as a ghost — so closing one
-                            // session never affects another.
+                            // session never affects another. Live and ghost rows share one
+                            // creation-ordered list so a row keeps its place either way.
                             const liveIds = new Set(allAtPath.map((s) => s.id));
                             const ghostEntries = getBranchSessions(wt.path).filter((e) => !liveIds.has(e.id));
-                            const agentGhosts = ghostEntries.filter((e) => !!e.agent);
-                            const termGhosts  = ghostEntries.filter((e) => !e.agent);
+                            const wtRows = sbRows(allAtPath.filter((s) => !s.kind), ghostEntries);
+                            const wtAgentRows    = wtRows.filter((r) => !!(r.live ?? r.ghost)!.agent);
+                            const wtTerminalRows = wtRows.filter((r) =>  !(r.live ?? r.ghost)!.agent);
+                            const primaryAgent = wtAgentRows.find((r) => r.live)?.live ?? null;
                             const branchChatGhostTabs = getTabs().filter((t) => t.kind === "chat" && t.projectId === project.id && t.cwd === wt.path && !allAtPath.some((s) => s.kind === "chat"));
                             const wtExpanded = expandedWorktrees.has(wt.path);
 
@@ -2173,8 +2172,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                   </button>
                                 </div>
                                 {wtExpanded && (() => {
-                                  const wtAgentsEmpty = wtAgents.length === 0 && agentGhosts.length === 0;
-                                  const wtTerminalsEmpty = wtTerminals.length === 0 && termGhosts.length === 0;
+                                  const wtAgentsEmpty = wtAgentRows.length === 0;
+                                  const wtTerminalsEmpty = wtTerminalRows.length === 0;
                                   return (
                                     <div className="sb-worktree-dropdown">
                                       {wtAgentsEmpty && wtTerminalsEmpty && wtKindTabs.length === 0 && branchChatGhostTabs.length === 0 ? (
@@ -2185,7 +2184,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                         <>
                                           <div className="sb-dropdown-section">
                                             <span className="sb-dropdown-label">Agent Sessions</span>
-                                            {wtAgents.map((s) => (
+                                            {wtAgentRows.map(({ live: s, ghost: g }) => s ? (
                                               <button
                                                 key={s.id}
                                                 className={`sb-dropdown-item${s.id === activeSessionId ? " sb-dropdown-item--active" : ""}`}
@@ -2199,16 +2198,15 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                                 )}
                                                 <SidebarWorkBadge sessionId={s.id} />
                                               </button>
-                                            ))}
-                                            {agentGhosts.map((g) => (
+                                            ) : (
                                               <button
-                                                key={g.id}
+                                                key={g!.id}
                                                 className="sb-dropdown-item sb-dropdown-item--ghost"
-                                                onClick={() => { openSession(g.name, wt.path, project.id, g.agent, undefined, undefined, g.conversationId, undefined, undefined, false, g.id).catch(() => {}); markSessionOpen(g.id); }}
-                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null, false, false, g.id)}
+                                                onClick={() => { openSession(g!.name, wt.path, project.id, g!.agent, undefined, undefined, g!.conversationId, undefined, undefined, false, g!.id).catch(() => {}); markSessionOpen(g!.id); }}
+                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null, false, false, g!.id)}
                                               >
-                                                <AgentIcon hint={g.agent} size={11} />
-                                                <span className="sb-dropdown-item-name">{g.name}</span>
+                                                <AgentIcon hint={g!.agent} size={11} />
+                                                <span className="sb-dropdown-item-name">{g!.name}</span>
                                               </button>
                                             ))}
                                             {wtAgentsEmpty && (
@@ -2219,7 +2217,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                           </div>
                                           <div className="sb-dropdown-section">
                                             <span className="sb-dropdown-label">Terminals</span>
-                                            {wtTerminals.map((s) => (
+                                            {wtTerminalRows.map(({ live: s, ghost: g }) => s ? (
                                               <button
                                                 key={s.id}
                                                 className={`sb-dropdown-item${s.id === activeSessionId ? " sb-dropdown-item--active" : ""}`}
@@ -2229,16 +2227,15 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                                 <TerminalSquare size={11} />
                                                 <span className="sb-dropdown-item-name">{s.name}</span>
                                               </button>
-                                            ))}
-                                            {termGhosts.map((g) => (
+                                            ) : (
                                               <button
-                                                key={g.id}
+                                                key={g!.id}
                                                 className="sb-dropdown-item sb-dropdown-item--ghost"
-                                                onClick={() => { openSession(g.name, wt.path, project.id, undefined, undefined, undefined, undefined, undefined, undefined, false, g.id).catch(() => {}); markSessionOpen(g.id); }}
-                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null, false, false, g.id)}
+                                                onClick={() => { openSession(g!.name, wt.path, project.id, undefined, undefined, undefined, undefined, undefined, undefined, false, g!.id).catch(() => {}); markSessionOpen(g!.id); }}
+                                                onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, null, false, false, g!.id)}
                                               >
                                                 <TerminalSquare size={11} />
-                                                <span className="sb-dropdown-item-name">{g.name}</span>
+                                                <span className="sb-dropdown-item-name">{g!.name}</span>
                                               </button>
                                             ))}
                                             {wtTerminalsEmpty && (
@@ -2316,7 +2313,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                           {/* Project-level empty state */}
                           {(() => {
                             const hasGitRows = isGitProject;
-                            const hasRootRows = !isGitProject && canonRoots.size > 0;
+                            const hasRootRows = !isGitProject && rootRows.length > 0;
                             const hasOtherSessions = projectSessions.some((s) => !s.isRootSession && !s.parentSessionId && !project.worktrees.some((w) => w.path === s.cwd));
                             const hasChatGhost = getTabs().some((t) => t.kind === "chat" && t.projectId === project.id && t.cwd === "") && !projectSessions.some((s) => s.kind === "chat" && s.cwd === "");
                             if (!hasGitRows && !hasRootRows && !hasOtherSessions && !hasChatGhost && inlineCreateProjectId !== project.id) {

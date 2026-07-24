@@ -31,6 +31,7 @@ export interface DbSession {
   conversationId: string | null;
   noGit: boolean;
   closed: boolean;
+  createdAt: string;   // stable ordering key; written once, on INSERT
 }
 
 export interface DbSnapshot {

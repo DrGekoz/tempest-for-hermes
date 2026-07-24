@@ -20,6 +20,7 @@ export interface WorktreeSession {
   parentSessionId?: string;   // FK -> sessions.id; set for sub-sessions only
   closed?:          boolean;  // true = ghost; false/absent = open
   noGit?:           boolean;
+  createdAt:        string;   // ISO stamp; the stable order sessions are listed in
 }
 
 // ── In-memory mirror ─────────────────────────────────────────────────────────
@@ -56,8 +57,15 @@ export async function loadSessions(): Promise<void> {
       parentSessionId: s.parentSessionId ?? undefined,
       closed: s.closed,
       noGit: s.noGit,
+      createdAt: s.createdAt,
     });
   }
+}
+
+// Creation order — the one true listing order for sessions. Ties (two rows
+// written inside the same millisecond) fall back to id so it stays total.
+function byCreatedAt(a: WorktreeSession, b: WorktreeSession): number {
+  return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
 }
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
@@ -83,9 +91,9 @@ export function getSession(id: string): WorktreeSession | null {
 export function getBranchSessions(worktreePath: string): WorktreeSession[] {
   const branch = _branchByPath.get(worktreePath);
   if (!branch) return [];
-  return [..._sessions.values()].filter(
-    (s) => s.branchId === branch.id && !s.parentSessionId
-  );
+  return [..._sessions.values()]
+    .filter((s) => s.branchId === branch.id && !s.parentSessionId)
+    .sort(byCreatedAt);
 }
 
 // The primary agent session for a worktree (sidebar meta / zen). null if none.
@@ -97,13 +105,15 @@ export function getWorktreeAgentSession(worktreePath: string): WorktreeSession |
 export function getRootSessionsForProject(projectPath: string): WorktreeSession[] {
   const project = [..._projects.values()].find((p) => p.path === projectPath);
   if (!project) return [];
-  return [..._sessions.values()].filter(
-    (s) => s.projectId === project.id && !s.branchId && !s.parentSessionId
-  );
+  return [..._sessions.values()]
+    .filter((s) => s.projectId === project.id && !s.branchId && !s.parentSessionId)
+    .sort(byCreatedAt);
 }
 
 export function getSubSessions(parentSessionId: string): WorktreeSession[] {
-  return [..._sessions.values()].filter((s) => s.parentSessionId === parentSessionId);
+  return [..._sessions.values()]
+    .filter((s) => s.parentSessionId === parentSessionId)
+    .sort(byCreatedAt);
 }
 
 // ── Writes (sync mirror + async SQLite) ──────────────────────────────────────
@@ -164,6 +174,7 @@ function persistSession(s: WorktreeSession): void {
     conversationId: s.conversationId ?? null,
     noGit: !!s.noGit,
     closed: !!s.closed,
+    createdAt: s.createdAt,
   };
   let chain: Promise<unknown> = proj
     ? dbEnsureProject(proj.id, proj.name, proj.path)
@@ -208,6 +219,9 @@ export function saveSession(input: SaveSessionInput): void {
     parentSessionId: input.parentSessionId,
     closed: input.closed,
     noGit: input.noGit,
+    // Keep the original stamp when a known session is re-saved (re-opening a
+    // ghost goes through here) — restamping would move its sidebar row.
+    createdAt: _sessions.get(input.id)?.createdAt ?? new Date().toISOString(),
   };
   _sessions.set(session.id, session);
   persistSession(session);

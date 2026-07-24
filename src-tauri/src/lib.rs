@@ -970,6 +970,10 @@ pub struct DbSession {
     #[serde(rename = "noGit")]
     pub no_git:            bool,
     pub closed:            bool,
+    // Stable creation stamp — the sidebar orders rows by it so a session never
+    // moves when it is closed and re-opened. Written once on INSERT.
+    #[serde(rename = "createdAt", default)]
+    pub created_at:        String,
 }
 
 #[derive(serde::Serialize)]
@@ -1019,7 +1023,7 @@ fn db_load(state: tauri::State<'_, DbState>) -> Result<DbSnapshot, String> {
 
     let sessions = conn
         .prepare(
-            "SELECT id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state \
+            "SELECT id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state, created_at \
              FROM sessions WHERE archived_at IS NULL",
         )
         .and_then(|mut stmt| {
@@ -1034,6 +1038,7 @@ fn db_load(state: tauri::State<'_, DbState>) -> Result<DbSnapshot, String> {
                     conversation_id:   r.get(6)?,
                     no_git:            r.get(7)?,
                     closed:            r.get::<_, String>(8)? == "CLOSED",
+                    created_at:        r.get(9)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()
@@ -1125,9 +1130,13 @@ fn db_upsert_session(state: tauri::State<'_, DbState>, session: DbSession) -> Re
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let db_state = if session.closed { "CLOSED" } else { "ACTIVE" };
     conn.execute(
+        // created_at is set on INSERT only (falling back to now when the caller
+        // sends none) and deliberately left alone by the UPDATE branch — it is
+        // the sidebar's ordering key and must survive close/re-open.
         "INSERT INTO sessions \
-           (id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+           (id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, \
+                 COALESCE(NULLIF(?10, ''), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))) \
          ON CONFLICT(id) DO UPDATE SET \
            project_id = excluded.project_id, branch_id = excluded.branch_id, \
            parent_session_id = excluded.parent_session_id, name = excluded.name, \
@@ -1144,6 +1153,7 @@ fn db_upsert_session(state: tauri::State<'_, DbState>, session: DbSession) -> Re
             session.conversation_id,
             session.no_git,
             db_state,
+            session.created_at,
         ],
     )
     .map_err(|e| e.to_string())?;
