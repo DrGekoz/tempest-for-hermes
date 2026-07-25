@@ -105,6 +105,35 @@
         "flags": "i",
         "resume": ["-s", "{UUID}"]
       }
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes",
+      "command": "hermes",
+      "adapter": "cli",
+      "icon": "hermes.svg",
+      "mono": true,
+      "downloadUrl": "https://hermes-agent.nousresearch.com",
+      "flags": {
+        "resume": ["--continue"],
+        "model": ["--model", "{MODEL}"],
+        "autoApprove": ["--yolo"]
+      }
+    },
+    {
+      "id": "pi",
+      "name": "Pi",
+      "command": "pi",
+      "adapter": "cli",
+      "icon": "pi.svg",
+      "mono": true,
+      "downloadUrl": "https://pi.dev",
+      "flags": {
+        "session": ["--session-id", "{UUID}"],
+        "resume": ["--session-id", "{UUID}"],
+        "model": ["--model", "{MODEL}"],
+        "autoApprove": ["--approve"]
+      }
     }
   ]
 }
