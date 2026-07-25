@@ -35,8 +35,9 @@ interface HookDefinition {
 
 // Host-side backstop: a status hook that can't reach a dead server must not stall
 // the agent's turn. The script's own curl --max-time is the first line; this is
-// the config-level ceiling.
-const MANAGED_HOOK_TIMEOUT_SECONDS = 10;
+// the config-level ceiling. Unit is per-agent — Claude/Codex seconds, Gemini ms —
+// so the value is passed in, not assumed.
+const DEFAULT_HOOK_TIMEOUT = 10;
 
 // Match a config command by the managed script's *filename stem*, not an exact
 // string, so a fresh install sweeps entries left by an older Tempest build or a
@@ -50,8 +51,8 @@ export function makeManagedMatcher(scriptFileName: string): (command: string | u
   };
 }
 
-function buildManagedHook(command: string): CommandHook {
-  return { type: "command", command, timeout: MANAGED_HOOK_TIMEOUT_SECONDS };
+function buildManagedHook(command: string, timeout: number): CommandHook {
+  return { type: "command", command, timeout };
 }
 
 function definitionHasManaged(
@@ -93,6 +94,7 @@ export function applyNestedHooks(
   command: string,
   scriptFileName: string,
   events: NestedEvent[],
+  timeout: number = DEFAULT_HOOK_TIMEOUT,
 ): JsonObject {
   const isManaged = makeManagedMatcher(scriptFileName);
   const prevHooks = (config.hooks && typeof config.hooks === "object" ? config.hooks : {}) as Record<
@@ -104,8 +106,8 @@ export function applyNestedHooks(
     const current = Array.isArray(nextHooks[event.name]) ? nextHooks[event.name] : [];
     const cleaned = stripManaged(current, isManaged);
     const def: HookDefinition = event.matcher
-      ? { matcher: "*", hooks: [buildManagedHook(command)] }
-      : { hooks: [buildManagedHook(command)] };
+      ? { matcher: "*", hooks: [buildManagedHook(command, timeout)] }
+      : { hooks: [buildManagedHook(command, timeout)] };
     nextHooks[event.name] = [...cleaned, def];
   }
   return { ...config, hooks: nextHooks };
@@ -137,4 +139,42 @@ export function removeNestedHooks(
     if (cleaned.length > 0) nextHooks[name] = cleaned;
   }
   return { config: { ...config, hooks: nextHooks }, changed };
+}
+
+// ── raw-text config helpers (for ConfigEdit.apply / .remove) ─────────────────
+// Parse a JSON config file, run a transform, re-serialize. A missing/empty file
+// starts from {}. Malformed JSON returns null so the engine leaves the user's
+// (currently broken) file untouched rather than clobbering it.
+export function applyJsonConfig(
+  raw: string | null,
+  transform: (config: JsonObject) => JsonObject,
+): string | null {
+  const obj = parseConfigObject(raw);
+  if (obj === "malformed") return null;
+  return JSON.stringify(transform(obj), null, 2) + "\n";
+}
+
+// Remove path: never create the file (null in → null out), never touch malformed
+// JSON, and skip the write when the transform reports no change.
+export function removeJsonConfig(
+  raw: string | null,
+  transform: (config: JsonObject) => { config: JsonObject; changed: boolean },
+): string | null {
+  if (raw === null || raw.trim() === "") return null;
+  const obj = parseConfigObject(raw);
+  if (obj === "malformed") return null;
+  const { config, changed } = transform(obj);
+  if (!changed) return null;
+  return JSON.stringify(config, null, 2) + "\n";
+}
+
+function parseConfigObject(raw: string | null): JsonObject | "malformed" {
+  if (raw === null || raw.trim() === "") return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as JsonObject;
+    return "malformed";
+  } catch {
+    return "malformed";
+  }
 }

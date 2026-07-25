@@ -4,6 +4,13 @@
 
 import type { HookAdapter } from "./types";
 import { claudeAdapter } from "./adapters/claude";
+import { geminiAdapter } from "./adapters/gemini";
+import { cursorAdapter } from "./adapters/cursor";
+import { copilotAdapter } from "./adapters/copilot";
+import { antigravityAdapter } from "./adapters/antigravity";
+import { codexAdapter } from "./adapters/codex";
+import { hermesAdapter } from "./adapters/hermes";
+import { opencodeAdapter } from "./adapters/opencode";
 import { getHookPaths, installAdapter, uninstallAdapter, type InstallResult } from "./installer";
 
 export type { HookAdapter, HookState } from "./types";
@@ -11,7 +18,16 @@ export { getHookPaths } from "./installer";
 
 // Every hook-capable agent Tempest supports. Agents without a hook mechanism
 // (cline, goose, pi) are absent by design — they stay on PTY-scraped status.
-const ADAPTERS: HookAdapter[] = [claudeAdapter];
+const ADAPTERS: HookAdapter[] = [
+  claudeAdapter,
+  geminiAdapter,
+  cursorAdapter,
+  copilotAdapter,
+  antigravityAdapter,
+  codexAdapter,
+  hermesAdapter,
+  opencodeAdapter,
+];
 
 const BY_ID = new Map(ADAPTERS.map((a) => [a.id, a]));
 

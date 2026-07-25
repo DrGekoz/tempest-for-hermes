@@ -15,6 +15,7 @@ import { getAdapter, installAll, uninstallAll } from "../lib/agentHooks";
 interface AgentHookEvent {
   agent: string;
   session: string;
+  event: string;
   body: string;
 }
 
@@ -27,7 +28,7 @@ export async function startAgentHooks(): Promise<void> {
   started = true;
 
   await listen<AgentHookEvent>("agent-hook", (evt) => {
-    const { agent, session, body } = evt.payload;
+    const { agent, session, event, body } = evt.payload;
     const adapter = getAdapter(agent);
     if (!adapter) return;
     let parsed: unknown;
@@ -38,8 +39,14 @@ export async function startAgentHooks(): Promise<void> {
       // the next well-formed hook (or the fallback) speak.
       return;
     }
+    // When the script conveyed the event out-of-band (X-Tempest-Event), fold it
+    // into the payload so every adapter reads `hook_event_name` uniformly.
+    if (event && parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rec = parsed as Record<string, unknown>;
+      if (rec.hook_event_name === undefined) rec.hook_event_name = event;
+    }
     const state = adapter.parse(parsed);
-    if (state) sessionManager.applyHookState(session, state);
+    if (state) sessionManager.applyHookState(session, state, adapter.coversWaiting);
   });
 
   if (getSettings().preciseAgentStatus) {

@@ -60,7 +60,8 @@ export function SecuritySection() {
               Install a managed lifecycle hook into supported agents' own configs so
               working / waiting-for-you / done is driven by real events instead of
               scraping terminal output. Preserves your existing hooks. Off removes the
-              managed hooks and falls back to the heuristic. Supported: Claude Code.
+              managed hooks and falls back to the heuristic. Supported: Claude Code,
+              Gemini, Cursor, Copilot, Antigravity, Codex, Hermes, Opencode.
             </span>
           </div>
           <button

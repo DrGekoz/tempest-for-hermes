@@ -25,6 +25,10 @@ const MAX_BODY_BYTES: u64 = 1024 * 1024;
 struct HookEvent {
     agent: String,
     session: String,
+    /// Lifecycle event name, when the script conveys it out-of-band via the
+    /// X-Tempest-Event header (agents like Antigravity whose payload doesn't
+    /// carry it). Empty when the event lives inside the payload itself.
+    event: String,
     /// Raw agent payload (JSON text as the agent emitted it). Parsed in TS.
     body: String,
 }
@@ -174,12 +178,15 @@ fn handle_request(app: &AppHandle, token: &str, mut request: tiny_http::Request)
 
     let mut got_token: Option<String> = None;
     let mut session: Option<String> = None;
+    let mut event = String::new();
     for header in request.headers() {
         let field = header.field.as_str().as_str();
         if field.eq_ignore_ascii_case("x-tempest-token") {
             got_token = Some(header.value.as_str().to_string());
         } else if field.eq_ignore_ascii_case("x-tempest-session") {
             session = Some(header.value.as_str().to_string());
+        } else if field.eq_ignore_ascii_case("x-tempest-event") {
+            event = header.value.as_str().to_string();
         }
     }
 
@@ -207,6 +214,7 @@ fn handle_request(app: &AppHandle, token: &str, mut request: tiny_http::Request)
         HookEvent {
             agent,
             session,
+            event,
             body,
         },
     );
