@@ -14,6 +14,10 @@ export interface AppSettings {
   atlasAutoIndex: boolean;
   isolateAgents: boolean;
   autoApprove: boolean;
+  // Install lifecycle hooks into supported agents' configs for precise
+  // working/waiting/done status. Off uninstalls them and falls back to the
+  // PTY-scraping heuristic. See src/lib/agentHooks.
+  preciseAgentStatus: boolean;
 }
 
 export const SETTINGS_DEFAULTS: AppSettings = {
@@ -29,6 +33,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   atlasAutoIndex: false,
   isolateAgents: true,
   autoApprove: true,
+  preciseAgentStatus: true,
 };
 
 export const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [

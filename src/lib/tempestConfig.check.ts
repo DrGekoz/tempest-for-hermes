@@ -13,7 +13,7 @@ const base: ProjectSettings = {
   sandbox: { mode: "monitor" },
   network: { policy: "permissive", allowHosts: ["a.com", "b.com"], blockHosts: ["bad.com"] },
   filesystem: { rwPaths: [".", "src"], roPaths: ["vendor"] },
-  permissions: { allowSkipPermissions: true },
+  permissions: { allowSkipPermissions: true, allowRepoHooks: false },
   agents: { permitted: ["claude", "codex", "gemini"] },
   database: { isolationEnabled: false },
   resources: { maxMemoryMb: 4096, maxProcesses: null, maxDiskWriteMb: null, cpuWeight: null },
@@ -26,7 +26,7 @@ const base: ProjectSettings = {
     sandbox: { mode: "off" },
     network: { policy: "permissive", allowHosts: ["a.com", "b.com", "evil.com"], blockHosts: [] },
     filesystem: { rwPaths: [".", "src", "/etc"], roPaths: ["vendor", "/root"] },
-    permissions: { allowSkipPermissions: true },
+    permissions: { allowSkipPermissions: true, allowRepoHooks: true },
     agents: { permitted: ["claude", "codex", "gemini", "rogue"] },
     database: { isolationEnabled: false },
     resources: { maxMemoryMb: 99999, maxProcesses: 500, maxDiskWriteMb: 900, cpuWeight: 100 },
@@ -38,6 +38,7 @@ const base: ProjectSettings = {
   assert.deepStrictEqual(widened.filesystem.roPaths, ["vendor"], "yml must not add ro paths");
   assert.deepStrictEqual(widened.agents.permitted, ["claude", "codex", "gemini"], "yml must not add agents");
   assert.strictEqual(widened.resources.maxMemoryMb, 4096, "yml must not raise a quota");
+  assert.strictEqual(widened.permissions.allowRepoHooks, false, "yml must not grant itself unprompted hooks");
   // Quotas the user left unset are "no limit", so yml setting one is a tightening.
   assert.strictEqual(widened.resources.maxProcesses, 500, "yml may set an unset quota");
 }
@@ -48,7 +49,7 @@ const base: ProjectSettings = {
     sandbox: { mode: "enforce" },
     network: { policy: "restrictive", allowHosts: ["a.com"], blockHosts: ["worse.com"] },
     filesystem: { rwPaths: ["src"], roPaths: [] },
-    permissions: { allowSkipPermissions: false },
+    permissions: { allowSkipPermissions: false, allowRepoHooks: false },
     agents: { permitted: ["claude"] },
     database: { isolationEnabled: true },
     resources: { maxMemoryMb: 512, maxProcesses: null, maxDiskWriteMb: null, cpuWeight: null },
@@ -68,6 +69,19 @@ const base: ProjectSettings = {
 {
   // An empty config is a no-op, not a reset.
   assert.deepStrictEqual(clampSecurity(base, {}), base);
+}
+
+{
+  // A repo may revoke its own hook autonomy, never grant it.
+  const trusted: ProjectSettings = {
+    ...base,
+    permissions: { allowSkipPermissions: true, allowRepoHooks: true },
+  };
+  assert.strictEqual(
+    clampSecurity(trusted, { permissions: { allowSkipPermissions: true, allowRepoHooks: false } })
+      .permissions.allowRepoHooks,
+    false,
+  );
 }
 
 {
@@ -129,6 +143,34 @@ env:
 `);
   assert.deepStrictEqual(cfg.env, { SAFE: "ok" });
   assert.strictEqual(cfg.warnings.length, 5, "every dropped env var warns");
+}
+
+// ── worktree hooks ───────────────────────────────────────────────────────────
+{
+  // One command or a list; both spellings land as a list, blanks dropped.
+  const single = parseTempestConfig(`setup: npm install`);
+  assert.deepStrictEqual(single.hooks.setup, ["npm install"]);
+  assert.deepStrictEqual(single.hooks.teardown, []);
+
+  const many = parseTempestConfig(`
+setup:
+  - npm install
+  - "  "
+  - cp ../.env .env
+teardown:
+  - docker compose down
+`);
+  assert.deepStrictEqual(many.hooks.setup, ["npm install", "cp ../.env .env"]);
+  assert.deepStrictEqual(many.hooks.teardown, ["docker compose down"]);
+  assert.deepStrictEqual(many.warnings, []);
+
+  // A hook that is neither a string nor a list of them is dropped, with a warning.
+  const wrong = parseTempestConfig(`setup:\n  cmd: npm install`);
+  assert.deepStrictEqual(wrong.hooks.setup, []);
+  assert.strictEqual(wrong.warnings.length, 1);
+
+  // No hooks is empty arrays, so callers can skip on length without a branch.
+  assert.deepStrictEqual(parseTempestConfig("preview:\n  port: 3000").hooks, { setup: [], teardown: [] });
 }
 
 {

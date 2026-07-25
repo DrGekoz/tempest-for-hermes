@@ -97,6 +97,18 @@ interface SessionRecord {
   // Claude, to catch permission dialogs painted after the OSC 9 that tripped
   // markDone. Cleared on new user input or when attention actually fires.
   permCheckTimers: ReturnType<typeof setTimeout>[];
+  // Set once the first lifecycle hook lands for this session (see applyHookState).
+  // Precise hook events are authoritative from then on: the working/done PTY
+  // heuristics (quiet/ceiling timers, OSC done/working, title busy/idle) stand
+  // down so they can't fight the hooks. Sessions for hookless agents never set
+  // this and keep the full heuristic path.
+  hookAuthoritative: boolean;
+  // True only for agents whose hooks ALSO emit a permission/waiting signal
+  // (Claude). When false, the agent's hooks cover working/done but NOT "needs
+  // you", so the attention heuristics (title ✋, OSC RequestAttention, BEL) stay
+  // live even under hook authority — otherwise those agents (e.g. Gemini) would
+  // lose their only waiting signal.
+  hookCoversWaiting: boolean;
   listeners: Set<(data: string) => void>;
 }
 
@@ -128,6 +140,8 @@ class SessionManager {
       attentionFired: false,
       claudeCleanTail: "",
       permCheckTimers: [],
+      hookAuthoritative: false,
+      hookCoversWaiting: false,
       listeners: new Set(),
     };
     this.sessions.set(sessionId, record);
@@ -171,8 +185,54 @@ class SessionManager {
     // New turn starts — any prior attention flag no longer applies.
     setAttention(sessionId, false);
     setWorkState(sessionId, "working");
-    this.scheduleQuiet(record, sessionId);
-    this.scheduleCeiling(record, sessionId);
+    // Under hooks, the agent's own UserPromptSubmit/Stop events drive the turn;
+    // the byte-quiet and ceiling fallbacks would only race them, so skip them.
+    if (!record.hookAuthoritative) {
+      this.scheduleQuiet(record, sessionId);
+      this.scheduleCeiling(record, sessionId);
+    }
+  }
+
+  // Apply a precise lifecycle-hook state for a session (called by the agent-hook
+  // receiver). The first call flips the session to hook-authoritative, retiring
+  // the PTY heuristics. Mirrors the markDone/markAttention side effects (onDone
+  // fires once per turn on the working→terminal edge) so queued-message delivery
+  // and diff refresh behave identically whether a turn ends via hook or scrape.
+  applyHookState(sessionId: string, state: "working" | "waiting" | "done", coversWaiting: boolean) {
+    const record = this.sessions.get(sessionId);
+    if (!record?.isAgent) return;
+    record.hookAuthoritative = true;
+    record.hookCoversWaiting = coversWaiting;
+    this.clearHeuristicTimers(record);
+    if (state === "working") {
+      record.attentionFired = false;
+      setAttention(sessionId, false);
+      setWorkState(sessionId, "working");
+      return;
+    }
+    if (state === "waiting") {
+      // Once per turn, like markAttention — repeated permission repaints don't
+      // re-fire onDone or re-stamp the bell after the user clears it.
+      if (record.attentionFired) return;
+      record.attentionFired = true;
+      setWorkState(sessionId, "done");
+      setAttention(sessionId, true);
+      record.onDone?.();
+      return;
+    }
+    // done
+    const wasWorking = getWorkState(sessionId) === "working";
+    record.attentionFired = false;
+    setAttention(sessionId, false);
+    setWorkState(sessionId, "done");
+    if (wasWorking) record.onDone?.();
+  }
+
+  private clearHeuristicTimers(record: SessionRecord) {
+    if (record.quietTimer !== null) { clearTimeout(record.quietTimer); record.quietTimer = null; }
+    if (record.ceilTimer !== null) { clearTimeout(record.ceilTimer); record.ceilTimer = null; }
+    for (const t of record.permCheckTimers) clearTimeout(t);
+    record.permCheckTimers = [];
   }
 
   // Called by TerminalPane via term.onTitleChange(). Classifies the title as
@@ -180,7 +240,15 @@ class SessionManager {
   updateTitle(sessionId: string, title: string) {
     const record = this.sessions.get(sessionId);
     if (!record?.isAgent) return;
+    // Hooks that cover waiting own all of it — title heuristics stand down.
+    if (record.hookAuthoritative && record.hookCoversWaiting) return;
     const state = this.classifyTitle(record.agentHint, title);
+    // When hooks own working/done but not waiting, the title's only useful
+    // contribution is the "needs you" signal (e.g. Gemini's ✋); ignore busy/idle.
+    if (record.hookAuthoritative) {
+      if (state === "attention") this.markAttention(record, sessionId);
+      return;
+    }
     if (state === "busy") {
       record.senderBusy = true;
     } else if (state === "idle") {
@@ -274,6 +342,15 @@ class SessionManager {
   }
 
   private detectSignals(record: SessionRecord, sessionId: string, scan: string) {
+    // Hooks that also carry the "needs you" signal (Claude) fully supersede
+    // byte-scraping — nothing here may fight them.
+    if (record.hookAuthoritative && record.hookCoversWaiting) return;
+    // When hooks own working/done but NOT waiting (the agent's hook set has no
+    // permission event), suppress only the working/done detectors and keep the
+    // attention ones (OSC RequestAttention, BEL) — they're the agent's only
+    // "needs you" source under hook authority.
+    const suppressState = record.hookAuthoritative;
+
     // --- OSC sequences (XTerm ctlseqs + vendor extension docs) ---
     OSC_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
@@ -281,6 +358,20 @@ class SessionManager {
     while ((m = OSC_RE.exec(scan)) !== null) {
       const parts = m[1].split(";");
       const oscNum = parts[0];
+
+      if (oscNum === "1337") {
+        // OSC 1337 — iTerm2 proprietary. RequestAttention=yes/fireworks means the
+        // agent is explicitly blocked and needs the user's input. An attention
+        // signal, so it stays live even under state-suppressing hook authority.
+        // Source: iTerm2 "Proprietary Escape Codes" docs.
+        if (/^RequestAttention=(yes|fireworks)$/i.test(parts.slice(1).join(";"))) {
+          this.markAttention(record, sessionId);
+        }
+        continue;
+      }
+
+      // Everything below is a working/done transition — owned by hooks when authoritative.
+      if (suppressState) continue;
 
       if (oscNum === "9") {
         if (parts[1] === "4") {
@@ -325,19 +416,13 @@ class SessionManager {
         // Same semantics as OSC 9: agent is signalling attention / turn complete.
         // Source: urxvt man page; VTE source.
         this.markDone(record, sessionId);
-      } else if (oscNum === "1337") {
-        // OSC 1337 — iTerm2 proprietary. RequestAttention=yes/fireworks means the
-        // agent is explicitly blocked and needs the user's input.
-        // Source: iTerm2 "Proprietary Escape Codes" docs.
-        if (/^RequestAttention=(yes|fireworks)$/i.test(parts.slice(1).join(";"))) {
-          this.markAttention(record, sessionId);
-        }
       }
     }
 
     // --- DEC private mode set/reset: ESC [ ? <params> h|l ---
+    // Working/done transitions — skipped when hooks own state.
     DEC_MODE_RE.lastIndex = 0;
-    while ((m = DEC_MODE_RE.exec(scan)) !== null) {
+    while (!suppressState && (m = DEC_MODE_RE.exec(scan)) !== null) {
       const params = m[1];
       const action = m[2]; // "h" = set/enable, "l" = reset/disable
 
@@ -398,8 +483,10 @@ class SessionManager {
     }
 
     // Re-arm the byte-quiet fallback timer on any output while still working.
-    // If markDone already fired above, getWorkState returns "done" and this is a no-op.
-    if (getWorkState(sessionId) === "working") {
+    // Skipped under hook authority — the agent's Stop/AfterAgent hook, not a
+    // quiet window, decides done. If markDone already fired above, getWorkState
+    // returns "done" and this is a no-op.
+    if (!suppressState && getWorkState(sessionId) === "working") {
       this.scheduleQuiet(record, sessionId);
     }
   }

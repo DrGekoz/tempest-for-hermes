@@ -5,7 +5,9 @@ export function PermissionsSection({ value, onChange }: {
   onChange: (v: ProjectSettings["permissions"]) => void;
 }) {
   const allowSkip = value.allowSkipPermissions;
-  const setAllowSkip = (next: boolean) => onChange({ allowSkipPermissions: next });
+  const setAllowSkip = (next: boolean) => onChange({ ...value, allowSkipPermissions: next });
+  const allowHooks = value.allowRepoHooks;
+  const setAllowHooks = (next: boolean) => onChange({ ...value, allowRepoHooks: next });
 
   return (
     <div className="sp-section">
@@ -28,6 +30,26 @@ export function PermissionsSection({ value, onChange }: {
             onClick={(e) => { e.stopPropagation(); setAllowSkip(!allowSkip); }}
             role="switch"
             aria-checked={allowSkip}
+          >
+            <span className="sp-toggle-thumb" />
+          </button>
+        </div>
+
+        <div className="sp-toggle-row" onClick={() => setAllowHooks(!allowHooks)}>
+          <div className="sp-toggle-text">
+            <span className="sp-toggle-label">Run worktree hooks without asking</span>
+            <span className="sp-toggle-desc">
+              Runs this repo's{" "}
+              <code className="sp-code">setup</code> and <code className="sp-code">teardown</code>{" "}
+              commands from <code className="sp-code">tempest.yml</code> automatically. Off, you are
+              shown the exact commands and asked each time.
+            </span>
+          </div>
+          <button
+            className={`sp-toggle${allowHooks ? " sp-toggle--on" : ""}`}
+            onClick={(e) => { e.stopPropagation(); setAllowHooks(!allowHooks); }}
+            role="switch"
+            aria-checked={allowHooks}
           >
             <span className="sp-toggle-thumb" />
           </button>

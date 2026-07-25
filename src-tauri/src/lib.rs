@@ -6,6 +6,8 @@ use tauri::ipc::Channel;
 use tauri::Emitter;
 use hephaestus::Isolate;
 
+mod agent_hooks;
+
 /// Process-global isolation backend (Job Objects on Windows). Provisioned lazily
 /// the first time a sandboxed PTY session is created.
 static ISOLATE: std::sync::OnceLock<Arc<dyn Isolate>> = std::sync::OnceLock::new();
@@ -60,6 +62,39 @@ fn read_file(path: String) -> Result<String, String> {
 #[tauri::command(async)]
 fn write_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// Atomic write (temp + rename, mkdir -p, optional exec bit) used by the agent-
+/// hooks installer for managed scripts and for merged agent config files. The
+/// atomicity matters: a crash mid-write must never leave an agent's own
+/// settings.json truncated.
+#[tauri::command(async)]
+fn hooks_write_atomic(path: String, content: String, executable: bool) -> Result<(), String> {
+    agent_hooks::write_atomic(std::path::Path::new(&path), &content, executable)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct HookPaths {
+    home: String,
+    hooks_dir: String,
+    endpoint_env: String,
+    endpoint_cmd: String,
+    windows: bool,
+}
+
+/// Filesystem locations + platform the agent-hooks installer needs. Sourced from
+/// Rust so the frontend never has to resolve the home dir or guess the OS.
+#[tauri::command(async)]
+fn hooks_paths() -> HookPaths {
+    let dir = agent_hooks::hooks_dir();
+    HookPaths {
+        home: global_home().to_string_lossy().to_string(),
+        endpoint_env: dir.join("endpoint.env").to_string_lossy().to_string(),
+        endpoint_cmd: dir.join("endpoint.cmd").to_string_lossy().to_string(),
+        hooks_dir: dir.to_string_lossy().to_string(),
+        windows: cfg!(windows),
+    }
 }
 
 /// Returns the @usetempest/atlas package directory inside the runtime folder.
@@ -556,6 +591,81 @@ async fn shell_run(
         }
     });
 
+    Ok(())
+}
+
+/// Run a repo-supplied worktree hook (`tempest.yml` `setup:` / `teardown:`) to
+/// completion, one command at a time, stopping at the first failure.
+///
+/// Unlike `shell_run` this waits and reports the exit status: a worktree must
+/// not be reported ready on the strength of a command that failed. Output lines
+/// are streamed as `hook:{token}` events so the caller can show progress.
+#[tauri::command(async)]
+fn run_hook(
+    app: tauri::AppHandle,
+    token: String,
+    cwd: String,
+    commands: Vec<String>,
+    env: Option<std::collections::HashMap<String, String>>,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader};
+
+    let ev = format!("hook:{token}");
+    let (program, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
+
+    for cmd_str in commands {
+        let _ = app.emit(&ev, format!("$ {cmd_str}"));
+
+        let mut command = new_command(program);
+        command
+            .arg(flag)
+            .arg(&cmd_str)
+            .current_dir(&cwd)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        // The config's `env` is already stripped of loader and DB-isolation
+        // variables by tempestConfig.ts before it reaches here.
+        if let Some(ref vars) = env {
+            for (k, v) in vars {
+                command.env(k, v);
+            }
+        }
+
+        let mut child = command
+            .spawn()
+            .map_err(|e| format!("{cmd_str}: failed to start: {e}"))?;
+
+        let stdout = child.stdout.take().ok_or("no stdout")?;
+        let stderr = child.stderr.take().ok_or("no stderr")?;
+
+        // stderr on its own thread; stdout drained here. Both must be consumed
+        // or a chatty command fills its pipe buffer and blocks forever.
+        let app_err = app.clone();
+        let ev_err = ev.clone();
+        let err_thread = std::thread::spawn(move || {
+            let mut tail = String::new();
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = app_err.emit(&ev_err, &line);
+                tail = line;
+            }
+            tail
+        });
+
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let _ = app.emit(&ev, &line);
+        }
+
+        let last_err = err_thread.join().unwrap_or_default();
+        let status = child.wait().map_err(|e| format!("{cmd_str}: {e}"))?;
+        if !status.success() {
+            let code = status.code().map_or("signal".to_string(), |c| c.to_string());
+            return Err(if last_err.is_empty() {
+                format!("`{cmd_str}` exited with {code}")
+            } else {
+                format!("`{cmd_str}` exited with {code}: {last_err}")
+            });
+        }
+    }
     Ok(())
 }
 
@@ -3474,6 +3584,9 @@ pub fn run() {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             app.manage(DbState(Mutex::new(conn)));
             tauri::async_runtime::spawn(async { let _ = dbiso::sweep_orphans().await; });
+            // Loopback receiver for agent lifecycle hooks. Best-effort; a bind
+            // failure leaves sessions on PTY-scraped status.
+            agent_hooks::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3517,6 +3630,8 @@ pub fn run() {
             get_ide_panel_url,
             read_file,
             write_file,
+            hooks_write_atomic,
+            hooks_paths,
             start_atlas_index,
             get_atlas_graph,
             atlas_query,
@@ -3532,6 +3647,7 @@ pub fn run() {
             db_sweep_orphans,
             shell_run,
             shell_kill,
+            run_hook,
             remove_atlas_index,
             start_atlas_daemon,
             stop_atlas_daemon,

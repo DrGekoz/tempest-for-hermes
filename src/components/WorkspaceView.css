@@ -1434,6 +1434,54 @@
   flex-shrink: 0;
 }
 
+/* tempest.yml worktree hooks — consent prompt and run progress */
+.hook-consent,
+.hook-progress {
+  width: 420px;
+}
+
+.hook-consent .naming-modal-desc strong {
+  color: var(--tempest-fg-default);
+  font-weight: 500;
+}
+
+.hook-cmd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--tempest-bg-editor);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+}
+
+.hook-cmd,
+.hook-progress-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--tempest-fg-default);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.hook-progress-line {
+  display: block;
+  color: var(--tempest-fg-subtle);
+  padding: 10px;
+  background: var(--tempest-bg-editor);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  max-height: 96px;
+  overflow: hidden;
+}
+
+.hook-spinner {
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }

@@ -59,6 +59,7 @@
     "geist": "^1.7.2",
     "github-markdown-css": "^5.9.0",
     "lucide-react": "^1.21.0",
+    "motion": "^12.42.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",

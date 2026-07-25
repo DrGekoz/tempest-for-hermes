@@ -49,6 +49,7 @@ import {
   SunMoon,
   GitBranch,
   Cog,
+  Loader,
 } from "lucide-react";
 import { setWorkState, clearWorkState, getWorkState, setAttention, getAttention } from "../store/workState";
 import { useKeybindings, matchesEvent, formatShortcut } from "../store/keybindings";
@@ -77,9 +78,11 @@ import { StatusBar } from "./StatusBar";
 import { UpdateNotice } from "./UpdateNotice";
 import { useAvailableUpdate, dismissUpdate, startUpdateChecks, installUpdate, openReleaseNotes } from "../store/updates";
 import { startModelManifestFetch } from "../lib/remoteConfig";
+import { startAgentHooks } from "../store/agentHooks";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
 import { Toolbar } from "./Toolbar";
+import { SAMPLE_QUOTAS } from "../lib/quota";
 import AgentTabs from "./AgentTabs";
 import IconCapsule from "./IconCapsule";
 import { SidebarWorkBadge, ProjectWorkBadge, AttentionPill } from "./SessionBadges";
@@ -113,6 +116,7 @@ function sbRows(live: Session[], ghosts: WorktreeSession[]): SbRow[] {
 }
 
 import { folderName, timeAgo } from "../lib/format";
+import { getHookCommands, runHook, type HookKind } from "../lib/worktreeHooks";
 import { buildAgentArgs } from "../lib/agentArgs";
 import {
   type SplitDir,
@@ -246,13 +250,21 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
   // Delete workspace dialog state
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
+  /// Pending consent for a repo's tempest.yml hook. `resolve` is the awaiting
+  /// hook runner — answering the dialog is what lets it continue.
+  const [hookConsent, setHookConsent] = useState<
+    { kind: HookKind; commands: string[]; cwd: string; resolve: (ok: boolean) => void } | null
+  >(null);
+  /// Latest output line while a hook is running, shown in whichever modal
+  /// triggered it.
+  const [hookRun, setHookRun] = useState<{ kind: HookKind; line: string } | null>(null);
   /// Message from a project-policy refusal at spawn time, or a failed update.
   /// Rendered as a dismissible notice near the bottom of the window.
   const [policyError, setPolicyError] = useState<string | null>(null);
 
   // Update checks: one now, then daily for as long as the app stays open.
   const availableUpdate = useAvailableUpdate();
-  useEffect(() => { startUpdateChecks(); void startModelManifestFetch(); }, []);
+  useEffect(() => { startUpdateChecks(); void startModelManifestFetch(); void startAgentHooks(); }, []);
 
   /// The Overview footer has to stay mounted while it retracts, so ✕ sets this
   /// instead of dismissing outright; the dismissal lands on animation end.
@@ -735,6 +747,12 @@ export function WorkspaceView({ zen, name, path }: Props) {
     const { worktree, projectPath, projectId, sessionId, branchName } = deleteDialog;
     setDeleteDialog((d) => d ? { ...d, loading: true, error: null } : null);
     try {
+      // Teardown gets its turn while the worktree still exists. Failure is
+      // reported but never blocks the delete: the directory is going away, and
+      // a broken cleanup command must not strand a workspace on disk.
+      const failure = await runWorktreeHook("teardown", projectPath, projectId, worktree.path);
+      if (failure) console.warn(`[tempest.yml] teardown failed: ${failure}`);
+
       // Single Rust round-trip: kill the PTY child, wait for it to exit, then
       // remove the worktree directory. Collapsing these two operations into one
       // invoke is the fix for the delete race — there is no longer any window
@@ -911,7 +929,10 @@ export function WorkspaceView({ zen, name, path }: Props) {
           sandbox: sandboxParam,
           policy: policyParam,
           dbIsolation: projectSettings.database.isolationEnabled,
-          env: tempestConfig.env ?? null,
+          // TEMPEST_SESSION lets an installed agent hook (see src/lib/agentHooks)
+          // attribute its lifecycle POSTs back to this exact session, without
+          // touching the PTY spawn internals. Merged over tempest.yml env.
+          env: { ...(tempestConfig.env ?? {}), TEMPEST_SESSION: sessionId },
           onEvent: channel,
         });
       } catch (e) {
@@ -1182,6 +1203,48 @@ export function WorkspaceView({ zen, name, path }: Props) {
     return name;
   }
 
+  // ── tempest.yml worktree hooks ─────────────────────────────────────────────
+  // `setup` runs once the worktree exists, `teardown` before it is removed.
+  // The commands come from a file the repo carries, so unless the project has
+  // opted into running them unprompted, the user is shown the exact commands
+  // and asked. Declining is not an error — the worktree is simply left as git
+  // made it.
+  //
+  // Returns the failure message, or null when the hook ran clean / was skipped.
+  async function runWorktreeHook(
+    kind: HookKind,
+    projectPath: string,
+    projectId: string,
+    cwd: string,
+  ): Promise<string | null> {
+    let commands: string[];
+    try {
+      commands = await getHookCommands(projectPath, kind);
+    } catch {
+      return null; // unreadable config is "no hooks", same as everywhere else
+    }
+    if (!commands.length) return null;
+
+    const settings = await loadProjectSettings(projectId, projectPath);
+    if (!settings.permissions.allowRepoHooks) {
+      const approved = await new Promise<boolean>((resolve) =>
+        setHookConsent({ kind, commands, cwd, resolve })
+      );
+      setHookConsent(null);
+      if (!approved) return null;
+    }
+
+    setHookRun({ kind, line: commands[0] });
+    try {
+      await runHook(projectPath, kind, cwd, (line) => setHookRun({ kind, line }));
+      return null;
+    } catch (e) {
+      return String(e);
+    } finally {
+      setHookRun(null);
+    }
+  }
+
   async function launchTerminalWorktree() {
     const activePath = getActivePath();
     const workingProjectId = pendingProjectId;
@@ -1227,6 +1290,11 @@ export function WorkspaceView({ zen, name, path }: Props) {
         const result = await createWorktree({ projectPath: activePath, name: branchName, existingBranch });
         worktreePath = result.path;
         addWorktreeToState({ name: branchName, path: worktreePath }, workingProjectId);
+        // The worktree exists either way; a failed setup leaves it in the
+        // sidebar and keeps the modal open with the reason, rather than opening
+        // a session into a half-prepared checkout.
+        const failure = await runWorktreeHook("setup", activePath, workingProjectId ?? "", worktreePath);
+        if (failure) { setTerminalError(failure); return; }
       }
       await openSession(sessionName, worktreePath, workingProjectId ?? "", agent, prompt, undefined, undefined, undefined, undefined, false, undefined, undefined);
       resetTerminalModal();
@@ -1254,6 +1322,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
       await gitInit(activePath);
       const result = await createWorktree({ projectPath: activePath, name: fullName });
       addWorktreeToState({ name: fullName, path: result.path }, workingProjectId);
+      const failure = await runWorktreeHook("setup", activePath, workingProjectId ?? "", result.path);
+      if (failure) { setTerminalError(failure); return; }
       await openSession(sessionName, result.path, workingProjectId ?? "", agent, prompt, undefined);
       resetTerminalModal();
     } catch (e) {
@@ -1767,6 +1837,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
       <Toolbar
         tabsMode={tabsMode}
         projectName={activeSessionProject?.name ?? projects[0]?.name ?? ""}
+        quotas={import.meta.env.DEV ? SAMPLE_QUOTAS : []}
         rightActions={
           <>
             <Tooltip content="Open diff view" placement="bottom">
@@ -2926,6 +2997,58 @@ export function WorkspaceView({ zen, name, path }: Props) {
           onCancel={() => setDeleteDialog(null)}
           onConfirm={handleDeleteConfirm}
         />
+      )}
+
+      {/* Consent for a repo-supplied hook — the commands are shown verbatim,
+          because approving this runs code the repo carries, not the user's. */}
+      {hookConsent && createPortal(
+        <div className="naming-modal-overlay">
+          <div className="naming-modal hook-consent" onClick={(e) => e.stopPropagation()}>
+            <div className="naming-modal-header">
+              <TerminalSquare size={15} />
+              Run this repo's {hookConsent.kind} commands?
+            </div>
+            <p className="naming-modal-desc">
+              <strong>tempest.yml</strong> in this repository asks to run the following in{" "}
+              <strong>{folderName(hookConsent.cwd)}</strong>. These commands come from the repo, not
+              from Tempest.
+            </p>
+            <div className="hook-cmd-list">
+              {hookConsent.commands.map((c, i) => (
+                <code key={i} className="hook-cmd">{c}</code>
+              ))}
+            </div>
+            <div className="naming-modal-actions">
+              <button
+                className="naming-modal-btn naming-modal-btn--cancel"
+                onClick={() => hookConsent.resolve(false)}
+              >
+                Skip
+              </button>
+              <button
+                className="naming-modal-btn naming-modal-btn--create"
+                onClick={() => hookConsent.resolve(true)}
+              >
+                Run
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Hook progress — both callers block on it, so one overlay serves both. */}
+      {hookRun && createPortal(
+        <div className="naming-modal-overlay">
+          <div className="naming-modal hook-progress">
+            <div className="naming-modal-header">
+              <Loader size={15} className="hook-spinner" />
+              Running {hookRun.kind}…
+            </div>
+            <code className="hook-progress-line">{hookRun.line}</code>
+          </div>
+        </div>,
+        document.body
       )}
 
       {showTerminalNaming && (

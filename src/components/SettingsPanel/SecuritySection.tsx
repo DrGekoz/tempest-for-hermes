@@ -1,7 +1,13 @@
 import { useSettings, updateSetting } from "../../store/appSettings";
+import { setPreciseAgentStatus } from "../../store/agentHooks";
 
 export function SecuritySection() {
   const s = useSettings();
+  const togglePreciseStatus = () => {
+    const next = !s.preciseAgentStatus;
+    updateSetting("preciseAgentStatus", next);
+    void setPreciseAgentStatus(next);
+  };
   return (
     <div className="sp-section">
       <div className="sp-section-heading">Security</div>
@@ -42,6 +48,27 @@ export function SecuritySection() {
             onClick={(e) => { e.stopPropagation(); updateSetting("isolateAgents", !s.isolateAgents); }}
             role="switch"
             aria-checked={s.isolateAgents}
+          >
+            <span className="sp-toggle-thumb" />
+          </button>
+        </div>
+
+        <div className="sp-toggle-row" onClick={togglePreciseStatus}>
+          <div className="sp-toggle-text">
+            <span className="sp-toggle-label">Precise agent status (hooks)</span>
+            <span className="sp-toggle-desc">
+              Install a managed lifecycle hook into supported agents' own configs so
+              working / waiting-for-you / done is driven by real events instead of
+              scraping terminal output. Preserves your existing hooks. Off removes the
+              managed hooks and falls back to the heuristic. Supported: Claude Code,
+              Gemini, Cursor, Copilot, Antigravity, Codex, Hermes, Opencode.
+            </span>
+          </div>
+          <button
+            className={`sp-toggle${s.preciseAgentStatus ? " sp-toggle--on" : ""}`}
+            onClick={(e) => { e.stopPropagation(); togglePreciseStatus(); }}
+            role="switch"
+            aria-checked={s.preciseAgentStatus}
           >
             <span className="sp-toggle-thumb" />
           </button>
