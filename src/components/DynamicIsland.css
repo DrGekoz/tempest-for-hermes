@@ -1,0 +1,209 @@
+/* ─── Dynamic island — live quota, centred on the toolbar ─────────────────────
+   Motion lives in DynamicIsland.tsx: `layout` springs the shape to whatever the
+   content measures, so there are no widths or heights written down here. This
+   file is material and type only. */
+
+/* Pinned by its top edge, not centred: opening must only ever grow downwards,
+   so the pill and the panel start at the same line. 11px puts the 22px pill on
+   the toolbar's icon row — `.bar` pads 8px off the top and `.bar-end` 8px off
+   the bottom, putting that row's midline at 22px.
+
+   Height is left to shrink-wrap the island, and the box is click-through, so it
+   never steals a press meant for the bar underneath. */
+.island-anchor {
+  position: absolute;
+  top: 11px;
+  right: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.island {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--tempest-island-border-closed);
+  border-radius: 999px;
+  background: var(--tempest-island-bg-closed);
+  /* Specular hairline along the top edge — the thing that makes it read as a
+     lit object rather than a flat chip. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: var(--tempest-fg-default);
+  font-family: var(--tempest-font-sans, "Geist", sans-serif);
+  font-feature-settings: "tnum" 1;
+  outline: none;
+  pointer-events: auto;
+  transition: background 0.28s ease, border-color 0.28s ease, box-shadow 0.4s ease;
+  -webkit-app-region: no-drag;
+}
+
+.island[data-open] {
+  border-color: var(--tempest-island-border-open);
+  background: var(--tempest-island-bg-open);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 1px 2px var(--tempest-ui-shadow-sm),
+    0 16px 40px -8px var(--tempest-ui-shadow-lg);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+
+/* ─── Tone ─────────────────────────────────────────────────────────────────── */
+
+.island[data-level="ok"],
+.island-row[data-level="ok"] {
+  --island-tone: var(--tempest-accent-green);
+}
+
+.island[data-level="warn"],
+.island-row[data-level="warn"] {
+  --island-tone: var(--tempest-accent-yellow);
+}
+
+.island[data-level="crit"],
+.island-row[data-level="crit"] {
+  --island-tone: var(--tempest-accent-red);
+}
+
+/* ─── Collapsed pill ───────────────────────────────────────────────────────── */
+
+.island-pill {
+  display: flex;
+  height: 22px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+}
+
+/* Fill ring: a conic arc masked to an annulus. One element, no SVG. */
+.island-gauge {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from -90deg,
+    var(--island-tone) calc(var(--fill, 0) * 1%),
+    var(--tempest-bg-hover) 0
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent 57%, #000 58%);
+  mask: radial-gradient(closest-side, transparent 57%, #000 58%);
+}
+
+.island[data-level="crit"] .island-gauge {
+  animation: island-breathe 2s ease-in-out infinite;
+}
+
+@keyframes island-breathe {
+  50% { opacity: 0.4; }
+}
+
+.island-peak {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.island-peak-label {
+  color: var(--tempest-fg-muted);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.island-peak-pct {
+  color: var(--island-tone);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ─── Open panel ───────────────────────────────────────────────────────────── */
+
+/* The only measurement in the file: bars are proportional, so the track needs a
+   floor. A longer label still widens the panel past it. */
+.island-panel {
+  min-width: 236px;
+  padding: 11px 13px 13px;
+}
+
+.island-title {
+  margin-bottom: 10px;
+  color: var(--tempest-fg-subtle);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.island-row + .island-row {
+  margin-top: 12px;
+}
+
+.island-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.island-row-label {
+  overflow: hidden;
+  color: var(--tempest-fg-default);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.008em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.island-row-pct {
+  flex-shrink: 0;
+  color: var(--island-tone);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.island-bar {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--tempest-bg-hover);
+}
+
+/* Full width, scaled by the spring — so the fill animates on the compositor
+   rather than relaying out the track on every frame. */
+.island-bar-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--island-tone);
+  transform-origin: left;
+}
+
+.island-row-reset {
+  margin-top: 6px;
+  color: var(--tempest-fg-subtle);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.005em;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island {
+    transition: none;
+  }
+
+  .island[data-level="crit"] .island-gauge {
+    animation: none;
+  }
+}

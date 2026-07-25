@@ -97,6 +97,12 @@ interface SessionRecord {
   // Claude, to catch permission dialogs painted after the OSC 9 that tripped
   // markDone. Cleared on new user input or when attention actually fires.
   permCheckTimers: ReturnType<typeof setTimeout>[];
+  // Set once the first lifecycle hook lands for this session (see applyHookState).
+  // Precise hook events are authoritative from then on: the PTY-scraping
+  // heuristics (quiet/ceiling timers, OSC signals, title classification, the
+  // Claude permission fingerprint) all stand down so they can't fight the hooks.
+  // Sessions for hookless agents never set this and keep the full heuristic path.
+  hookAuthoritative: boolean;
   listeners: Set<(data: string) => void>;
 }
 
@@ -128,6 +134,7 @@ class SessionManager {
       attentionFired: false,
       claudeCleanTail: "",
       permCheckTimers: [],
+      hookAuthoritative: false,
       listeners: new Set(),
     };
     this.sessions.set(sessionId, record);
@@ -171,8 +178,53 @@ class SessionManager {
     // New turn starts — any prior attention flag no longer applies.
     setAttention(sessionId, false);
     setWorkState(sessionId, "working");
-    this.scheduleQuiet(record, sessionId);
-    this.scheduleCeiling(record, sessionId);
+    // Under hooks, the agent's own UserPromptSubmit/Stop events drive the turn;
+    // the byte-quiet and ceiling fallbacks would only race them, so skip them.
+    if (!record.hookAuthoritative) {
+      this.scheduleQuiet(record, sessionId);
+      this.scheduleCeiling(record, sessionId);
+    }
+  }
+
+  // Apply a precise lifecycle-hook state for a session (called by the agent-hook
+  // receiver). The first call flips the session to hook-authoritative, retiring
+  // the PTY heuristics. Mirrors the markDone/markAttention side effects (onDone
+  // fires once per turn on the working→terminal edge) so queued-message delivery
+  // and diff refresh behave identically whether a turn ends via hook or scrape.
+  applyHookState(sessionId: string, state: "working" | "waiting" | "done") {
+    const record = this.sessions.get(sessionId);
+    if (!record?.isAgent) return;
+    record.hookAuthoritative = true;
+    this.clearHeuristicTimers(record);
+    if (state === "working") {
+      record.attentionFired = false;
+      setAttention(sessionId, false);
+      setWorkState(sessionId, "working");
+      return;
+    }
+    if (state === "waiting") {
+      // Once per turn, like markAttention — repeated permission repaints don't
+      // re-fire onDone or re-stamp the bell after the user clears it.
+      if (record.attentionFired) return;
+      record.attentionFired = true;
+      setWorkState(sessionId, "done");
+      setAttention(sessionId, true);
+      record.onDone?.();
+      return;
+    }
+    // done
+    const wasWorking = getWorkState(sessionId) === "working";
+    record.attentionFired = false;
+    setAttention(sessionId, false);
+    setWorkState(sessionId, "done");
+    if (wasWorking) record.onDone?.();
+  }
+
+  private clearHeuristicTimers(record: SessionRecord) {
+    if (record.quietTimer !== null) { clearTimeout(record.quietTimer); record.quietTimer = null; }
+    if (record.ceilTimer !== null) { clearTimeout(record.ceilTimer); record.ceilTimer = null; }
+    for (const t of record.permCheckTimers) clearTimeout(t);
+    record.permCheckTimers = [];
   }
 
   // Called by TerminalPane via term.onTitleChange(). Classifies the title as
@@ -180,6 +232,8 @@ class SessionManager {
   updateTitle(sessionId: string, title: string) {
     const record = this.sessions.get(sessionId);
     if (!record?.isAgent) return;
+    // Hooks own state once they've spoken; title heuristics stand down.
+    if (record.hookAuthoritative) return;
     const state = this.classifyTitle(record.agentHint, title);
     if (state === "busy") {
       record.senderBusy = true;
@@ -274,6 +328,9 @@ class SessionManager {
   }
 
   private detectSignals(record: SessionRecord, sessionId: string, scan: string) {
+    // Precise hooks supersede byte-scraping for this session — don't let an OSC
+    // ping or the Claude fingerprint fight the authoritative hook state.
+    if (record.hookAuthoritative) return;
     // --- OSC sequences (XTerm ctlseqs + vendor extension docs) ---
     OSC_RE.lastIndex = 0;
     let m: RegExpExecArray | null;

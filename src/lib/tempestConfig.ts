@@ -15,12 +15,15 @@ export interface TempestConfig {
   instructions?: string;
   env?: Record<string, string>;
   preview?: { port?: number };
+  /// Shell commands run around a worktree's life: `setup` once after it is
+  /// created, `teardown` before it is removed. Empty arrays when absent.
+  hooks: { setup: string[]; teardown: string[] };
   /// Human-readable notes about what was dropped during parse/clamp. Surfaced in
   /// the console so a config that silently does nothing is diagnosable.
   warnings: string[];
 }
 
-const EMPTY: TempestConfig = { security: {}, warnings: [] };
+const EMPTY: TempestConfig = { security: {}, warnings: [], hooks: { setup: [], teardown: [] } };
 
 // ── env allow rules ──────────────────────────────────────────────────────────
 // `env` writes straight into the agent's process environment, so a hostile repo
@@ -51,6 +54,11 @@ const posInt = (v: unknown): number | undefined =>
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
+
+/// A hook is one command or a list of them; both spellings are natural in yml.
+/// Blank entries are dropped rather than handed to a shell.
+const cmdList = (v: unknown): string[] =>
+  (typeof v === "string" ? [v] : strList(v) ?? []).map((c) => c.trim()).filter(Boolean);
 
 /// Assign only when `v` is defined, so an absent yml key means "no opinion"
 /// rather than "reset to undefined".
@@ -102,8 +110,10 @@ export function clampSecurity(
     if (yml.filesystem.roPaths) out.filesystem.roPaths = intersect(base.filesystem.roPaths, yml.filesystem.roPaths);
   }
 
-  // Only ever revokes the bypass.
+  // Only ever revokes. A repo asking to run its own hooks unprompted would be
+  // granting itself privilege, which is the one direction this merge forbids.
   if (yml.permissions?.allowSkipPermissions === false) out.permissions.allowSkipPermissions = false;
+  if (yml.permissions?.allowRepoHooks === false) out.permissions.allowRepoHooks = false;
 
   // Only ever removes agents from the permitted set.
   if (yml.agents?.permitted) out.agents.permitted = intersect(base.agents.permitted, yml.agents.permitted);
@@ -164,8 +174,10 @@ export function parseTempestConfig(text: string): TempestConfig {
   }
 
   if (isObj(doc.permissions)) {
-    const b = bool(doc.permissions.allowSkipPermissions);
-    if (b !== undefined) security.permissions = { allowSkipPermissions: b };
+    const p: Partial<ProjectSettings["permissions"]> = {};
+    put(p, "allowSkipPermissions", bool(doc.permissions.allowSkipPermissions));
+    put(p, "allowRepoHooks", bool(doc.permissions.allowRepoHooks));
+    if (Object.keys(p).length) security.permissions = p as ProjectSettings["permissions"];
   }
 
   if (isObj(doc.agents)) {
@@ -187,7 +199,13 @@ export function parseTempestConfig(text: string): TempestConfig {
     if (Object.keys(r).length) security.resources = r as ProjectSettings["resources"];
   }
 
-  const out: TempestConfig = { security, warnings };
+  const out: TempestConfig = {
+    security,
+    warnings,
+    hooks: { setup: cmdList(doc.setup), teardown: cmdList(doc.teardown) },
+  };
+  if (doc.setup !== undefined && !out.hooks.setup.length) warnings.push(`setup must be a command or a list of commands — ignored.`);
+  if (doc.teardown !== undefined && !out.hooks.teardown.length) warnings.push(`teardown must be a command or a list of commands — ignored.`);
 
   const instructions = str(doc.instructions);
   if (instructions?.trim()) out.instructions = instructions.trim();

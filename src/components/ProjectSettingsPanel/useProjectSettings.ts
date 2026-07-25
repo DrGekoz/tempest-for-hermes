@@ -11,7 +11,7 @@ export interface ProjectSettings {
   sandbox: { mode: "off" | "monitor" | "enforce" };
   network: { policy: "permissive" | "restrictive"; allowHosts: string[]; blockHosts: string[] };
   filesystem: { rwPaths: string[]; roPaths: string[] };
-  permissions: { allowSkipPermissions: boolean };
+  permissions: { allowSkipPermissions: boolean; allowRepoHooks: boolean };
   agents: { permitted: string[] };
   database: { isolationEnabled: boolean };
   /// OS-level quotas per session. `null` leaves a limit at the OS default.
@@ -28,7 +28,9 @@ const DEFAULTS: ProjectSettings = {
   sandbox: { mode: "monitor" },
   network: { policy: "permissive", allowHosts: ["api.anthropic.com", "*.github.com"], blockHosts: [] },
   filesystem: { rwPaths: ["."], roPaths: [] },
-  permissions: { allowSkipPermissions: true },
+  // Hooks run commands the repo checked in, so they are opt-in: off means the
+  // user is asked before each run, never that the commands run unannounced.
+  permissions: { allowSkipPermissions: true, allowRepoHooks: false },
   agents: { permitted: getAgents().map((a) => a.hint) },
   database: { isolationEnabled: false },
   resources: { maxMemoryMb: null, maxProcesses: null, maxDiskWriteMb: null, cpuWeight: null },
