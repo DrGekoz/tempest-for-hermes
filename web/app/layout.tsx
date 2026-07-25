@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://tempestai.dev"),
+  metadataBase: new URL("https://www.tempestai.dev"),
   title: "Tempest — Run Claude Code, Aider & AI Agents in Parallel",
   description:
     "Run AI coding agents in parallel — each isolated, none colliding. Claude Code, Aider, OpenCode, and more, all from one interface, each on its own branch.",
@@ -27,17 +27,17 @@ export const metadata: Metadata = {
     icon: "/favicon.ico",
   },
   alternates: {
-    canonical: "https://tempestai.dev",
+    canonical: "https://www.tempestai.dev",
   },
   other: {
-    "llms-txt": "https://tempestai.dev/llms.txt",
+    "llms-txt": "https://www.tempestai.dev/llms.txt",
   },
   openGraph: {
     title: "Tempest — Run Claude Code, Aider & AI Agents in Parallel",
     description:
       "Run AI coding agents in parallel — each isolated, none colliding. Claude Code, Aider, OpenCode, and more, all from one interface, each on its own branch.",
     type: "website",
-    url: "https://tempestai.dev",
+    url: "https://www.tempestai.dev",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Tempest — Run Claude Code, Aider & AI Agents in Parallel" }],
   },
   twitter: {
