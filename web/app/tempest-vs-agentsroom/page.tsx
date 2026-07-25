@@ -38,7 +38,7 @@ type Row = {
   label: string;
   tempest: string;
   other: string;
-  tempestYes: boolean;
+  tempestYes: boolean | null;
   otherYes: boolean | null;
 };
 
