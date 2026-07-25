@@ -12,25 +12,30 @@ export { AGENT_CONFIGS } from "../lib/agentRegistry";
 export type { AgentConfig } from "../lib/agentRegistry";
 
 export function AgentIcon({ hint, size, className }: { hint?: string; size: number; className?: string }) {
-  const [failed, setFailed] = useState(false);
+  useAgents(); // re-render when an icon finishes downloading (setIconDataUrl notifies)
+  const [failedSrc, setFailedSrc] = useState<string>();
   const config = getAgent(hint ?? "");
-  // Prefer a cached (downloaded) icon, then a bundled asset, then the repo URL;
-  // anything else — or a load error — falls back to the Bot glyph.
-  const src = config && !failed
+  // Prefer a cached (downloaded) icon, then a bundled asset, then the repo URL.
+  const src = config
     ? (getIconDataUrl(config.id) ?? (config.iconSrc || remoteIconUrl(config.icon)))
     : undefined;
-  if (!config || !src) return <Bot size={size} className={className} />;
+  // Fall back to Bot only for the src that actually failed. A remote icon is
+  // fetched in the background on first run, so an early render can hit the
+  // still-downloading URL and error; when the cached data URL lands it is a new
+  // src, so we retry it instead of staying stuck on the Bot glyph.
+  if (!config || !src || src === failedSrc) return <Bot size={size} className={className} />;
   const monoClass = config.mono ? "agent-icon--mono" : undefined;
   const combinedClass = [className, monoClass].filter(Boolean).join(" ") || undefined;
   return (
     <img
+      key={src}
       src={src}
       width={size}
       height={size}
       className={combinedClass}
       style={{ objectFit: "contain", display: "block", flexShrink: 0 }}
       alt={config.name}
-      onError={() => setFailed(true)}
+      onError={() => setFailedSrc(src)}
     />
   );
 }
