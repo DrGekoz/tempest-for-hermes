@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { dbLoadAppState, dbSetAppState } from "../../lib/db";
-import { AGENT_CONFIGS } from "../NewSessionMenu";
+import { getAgents, useAgents } from "../../lib/agentRegistry";
 import { clampSecurity, loadTempestConfig } from "../../lib/tempestConfig";
 
 // Per-project settings blob. Persisted as a single JSON row in the `app_state`
@@ -29,7 +29,7 @@ const DEFAULTS: ProjectSettings = {
   network: { policy: "permissive", allowHosts: ["api.anthropic.com", "*.github.com"], blockHosts: [] },
   filesystem: { rwPaths: ["."], roPaths: [] },
   permissions: { allowSkipPermissions: true },
-  agents: { permitted: AGENT_CONFIGS.map((a) => a.hint) },
+  agents: { permitted: getAgents().map((a) => a.hint) },
   database: { isolationEnabled: false },
   resources: { maxMemoryMb: null, maxProcesses: null, maxDiskWriteMb: null, cpuWeight: null },
 };
@@ -38,13 +38,19 @@ const keyFor = (projectId: string) => `project-settings:${projectId}`;
 
 // Shallow-merge each slice over defaults so a partial/old DB blob still yields
 // complete slices (and picks up fields added to ProjectSettings later).
+//
+// A project with no stored agent list permits every CURRENT agent (the live
+// manifest), so newly downloaded agents are permitted by default — exactly like
+// a newly bundled one. Once a project stores an explicit list it owns it, so any
+// agent can be deselected and the choice sticks. Every agent, bundled or
+// downloaded, behaves identically here.
 function withDefaults(p: Partial<ProjectSettings>): ProjectSettings {
   return {
     sandbox: { ...DEFAULTS.sandbox, ...p.sandbox },
     network: { ...DEFAULTS.network, ...p.network },
     filesystem: { ...DEFAULTS.filesystem, ...p.filesystem },
     permissions: { ...DEFAULTS.permissions, ...p.permissions },
-    agents: { ...DEFAULTS.agents, ...p.agents },
+    agents: { permitted: p.agents?.permitted ?? getAgents().map((a) => a.hint) },
     database: { ...DEFAULTS.database, ...p.database },
     resources: { ...DEFAULTS.resources, ...p.resources },
   };
@@ -88,6 +94,7 @@ export function useProjectSettings(projectId: string, projectPath: string) {
   const [base, setBase] = useState<ProjectSettings>(DEFAULTS);
   const [yml, setYml] = useState<Partial<ProjectSettings>>({});
   const loaded = useRef(false);
+  useAgents(); // re-render if the downloaded manifest changes the agent list
 
   // Load from DB on mount (and whenever the project changes).
   useEffect(() => {
