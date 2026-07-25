@@ -40,3 +40,6 @@ opencode.jsonc
 opencode.json
 .gstack/
 videos/
+
+# Private agent-manifest signing script (references the local signing key)
+/sign-agents.ps1
