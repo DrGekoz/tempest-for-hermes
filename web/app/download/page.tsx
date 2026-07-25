@@ -6,12 +6,12 @@ import { formatDate } from "@/lib/format-date"
 export const metadata: Metadata = {
   title: "Download Tempest — Free, Open Source — Windows (macOS & Linux coming soon)",
   description: "Download Tempest for Windows, macOS, or Linux. Free, open source, no account required.",
-  alternates: { canonical: "https://tempestai.dev/download" },
+  alternates: { canonical: "https://www.tempestai.dev/download" },
   openGraph: {
     title: "Download Tempest — Free, Open Source",
     description: "Download Tempest for Windows, macOS, or Linux. Free, open source, no account required.",
     type: "website",
-    url: "https://tempestai.dev/download",
+    url: "https://www.tempestai.dev/download",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Download Tempest" }],
   },
   twitter: {

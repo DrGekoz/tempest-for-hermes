@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { Container } from "@/components/layout/container";
 import { getAllPosts } from "@/lib/mdx";
 import { FaqSection } from "@/components/faq-section";
@@ -12,32 +11,26 @@ import { WhoItsForSection } from "@/components/sections/landing/who-its-for-sect
 import { BlogSection } from "@/components/sections/landing/blog-section";
 import { CtaSection } from "@/components/sections/landing/cta-section";
 
-function detectOSFromUA(ua: string): string {
-  if (ua.includes("Win")) return "Windows";
-  if (ua.includes("Android")) return "Android";
-  if (ua.includes("Mac")) return "macOS";
-  if (ua.includes("Linux")) return "Linux";
-  return "your platform";
-}
-
 const structuredDataSchema = {
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "SoftwareApplication",
       name: "Tempest",
+      description:
+        "Open-source desktop app for running Claude Code, Aider, and other AI coding agents in parallel. Each session runs in its own git worktree — isolated, token-efficient, zero merge conflicts.",
       applicationCategory: "DeveloperApplication",
-      operatingSystem: "Windows",
+      operatingSystem: ["Windows", "macOS", "Linux"],
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      downloadUrl: "https://tempestai.dev/download",
+      downloadUrl: "https://www.tempestai.dev/download",
       license: "https://www.apache.org/licenses/LICENSE-2.0",
       softwareVersion: "0.1.2",
-      url: "https://tempestai.dev",
+      url: "https://www.tempestai.dev",
     },
     {
       "@type": "Organization",
       name: "Tempest",
-      url: "https://tempestai.dev",
+      url: "https://www.tempestai.dev",
       sameAs: [
         "https://github.com/tempestai-dev/tempest",
         "https://x.com/usetempest",
@@ -46,12 +39,7 @@ const structuredDataSchema = {
     {
       "@type": "WebSite",
       name: "Tempest",
-      url: "https://tempestai.dev",
-      potentialAction: {
-        "@type": "SearchAction",
-        target: "https://tempestai.dev/blog?type={search_term_string}",
-        "query-input": "required name=search_term_string",
-      },
+      url: "https://www.tempestai.dev",
     },
   ],
 };
@@ -111,10 +99,7 @@ const faqSchema = {
   ],
 };
 
-export default async function HomePage() {
-  const headersList = await headers();
-  const ua = headersList.get("user-agent") ?? "";
-  const initialOS = detectOSFromUA(ua);
+export default function HomePage() {
   const posts = getAllPosts().slice(0, 3);
   return (
     <main>
@@ -126,7 +111,7 @@ export default async function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
-      <HeroSection initialOS={initialOS} />
+      <HeroSection />
       <ProvidersSection />
       <HowItWorksSection />
       <WhyOriginSection />

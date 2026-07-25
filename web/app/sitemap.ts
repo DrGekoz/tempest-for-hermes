@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next'
 import { getAllPosts } from '@/lib/mdx'
 
 // canonical base URL for all sitemap entries
-const BASE = 'https://tempestai.dev'
+const BASE = 'https://www.tempestai.dev'
 
 async function getReleaseTagsWithDates(): Promise<{ tag: string; date: string }[]> {
   try {
@@ -29,6 +29,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE}/download`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${BASE}/release-notes`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.7 },
     { url: `${BASE}/tempest-vs-conductor`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${BASE}/tempest-vs-superset`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${BASE}/tempest-vs-emdash`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${BASE}/tempest-vs-agentsroom`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${BASE}/tempest-vs-paseo`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
   ]
 
   const postRoutes: MetadataRoute.Sitemap = getAllPosts().map((post) => ({

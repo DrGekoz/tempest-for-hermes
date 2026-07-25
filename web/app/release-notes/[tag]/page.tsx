@@ -19,12 +19,12 @@ export async function generateMetadata({
   return {
     title,
     description,
-    alternates: { canonical: `https://tempestai.dev/release-notes/${encodeURIComponent(tag)}` },
+    alternates: { canonical: `https://www.tempestai.dev/release-notes/${encodeURIComponent(tag)}` },
     openGraph: {
       title,
       description,
       type: 'article',
-      url: `https://tempestai.dev/release-notes/${encodeURIComponent(tag)}`,
+      url: `https://www.tempestai.dev/release-notes/${encodeURIComponent(tag)}`,
       images: [{ url: '/og-image.png', width: 1280, height: 640, alt: title }],
     },
     twitter: {
@@ -216,9 +216,9 @@ export default async function ReleaseNotesPostPage({
             headline: pageTitle,
             description: `What's new in Tempest ${release.tag_name}. Full changelog, downloads, and release details.`,
             datePublished: release.published_at,
-            author: { '@type': 'Organization', name: 'Tempest', url: 'https://tempestai.dev' },
-            publisher: { '@type': 'Organization', name: 'Tempest', url: 'https://tempestai.dev' },
-            mainEntityOfPage: `https://tempestai.dev/release-notes/${encodeURIComponent(release.tag_name)}`,
+            author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            mainEntityOfPage: `https://www.tempestai.dev/release-notes/${encodeURIComponent(release.tag_name)}`,
           }),
         }}
       />
@@ -229,13 +229,13 @@ export default async function ReleaseNotesPostPage({
             '@context': 'https://schema.org',
             '@type': 'BreadcrumbList',
             itemListElement: [
-              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://tempestai.dev' },
-              { '@type': 'ListItem', position: 2, name: 'Release Notes', item: 'https://tempestai.dev/release-notes' },
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Release Notes', item: 'https://www.tempestai.dev/release-notes' },
               {
                 '@type': 'ListItem',
                 position: 3,
                 name: `Tempest ${release.tag_name}`,
-                item: `https://tempestai.dev/release-notes/${encodeURIComponent(release.tag_name)}`,
+                item: `https://www.tempestai.dev/release-notes/${encodeURIComponent(release.tag_name)}`,
               },
             ],
           }),

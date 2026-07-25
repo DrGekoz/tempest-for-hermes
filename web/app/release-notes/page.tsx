@@ -7,12 +7,12 @@ import { formatDate } from '@/lib/format-date'
 export const metadata: Metadata = {
   title: 'Release Notes — Tempest',
   description: 'Every version, every improvement. Full changelog and release history for Tempest.',
-  alternates: { canonical: 'https://tempestai.dev/release-notes' },
+  alternates: { canonical: 'https://www.tempestai.dev/release-notes' },
   openGraph: {
     title: 'Release Notes — Tempest',
     description: 'Every version, every improvement. Full changelog and release history for Tempest.',
     type: 'website',
-    url: 'https://tempestai.dev/release-notes',
+    url: 'https://www.tempestai.dev/release-notes',
     images: [{ url: '/og-image.png', width: 1280, height: 640, alt: 'Tempest Release Notes' }],
   },
   twitter: {

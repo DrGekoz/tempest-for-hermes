@@ -4,19 +4,19 @@ import { GitBranch, Coins, Layers } from "lucide-react";
 import { Container } from "@/components/layout/container";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://tempestai.dev"),
+  metadataBase: new URL("https://www.tempestai.dev"),
   title: "Tempest vs Conductor — Token-Efficient Multi-Agent Development",
   description:
     "Evaluating Conductor alternatives? Tempest indexes your repository once and shares that context across every agent — up to 64% fewer tokens, up to 58% fewer tool calls, with full git worktree isolation per agent.",
   alternates: {
-    canonical: "https://tempestai.dev/tempest-vs-conductor",
+    canonical: "https://www.tempestai.dev/tempest-vs-conductor",
   },
   openGraph: {
     title: "Tempest vs Conductor — Token-Efficient Multi-Agent Development",
     description:
       "Evaluating Conductor alternatives? Tempest indexes your repository once and shares that context across every agent — up to 64% fewer tokens, up to 58% fewer tool calls, with full git worktree isolation per agent.",
     type: "website",
-    url: "https://tempestai.dev/tempest-vs-conductor",
+    url: "https://www.tempestai.dev/tempest-vs-conductor",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Tempest vs Conductor" }],
   },
   twitter: {

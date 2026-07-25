@@ -20,13 +20,13 @@ export const metadata: Metadata = {
   title: 'Blog — Tempest',
   description:
     'Writing about parallel AI agents, token efficiency, open-source tooling, and how we build Tempest.',
-  alternates: { canonical: 'https://tempestai.dev/blog' },
+  alternates: { canonical: 'https://www.tempestai.dev/blog' },
   openGraph: {
     title: 'Blog — Tempest',
     description:
       'Writing about parallel AI agents, token efficiency, open-source tooling, and how we build Tempest.',
     type: 'website',
-    url: 'https://tempestai.dev/blog',
+    url: 'https://www.tempestai.dev/blog',
     images: [{ url: '/og-image.png', width: 1280, height: 640, alt: 'Tempest Blog' }],
   },
   twitter: {

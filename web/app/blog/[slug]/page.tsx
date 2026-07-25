@@ -34,17 +34,17 @@ export async function generateMetadata({
   if (!post) return {}
   const cover = getCoverPathForMeta(slug)
   const ogImage = cover
-    ? { url: `https://tempestai.dev${cover}`, alt: post.title }
+    ? { url: `https://www.tempestai.dev${cover}`, alt: post.title }
     : { url: '/og-image.png', width: 1280, height: 640, alt: post.title }
   return {
     title: `${post.title} — Tempest`,
     description: post.description,
-    alternates: { canonical: `https://tempestai.dev/blog/${slug}` },
+    alternates: { canonical: `https://www.tempestai.dev/blog/${slug}` },
     openGraph: {
       title: post.title,
       description: post.description,
       type: 'article',
-      url: `https://tempestai.dev/blog/${slug}`,
+      url: `https://www.tempestai.dev/blog/${slug}`,
       publishedTime: post.date,
       authors: [post.author],
       tags: post.tags,
@@ -54,7 +54,7 @@ export async function generateMetadata({
       card: 'summary_large_image',
       title: post.title,
       description: post.description,
-      images: [cover ? `https://tempestai.dev${cover}` : 'https://tempestai.dev/og-image.png'],
+      images: [cover ? `https://www.tempestai.dev${cover}` : 'https://www.tempestai.dev/og-image.png'],
     },
   }
 }
@@ -142,10 +142,10 @@ export default async function BlogPostPage({
             description: post.description,
             datePublished: post.date,
             dateModified: post.date,
-            mainEntityOfPage: `https://tempestai.dev/blog/${slug}`,
-            image: coverPath ? `https://tempestai.dev${coverPath}` : 'https://tempestai.dev/og-image.png',
-            author: { '@type': 'Organization', name: 'Tempest', url: 'https://tempestai.dev' },
-            publisher: { '@type': 'Organization', name: 'Tempest', url: 'https://tempestai.dev' },
+            mainEntityOfPage: `https://www.tempestai.dev/blog/${slug}`,
+            image: coverPath ? `https://www.tempestai.dev${coverPath}` : 'https://www.tempestai.dev/og-image.png',
+            author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
           }),
         }}
       />
@@ -156,13 +156,13 @@ export default async function BlogPostPage({
             '@context': 'https://schema.org',
             '@type': 'BreadcrumbList',
             itemListElement: [
-              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://tempestai.dev' },
-              { '@type': 'ListItem', position: 2, name: 'Blog', item: 'https://tempestai.dev/blog' },
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Blog', item: 'https://www.tempestai.dev/blog' },
               {
                 '@type': 'ListItem',
                 position: 3,
                 name: post.title,
-                item: `https://tempestai.dev/blog/${slug}`,
+                item: `https://www.tempestai.dev/blog/${slug}`,
               },
             ],
           }),

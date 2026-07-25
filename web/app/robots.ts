@@ -12,6 +12,6 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: 'anthropic-ai', allow: '/' },
       { userAgent: 'cohere-ai', allow: '/' },
     ],
-    sitemap: 'https://tempestai.dev/sitemap.xml',
+    sitemap: 'https://www.tempestai.dev/sitemap.xml',
   }
 }

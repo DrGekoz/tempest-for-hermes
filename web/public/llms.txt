@@ -4,9 +4,9 @@
 
 ## Product
 
-- [Homepage](https://tempestai.dev/): Overview of Tempest — parallel agent sessions, Token Intelligence, isolated git worktrees, and download links.
-- [Download](https://tempestai.dev/download): Download Tempest for Windows, macOS, and Linux. Free, no account required.
-- [Release Notes](https://tempestai.dev/release-notes): Full changelog and release history for all Tempest versions.
+- [Homepage](https://www.tempestai.dev/): Overview of Tempest — parallel agent sessions, Token Intelligence, isolated git worktrees, and download links.
+- [Download](https://www.tempestai.dev/download): Download Tempest for Windows, macOS, and Linux. Free, no account required.
+- [Release Notes](https://www.tempestai.dev/release-notes): Full changelog and release history for all Tempest versions.
 
 ## Core Capabilities
 
@@ -20,13 +20,13 @@
 
 ## Blog
 
-- [Blog Index](https://tempestai.dev/blog): All posts — release dev logs and long-form articles on parallel agents, token efficiency, and open-source tooling.
-- [Tempest v0.1.2: Token Intelligence](https://tempestai.dev/blog/tempest-v012-release): Release notes covering the Token Intelligence launch, Atlas integration, rewritten work-done detector, and Overview improvements.
-- [Tempest v0.1.1: Prompt Library, Message Queue, and Branch Management](https://tempestai.dev/blog/tempest-v011-release): Release notes covering the Prompt Library, Message Queue, branch management, workspace persistence, and cross-platform releases.
-- [Tempest v0.1.0: Parallel AI Agent Sessions Are Here](https://tempestai.dev/blog/tempest-v010-release): Initial release — isolated git worktrees, session continuity, live status, built-in diff and push, live preview.
-- [Why Parallel Agents Change Everything](https://tempestai.dev/blog/why-parallel-agents-change-everything): Why isolation is the missing piece that makes running multiple AI agents actually work.
-- [The Case Against Context Switching Between AI Agents](https://tempestai.dev/blog/the-case-against-context-switching): Why manually switching context between AI coding sessions is a hidden tax, and how Tempest eliminates it.
-- [Token Intelligence: Eliminating Redundant File Reads Across Agent Sessions](https://tempestai.dev/blog/token-intelligence-eliminating-redundant-reads): How the shared code-knowledge graph cuts context consumption by up to 64% across parallel sessions.
+- [Blog Index](https://www.tempestai.dev/blog): All posts — release dev logs and long-form articles on parallel agents, token efficiency, and open-source tooling.
+- [Tempest v0.1.2: Token Intelligence](https://www.tempestai.dev/blog/tempest-v012-release): Release notes covering the Token Intelligence launch, Atlas integration, rewritten work-done detector, and Overview improvements.
+- [Tempest v0.1.1: Prompt Library, Message Queue, and Branch Management](https://www.tempestai.dev/blog/tempest-v011-release): Release notes covering the Prompt Library, Message Queue, branch management, workspace persistence, and cross-platform releases.
+- [Tempest v0.1.0: Parallel AI Agent Sessions Are Here](https://www.tempestai.dev/blog/tempest-v010-release): Initial release — isolated git worktrees, session continuity, live status, built-in diff and push, live preview.
+- [Why Parallel Agents Change Everything](https://www.tempestai.dev/blog/why-parallel-agents-change-everything): Why isolation is the missing piece that makes running multiple AI agents actually work.
+- [The Case Against Context Switching Between AI Agents](https://www.tempestai.dev/blog/the-case-against-context-switching): Why manually switching context between AI coding sessions is a hidden tax, and how Tempest eliminates it.
+- [Token Intelligence: Eliminating Redundant File Reads Across Agent Sessions](https://www.tempestai.dev/blog/token-intelligence-eliminating-redundant-reads): How the shared code-knowledge graph cuts context consumption by up to 64% across parallel sessions.
 
 ## Technical Details
 
