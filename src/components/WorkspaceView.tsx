@@ -76,6 +76,7 @@ import { Mark } from "../assets/Mark";
 import { StatusBar } from "./StatusBar";
 import { UpdateNotice } from "./UpdateNotice";
 import { useAvailableUpdate, dismissUpdate, startUpdateChecks, installUpdate, openReleaseNotes } from "../store/updates";
+import { startModelManifestFetch } from "../lib/remoteConfig";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
 import { Toolbar } from "./Toolbar";
@@ -251,7 +252,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
   // Update checks: one now, then daily for as long as the app stays open.
   const availableUpdate = useAvailableUpdate();
-  useEffect(() => { startUpdateChecks(); }, []);
+  useEffect(() => { startUpdateChecks(); void startModelManifestFetch(); }, []);
 
   /// The Overview footer has to stay mounted while it retracts, so ✕ sets this
   /// instead of dismissing outright; the dismissal lands on animation end.

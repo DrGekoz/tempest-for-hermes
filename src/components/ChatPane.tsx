@@ -12,11 +12,10 @@ import { loadTempestConfig } from "../lib/tempestConfig";
 import {
   CDN,
   CHAT_PROVIDERS,
-  PROVIDER_MODELS,
-  getContextSize,
   type ChatProvider,
   type ChatModel,
 } from "../lib/chatModels";
+import { useModelManifest, contextSizeFor } from "../lib/remoteConfig";
 import { ToolCallCard } from "./ChatPane/ToolCallCard";
 import { ProposalCard } from "./ChatPane/ProposalCard";
 import {
@@ -51,6 +50,7 @@ interface Props {
 // â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function ChatPane({ hidden, projectPath, atlasIndexed, onLaunchAgent }: Props) {
+  const manifest = useModelManifest();
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadChatHistory(projectPath));
   const [isEmpty, setIsEmpty] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -61,8 +61,8 @@ export function ChatPane({ hidden, projectPath, atlasIndexed, onLaunchAgent }: P
   });
   const [model, setModel] = useState<ChatModel>(() => {
     const { chatProvider, chatModel } = getRuntimeState();
-    const models = PROVIDER_MODELS[chatProvider ?? "anthropic"] ?? [];
-    return models.find(m => m.id === chatModel) ?? PROVIDER_MODELS["anthropic"][0];
+    const models = manifest.providers[chatProvider ?? "anthropic"] ?? [];
+    return models.find(m => m.id === chatModel) ?? manifest.providers["anthropic"][0];
   });
   const [pickerOpen, setPickerOpen]     = useState(false);
   const [pickerPos, setPickerPos]       = useState({ bottom: 0, left: 0 });
@@ -518,13 +518,13 @@ export function ChatPane({ hidden, projectPath, atlasIndexed, onLaunchAgent }: P
   }
 
   const activePickerProvider = CHAT_PROVIDERS.find(p => p.id === pickerProvider)!;
-  const rawPickerModels = PROVIDER_MODELS[pickerProvider] ?? [];
+  const rawPickerModels = manifest.providers[pickerProvider] ?? [];
   const filteredModels  = search.trim()
     ? rawPickerModels.filter(m => m.label.toLowerCase().includes(search.toLowerCase()))
     : rawPickerModels;
   const hasMessages = messages.length > 0 || isLoading;
 
-  const ctxSize   = getContextSize(model.id);
+  const ctxSize   = contextSizeFor(manifest, model.id);
   const ctxPct    = contextTokens > 0 ? Math.min(contextTokens / ctxSize, 1) : 0;
   const ctxR      = 7;
   const ctxCirc   = 2 * Math.PI * ctxR;
