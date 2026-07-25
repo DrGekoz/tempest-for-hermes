@@ -4434,13 +4434,14 @@ dependencies = [
 
 [[package]]
 name = "tempest"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "dashmap",
  "dbiso",
  "hephaestus",
  "junction",
  "libc",
+ "minisign-verify",
  "portable-pty",
  "rusqlite",
  "serde",

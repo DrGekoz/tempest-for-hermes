@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { AGENT_CONFIGS } from '../components/NewSessionMenu';
+import { getAgents } from '../lib/agentRegistry';
 
 // undefined = not checked yet; true/false = result
 export type AvailabilityMap = Record<string, boolean | undefined>;
 
 let _state: AvailabilityMap = {};
-let _started = false;
+const _checked = new Set<string>();
 const _listeners = new Set<() => void>();
 
 function notify() {
@@ -20,11 +20,12 @@ export function useAgentAvailability(): AvailabilityMap {
   );
 }
 
-// Safe to call multiple times — only runs checks once.
+// Check any agents not yet probed. Safe to call repeatedly — each hint is checked
+// once. Called again after the remote manifest lands so new agents get probed too.
 export function checkAgentAvailability(): void {
-  if (_started) return;
-  _started = true;
-  for (const a of AGENT_CONFIGS) {
+  for (const a of getAgents()) {
+    if (_checked.has(a.hint)) continue;
+    _checked.add(a.hint);
     const program = a.hint.split(' ')[0]!;
     invoke<boolean>('check_program_available', { program })
       .then(ok  => { _state = { ..._state, [a.hint]: ok };    notify(); })

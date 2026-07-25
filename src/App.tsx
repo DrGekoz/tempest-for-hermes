@@ -5,6 +5,7 @@ import { WorkspaceView } from "./components/WorkspaceView";
 import Onboarding from "./components/onboarding/Onboarding";
 import { getRuntimeState, setRuntimeState } from "./lib/runtimeState";
 import { checkAgentAvailability } from "./store/agentAvailability";
+import { startRemoteAgentsFetch } from "./lib/remoteAgents";
 import "./App.css";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
 
   useEffect(() => {
     checkAgentAvailability();
+    void startRemoteAgentsFetch(); // verified remote agents manifest, else bundled
     const label = getCurrentWindow().label;
     if (label.startsWith("zen-")) {
       invoke<[string, string] | null>("get_zen_config", { label })

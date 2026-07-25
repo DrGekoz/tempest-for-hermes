@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "updatedAt": "2026-07-25",
+  "agents": [
+    {
+      "id": "agy",
+      "name": "Antigravity",
+      "command": "agy",
+      "adapter": "cli",
+      "icon": "agy",
+      "mono": true,
+      "downloadUrl": "https://antigravity.dev",
+      "flags": {
+        "resume": ["--continue"],
+        "autoApprove": ["--dangerously-skip-permissions"]
+      }
+    },
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "command": "claude",
+      "adapter": "cli",
+      "icon": "claude",
+      "downloadUrl": "https://docs.anthropic.com/en/docs/claude-code",
+      "flags": {
+        "session": ["--session-id", "{UUID}"],
+        "resume": ["--resume", "{UUID}"],
+        "model": ["--model", "{MODEL}"],
+        "autoApprove": ["--dangerously-skip-permissions"]
+      }
+    },
+    {
+      "id": "cline",
+      "name": "Cline",
+      "command": "cline",
+      "adapter": "cli",
+      "icon": "cline",
+      "mono": true,
+      "downloadUrl": "https://cline.bot"
+    },
+    {
+      "id": "codex",
+      "name": "Codex CLI",
+      "command": "codex",
+      "adapter": "cli",
+      "icon": "codex",
+      "mono": true,
+      "downloadUrl": "https://github.com/openai/codex",
+      "flags": {
+        "resume": ["resume", "--last"],
+        "model": ["--model", "{MODEL}"],
+        "autoApprove": ["--dangerously-bypass-approvals-and-sandbox"]
+      }
+    },
+    {
+      "id": "copilot",
+      "name": "Copilot CLI",
+      "command": "gh copilot",
+      "adapter": "cli",
+      "icon": "copilot",
+      "downloadUrl": "https://cli.github.com"
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor Agent",
+      "command": "cursor",
+      "adapter": "cli",
+      "icon": "cursor",
+      "mono": true,
+      "downloadUrl": "https://cursor.sh"
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "command": "gemini",
+      "adapter": "cli",
+      "icon": "gemini",
+      "downloadUrl": "https://github.com/google-gemini/gemini-cli",
+      "flags": {
+        "session": ["--session-id", "{UUID}"],
+        "resume": ["--resume", "{UUID}"],
+        "model": ["--model", "{MODEL}"],
+        "autoApprove": ["--yolo"]
+      }
+    },
+    {
+      "id": "goose",
+      "name": "Goose",
+      "command": "goose",
+      "adapter": "cli",
+      "icon": "goose",
+      "mono": true,
+      "downloadUrl": "https://block.github.io/goose"
+    },
+    {
+      "id": "opencode",
+      "name": "Opencode",
+      "command": "opencode",
+      "adapter": "cli",
+      "icon": "opencode",
+      "mono": true,
+      "downloadUrl": "https://opencode.ai",
+      "capture": {
+        "pattern": "\\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\b",
+        "flags": "i",
+        "resume": ["-s", "{UUID}"]
+      }
+    }
+  ]
+}

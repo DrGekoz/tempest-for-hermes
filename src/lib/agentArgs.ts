@@ -1,5 +1,12 @@
-import { AGENT_CONFIGS } from "../components/NewSessionMenu";
+import { getAgent } from "./agentRegistry";
 import { getSettings } from "../store/appSettings";
+
+// The generic "cli" adapter: turn an agent's structured flags into an argv. Every
+// bundled and remote agent runs through here — the only per-agent knowledge is
+// the flag templates in the registry entry, not code.
+//
+// Placeholders substituted per flag group: "{UUID}" (session/conversation id) and
+// "{MODEL}" (chosen model). The prompt is appended last as a positional arg.
 
 export function buildAgentArgs(
   agent: string,
@@ -8,11 +15,13 @@ export function buildAgentArgs(
   prompt?: string,
   model?: string,
 ): string[] {
-  const config = AGENT_CONFIGS.find((a) => a.hint === agent);
+  const config = getAgent(agent);
   const args: string[] = [];
 
-  if (model && (agent === "claude" || agent === "gemini" || agent === "codex")) {
-    args.push("--model", model);
+  // Model flag is structured (modelArgs), so a new agent declares its own spelling
+  // in the manifest rather than being added to a hardcoded list here.
+  if (model && config?.modelArgs) {
+    for (const arg of config.modelArgs) args.push(arg.replace("{MODEL}", model));
   }
 
   if (config && conversationId && config.resumeArgs) {
@@ -29,6 +38,9 @@ export function buildAgentArgs(
     }
   }
 
+  // Auto-approve flags are applied ONLY when the user's local Auto setting is on.
+  // The manifest supplies the flag syntax; this gate supplies the consent — a
+  // manifest can never force Auto mode on.
   if (config?.autoApproveArgs && getSettings().autoApprove) {
     for (const arg of config.autoApproveArgs) {
       args.push(arg);

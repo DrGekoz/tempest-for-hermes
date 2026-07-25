@@ -3,143 +3,34 @@ import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAgentAvailability } from "../store/agentAvailability";
 import { Bot, TerminalSquare, MessageSquare, Globe, ChevronRight, Download } from "lucide-react";
-import claudeCodeSrc from "../assets/agent-icons/claude-color.svg";
-import geminiCliSrc from "../assets/agent-icons/geminicli-color.svg";
-import githubCopilotSrc from "../assets/agent-icons/githubcopilot-color.svg";
-import opencodeSrc from "../assets/agent-icons/opencode.svg";
-import clineSrc from "../assets/agent-icons/cline.svg";
-import cursorSrc from "../assets/agent-icons/cursor.svg";
-import gooseSrc from "../assets/agent-icons/goose.svg";
-import codexSrc from "../assets/agent-icons/codex.svg";
-import antigravitySrc from "../assets/agent-icons/antigravity.svg";
+import { useAgents, getAgent, getIconDataUrl, remoteIconUrl, type AgentConfig } from "../lib/agentRegistry";
 import "./NewSessionMenu.css";
 
-export interface AgentConfig {
-  name: string;
-  hint: string; // CLI command
-  iconSrc: string;
-  mono?: boolean; // true = monochrome SVG; AgentIcon inverts it in dark mode
-  // Args used the FIRST time an agent spawns. "{UUID}" is replaced with a freshly
-  // minted session UUID so we can later resume that exact conversation. null when
-  // the agent has no externally-addressable session id.
-  sessionIdArgs: string[] | null;
-  // Args used when RESUMING. "{UUID}" is replaced with the stored conversation UUID.
-  // null when the agent cannot be resumed by id (it manages sessions internally).
-  resumeArgs: string[] | null;
-  // For agents that mint their own session ID and print it to PTY output (e.g. opencode).
-  // capturePattern: regex with a capture group that extracts the session ID from raw output.
-  // captureResumeArgs: resume args to use with the captured ID — "{UUID}" is substituted.
-  capturePattern?: RegExp;
-  captureResumeArgs?: string[] | null;
-  mcpSupported?: boolean; // unused — MCP injection now via .mcp.json written at index time
-  // CLI flags appended when the "Auto-approve agent tool calls" setting is on.
-  // Absent (undefined) means the agent has no known auto-approve flag.
-  autoApproveArgs?: string[];
-  // URL to download/install the agent if it isn't detected on PATH.
-  downloadUrl?: string;
-}
-
-export const AGENT_CONFIGS: AgentConfig[] = [
-  {
-    name: "Antigravity",
-    hint: "agy",
-    iconSrc: antigravitySrc,
-    mono: true,
-    sessionIdArgs: null,
-    resumeArgs: ["--continue"],
-    autoApproveArgs: ["--dangerously-skip-permissions"],
-    downloadUrl: "https://antigravity.dev",
-  },
-  {
-    name: "Claude Code",
-    hint: "claude",
-    iconSrc: claudeCodeSrc,
-    sessionIdArgs: ["--session-id", "{UUID}"],
-    resumeArgs: ["--resume", "{UUID}"],
-    mcpSupported: true,
-    autoApproveArgs: ["--dangerously-skip-permissions"],
-    downloadUrl: "https://docs.anthropic.com/en/docs/claude-code",
-  },
-  {
-    name: "Cline",
-    hint: "cline",
-    iconSrc: clineSrc,
-    mono: true,
-    sessionIdArgs: null,
-    resumeArgs: null,
-    downloadUrl: "https://cline.bot",
-  },
-  {
-    name: "Codex CLI",
-    hint: "codex",
-    iconSrc: codexSrc,
-    mono: true,
-    sessionIdArgs: null,
-    resumeArgs: ["resume", "--last"],
-    autoApproveArgs: ["--dangerously-bypass-approvals-and-sandbox"],
-    downloadUrl: "https://github.com/openai/codex",
-  },
-  {
-    name: "Copilot CLI",
-    hint: "gh copilot",
-    iconSrc: githubCopilotSrc,
-    sessionIdArgs: null,
-    resumeArgs: null,
-    downloadUrl: "https://cli.github.com",
-  },
-  {
-    name: "Cursor Agent",
-    hint: "cursor",
-    iconSrc: cursorSrc,
-    mono: true,
-    sessionIdArgs: null,
-    resumeArgs: null,
-    downloadUrl: "https://cursor.sh",
-  },
-  {
-    name: "Gemini CLI",
-    hint: "gemini",
-    iconSrc: geminiCliSrc,
-    sessionIdArgs: ["--session-id", "{UUID}"],
-    resumeArgs: ["--resume", "{UUID}"],
-    autoApproveArgs: ["--yolo"],
-    downloadUrl: "https://github.com/google-gemini/gemini-cli",
-  },
-  {
-    name: "Goose",
-    hint: "goose",
-    iconSrc: gooseSrc,
-    mono: true,
-    sessionIdArgs: null,
-    resumeArgs: null,
-    downloadUrl: "https://block.github.io/goose",
-  },
-  {
-    name: "Opencode",
-    hint: "opencode",
-    iconSrc: opencodeSrc,
-    mono: true,
-    sessionIdArgs: null,
-    resumeArgs: null,
-    capturePattern: /\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i,
-    captureResumeArgs: ["-s", "{UUID}"],
-    downloadUrl: "https://opencode.ai",
-  },
-];
+// The agent type and list live in the registry now (bundled ⊕ verified remote
+// manifest). Re-exported here so existing importers keep working unchanged.
+export { AGENT_CONFIGS } from "../lib/agentRegistry";
+export type { AgentConfig } from "../lib/agentRegistry";
 
 export function AgentIcon({ hint, size, className }: { hint?: string; size: number; className?: string }) {
-  const config = AGENT_CONFIGS.find((a) => a.hint === hint);
-  if (!config) return <Bot size={size} className={className} />;
+  const [failed, setFailed] = useState(false);
+  const config = getAgent(hint ?? "");
+  // Prefer a cached (downloaded) icon, then a bundled asset, then the repo URL;
+  // anything else — or a load error — falls back to the Bot glyph.
+  const src = config && !failed
+    ? (getIconDataUrl(config.id) ?? (config.iconSrc || remoteIconUrl(config.icon)))
+    : undefined;
+  if (!config || !src) return <Bot size={size} className={className} />;
   const monoClass = config.mono ? "agent-icon--mono" : undefined;
   const combinedClass = [className, monoClass].filter(Boolean).join(" ") || undefined;
   return (
     <img
-      src={config.iconSrc}
+      src={src}
       width={size}
       height={size}
       className={combinedClass}
       style={{ objectFit: "contain", display: "block", flexShrink: 0 }}
       alt={config.name}
+      onError={() => setFailed(true)}
     />
   );
 }
@@ -170,6 +61,7 @@ export function NewSessionMenu({
   const [agentHovered, setAgentHovered] = useState(false);
   const [subRect, setSubRect] = useState<DOMRect | null>(null);
   const available = useAgentAvailability();
+  const agents = useAgents();
 
   useEffect(() => {
     if (!open) { setAgentHovered(false); return; }
@@ -239,23 +131,16 @@ export function NewSessionMenu({
           <ChevronRight size={12} className="nsm-item-chevron" />
           {agentHovered && (
             <div className="nsm-submenu" style={subStyle}>
-              {AGENT_CONFIGS.map((a) => {
+              {agents.map((a) => {
                 const isAvailable = available[a.hint] !== false; // true until confirmed absent
                 return (
-                  <div key={a.name} className={`nsm-subitem${isAvailable ? "" : " nsm-subitem--unavailable"}`}>
+                  <div key={a.id} className={`nsm-subitem${isAvailable ? "" : " nsm-subitem--unavailable"}`}>
                     <button
                       className="nsm-subitem-main"
                       disabled={!isAvailable}
                       onClick={() => { if (isAvailable) { onClose(); onAgentSession(a); } }}
                     >
-                      <img
-                        src={a.iconSrc}
-                        width={14}
-                        height={14}
-                        className={`nsm-subitem-icon${a.mono ? " agent-icon--mono" : ""}`}
-                        style={{ objectFit: "contain", flexShrink: 0 }}
-                        alt={a.name}
-                      />
+                      <AgentIcon hint={a.hint} size={14} className="nsm-subitem-icon" />
                       <span className="nsm-subitem-name">{a.name}</span>
                       <span className="nsm-subitem-hint">{a.hint}</span>
                     </button>

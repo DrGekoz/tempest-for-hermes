@@ -1734,6 +1734,42 @@ struct GitStatusEntry {
     path: String,
 }
 
+// ── Signed remote-config verification ────────────────────────────────────────
+// The agents manifest (config/agents.json) is DATA that drives what the app
+// spawns — a CLI command plus its flags — so, unlike the models list, it is
+// delivered SIGNED. This verifies a detached minisign signature over the raw
+// manifest bytes before the frontend is allowed to apply it. A malformed key,
+// signature, or content mismatch all return `false`, and the frontend then
+// keeps the bundled agent list.
+//
+// A DEDICATED key, separate from the updater's, so the two rotate independently.
+// Ceremony (one-time):
+//   1. minisign -G -p tempest-agents.pub -s tempest-agents.key
+//   2. paste the `RW...` line from tempest-agents.pub below
+//   3. keep tempest-agents.key as a CI secret; sign on every manifest change:
+//        minisign -S -s tempest-agents.key -m config/agents.json
+//      then commit config/agents.json and config/agents.json.minisig
+// Empty key = channel disabled: every verify fails, the app stays on bundled.
+const AGENTS_PUBKEY: &str = "RWS6sNKixTMBr+3cvpkDt+RjqjYkOxRnhqtD62YKrCgGmMsqfZkUr+Uc";
+
+#[tauri::command(async)]
+fn verify_minisign(data: String, signature: String) -> bool {
+    if AGENTS_PUBKEY.is_empty() {
+        return false;
+    }
+    let pk = match minisign_verify::PublicKey::from_base64(AGENTS_PUBKEY) {
+        Ok(pk) => pk,
+        Err(_) => return false,
+    };
+    let sig = match minisign_verify::Signature::decode(&signature) {
+        Ok(sig) => sig,
+        Err(_) => return false,
+    };
+    // `true` accepts both legacy and prehashed minisign signatures — both are
+    // signatures from our key; which format `minisign -S` emits varies by version.
+    pk.verify(data.as_bytes(), &sig, true).is_ok()
+}
+
 #[tauri::command(async)]
 fn check_program_available(program: String) -> bool {
     let check_cmd = if cfg!(windows) { "where" } else { "which" };
@@ -3503,6 +3539,7 @@ pub fn run() {
             atlas_mcp_call,
             git_ls_files,
             check_program_available,
+            verify_minisign,
             git_numstat,
             db_load,
             db_ensure_project,

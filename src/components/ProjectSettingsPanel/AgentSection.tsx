@@ -1,13 +1,15 @@
 import { Check } from "lucide-react";
-import { AGENT_CONFIGS, AgentIcon } from "../NewSessionMenu";
+import { AgentIcon } from "../NewSessionMenu";
+import { useAgents } from "../../lib/agentRegistry";
 import type { ProjectSettings } from "./useProjectSettings";
 
 export function AgentSection({ value, onChange }: {
   value: ProjectSettings["agents"];
   onChange: (v: ProjectSettings["agents"]) => void;
 }) {
+  const agents = useAgents();
   const permitted = new Set(value.permitted);
-  const allSelected = permitted.size === AGENT_CONFIGS.length;
+  const allSelected = permitted.size === agents.length;
 
   function toggle(hint: string) {
     const next = new Set(permitted);
@@ -16,7 +18,7 @@ export function AgentSection({ value, onChange }: {
   }
 
   function toggleAll() {
-    onChange({ permitted: allSelected ? [] : AGENT_CONFIGS.map((a) => a.hint) });
+    onChange({ permitted: allSelected ? [] : agents.map((a) => a.hint) });
   }
 
   return (
@@ -40,11 +42,11 @@ export function AgentSection({ value, onChange }: {
       </div>
 
       <div className="psp-agent-grid">
-        {AGENT_CONFIGS.map((a) => {
+        {agents.map((a) => {
           const on = permitted.has(a.hint);
           return (
             <button
-              key={a.hint}
+              key={a.id}
               className={`psp-agent-card${on ? " psp-agent-card--active" : ""}`}
               onClick={() => toggle(a.hint)}
             >
