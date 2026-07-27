@@ -7,12 +7,12 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.tempestai.dev"),
   title: "Tempest vs Paseo — Local-First Token-Efficient Multi-Agent Development",
   description:
-    "Paseo supports mobile, web, CLI, voice, and remote access. Tempest is Windows-native, daemon-free, and has a shared knowledge graph that cuts token usage by up to 64% across parallel sessions.",
+    "Paseo covers every device. Tempest cuts token cost — Windows-native, daemon-free, with a shared knowledge graph reducing usage by up to 64%.",
   alternates: { canonical: "https://www.tempestai.dev/tempest-vs-paseo" },
   openGraph: {
     title: "Tempest vs Paseo — Local-First Token-Efficient Multi-Agent Development",
     description:
-      "Paseo supports mobile, web, CLI, voice, and remote access. Tempest is Windows-native, daemon-free, and has a shared knowledge graph that cuts token usage by up to 64% across parallel sessions.",
+      "Paseo covers every device. Tempest cuts token cost — Windows-native, daemon-free, with a shared knowledge graph reducing usage by up to 64%.",
     type: "website",
     url: "https://www.tempestai.dev/tempest-vs-paseo",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Tempest vs Paseo" }],
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Tempest vs Paseo — Local-First Token-Efficient Multi-Agent Development",
     description:
-      "Paseo supports mobile, web, CLI, voice, and remote access. Tempest is Windows-native, daemon-free, and has a shared knowledge graph that cuts token usage by up to 64% across parallel sessions.",
+      "Paseo covers every device. Tempest cuts token cost — Windows-native, daemon-free, with a shared knowledge graph reducing usage by up to 64%.",
     images: ["/og-image.png"],
   },
   keywords: [
@@ -94,6 +94,37 @@ function Unknown() {
 export default function TempestVsPaseoPage() {
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Article',
+            headline: 'Tempest vs Paseo — Local-First Token-Efficient Multi-Agent Development',
+            description: 'Paseo covers every device. Tempest cuts token cost — Windows-native, daemon-free, with a shared knowledge graph reducing usage by up to 64%.',
+            url: 'https://www.tempestai.dev/tempest-vs-paseo',
+            author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: {
+              '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev',
+              logo: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+            },
+            image: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+          }),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Tempest vs Paseo', item: 'https://www.tempestai.dev/tempest-vs-paseo' },
+            ],
+          }),
+        }}
+      />
       <Container>
         <section className="flex flex-col pt-10 pb-10 min-[1000px]:pb-12">
           <p className="text-sm text-muted-foreground font-semibold mb-4">TOKEN INTELLIGENCE · PASEO ALTERNATIVE</p>
@@ -219,6 +250,16 @@ export default function TempestVsPaseoPage() {
             </div>
           ))}
         </div>
+      </Container>
+
+      <Container className="pb-12">
+        <p className="text-sm text-muted-foreground font-semibold mb-4">FURTHER READING</p>
+        <Link
+          href="/blog/the-case-against-context-switching"
+          className="text-sm text-foreground underline underline-offset-4 decoration-foreground/25 hover:decoration-foreground transition-colors"
+        >
+          The Case Against Context Switching Between AI Agents →
+        </Link>
       </Container>
 
       <Container className="pb-24">

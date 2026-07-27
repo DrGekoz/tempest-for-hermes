@@ -7,12 +7,12 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.tempestai.dev"),
   title: "Tempest vs AgentsRoom — Free Open-Source Multi-Agent Development",
   description:
-    "AgentsRoom and Tempest both support Windows and parallel agents. Tempest is Apache 2.0, free with no project limits, and has a shared knowledge graph that cuts token usage by up to 64%.",
+    "Both support Windows and parallel agents. Tempest adds Apache 2.0, no project limits, and a shared knowledge graph that cuts token usage by up to 64%.",
   alternates: { canonical: "https://www.tempestai.dev/tempest-vs-agentsroom" },
   openGraph: {
     title: "Tempest vs AgentsRoom — Free Open-Source Multi-Agent Development",
     description:
-      "AgentsRoom and Tempest both support Windows and parallel agents. Tempest is Apache 2.0, free with no project limits, and has a shared knowledge graph that cuts token usage by up to 64%.",
+      "Both support Windows and parallel agents. Tempest adds Apache 2.0, no project limits, and a shared knowledge graph that cuts token usage by up to 64%.",
     type: "website",
     url: "https://www.tempestai.dev/tempest-vs-agentsroom",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Tempest vs AgentsRoom" }],
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Tempest vs AgentsRoom — Free Open-Source Multi-Agent Development",
     description:
-      "AgentsRoom and Tempest both support Windows and parallel agents. Tempest is Apache 2.0, free with no project limits, and has a shared knowledge graph that cuts token usage by up to 64%.",
+      "Both support Windows and parallel agents. Tempest adds Apache 2.0, no project limits, and a shared knowledge graph that cuts token usage by up to 64%.",
     images: ["/og-image.png"],
   },
   keywords: [
@@ -91,6 +91,37 @@ function Unknown() {
 export default function TempestVsAgentsRoomPage() {
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Article',
+            headline: 'Tempest vs AgentsRoom — Free Open-Source Multi-Agent Development',
+            description: 'Both support Windows and parallel agents. Tempest adds Apache 2.0, no project limits, and a shared knowledge graph that cuts token usage by up to 64%.',
+            url: 'https://www.tempestai.dev/tempest-vs-agentsroom',
+            author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: {
+              '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev',
+              logo: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+            },
+            image: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+          }),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Tempest vs AgentsRoom', item: 'https://www.tempestai.dev/tempest-vs-agentsroom' },
+            ],
+          }),
+        }}
+      />
       <Container>
         <section className="flex flex-col pt-10 pb-10 min-[1000px]:pb-12">
           <p className="text-sm text-muted-foreground font-semibold mb-4">TOKEN INTELLIGENCE · AGENTSROOM ALTERNATIVE</p>
@@ -218,9 +249,20 @@ export default function TempestVsAgentsRoomPage() {
         </div>
       </Container>
 
+      <Container className="pb-12">
+        <p className="text-sm text-muted-foreground font-semibold mb-4">FURTHER READING</p>
+        <Link
+          href="/blog/why-parallel-agents-change-everything"
+          className="text-sm text-foreground underline underline-offset-4 decoration-foreground/25 hover:decoration-foreground transition-colors"
+        >
+          Why Parallel Agents Change Everything →
+        </Link>
+      </Container>
+
       <Container className="pb-24">
         <div className="rounded-2xl bg-foreground/[0.04] border border-foreground/[0.06] flex flex-col items-center text-center px-8 py-16 gap-6">
           <p className="text-sm text-muted-foreground font-semibold">AGENTSROOM ALTERNATIVE — FREE AND OPEN SOURCE</p>
+
           <h2 className="text-3xl min-[1000px]:text-4xl font-normal text-foreground leading-snug max-w-xl">
             64% fewer tokens.{" "}
             <span className="text-muted-foreground">Every parallel session. Free.</span>

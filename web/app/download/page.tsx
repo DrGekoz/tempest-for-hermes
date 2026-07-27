@@ -4,7 +4,7 @@ import { DownloadContent } from "@/components/download-content"
 import { formatDate } from "@/lib/format-date"
 
 export const metadata: Metadata = {
-  title: "Download Tempest — Free, Open Source — Windows (macOS & Linux coming soon)",
+  title: "Download Tempest — Free & Open Source",
   description: "Download Tempest for Windows, macOS, or Linux. Free, open source, no account required.",
   alternates: { canonical: "https://www.tempestai.dev/download" },
   openGraph: {
@@ -80,14 +80,41 @@ export default async function DownloadPage() {
     .map((a) => ({ label: assetLabel(a.name), href: a.browser_download_url }))
 
   return (
-    <Container className="py-16 min-[1000px]:py-24">
-      <DownloadContent
-        version={version}
-        date={date}
-        windowsAssets={windowsAssets}
-        linuxAssets={linuxAssets}
-        macAssets={macAssets}
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'WebPage',
+            name: 'Download Tempest — Free & Open Source',
+            description: 'Download Tempest for Windows, macOS, or Linux. Free, open source, no account required.',
+            url: 'https://www.tempestai.dev/download',
+          }),
+        }}
       />
-    </Container>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Download', item: 'https://www.tempestai.dev/download' },
+            ],
+          }),
+        }}
+      />
+      <Container className="py-16 min-[1000px]:py-24">
+        <DownloadContent
+          version={version}
+          date={date}
+          windowsAssets={windowsAssets}
+          linuxAssets={linuxAssets}
+          macAssets={macAssets}
+        />
+      </Container>
+    </>
   )
 }

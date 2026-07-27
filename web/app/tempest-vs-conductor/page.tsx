@@ -7,14 +7,14 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.tempestai.dev"),
   title: "Tempest vs Conductor — Token-Efficient Multi-Agent Development",
   description:
-    "Evaluating Conductor alternatives? Tempest indexes your repository once and shares that context across every agent — up to 64% fewer tokens, up to 58% fewer tool calls, with full git worktree isolation per agent.",
+    "Tempest indexes your repository once and shares it across every agent. Result: up to 64% fewer tokens, 58% fewer tool calls, full git worktree isolation.",
   alternates: {
     canonical: "https://www.tempestai.dev/tempest-vs-conductor",
   },
   openGraph: {
     title: "Tempest vs Conductor — Token-Efficient Multi-Agent Development",
     description:
-      "Evaluating Conductor alternatives? Tempest indexes your repository once and shares that context across every agent — up to 64% fewer tokens, up to 58% fewer tool calls, with full git worktree isolation per agent.",
+      "Tempest indexes your repository once and shares it across every agent. Result: up to 64% fewer tokens, 58% fewer tool calls, full git worktree isolation.",
     type: "website",
     url: "https://www.tempestai.dev/tempest-vs-conductor",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Tempest vs Conductor" }],
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Tempest vs Conductor — Token-Efficient Multi-Agent Development",
     description:
-      "Evaluating Conductor alternatives? Tempest indexes your repository once and shares that context across every agent — up to 64% fewer tokens, up to 58% fewer tool calls, with full git worktree isolation per agent.",
+      "Tempest indexes your repository once and shares it across every agent. Result: up to 64% fewer tokens, 58% fewer tool calls, full git worktree isolation.",
     images: ["/og-image.png"],
   },
   keywords: [
@@ -97,6 +97,38 @@ function Unknown() {
 export default function TempestVsConductorPage() {
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Article',
+            headline: 'Tempest vs Conductor — Token-Efficient Multi-Agent Development',
+            description: 'Tempest indexes your repository once and shares it across every agent. Result: up to 64% fewer tokens, 58% fewer tool calls, full git worktree isolation.',
+            url: 'https://www.tempestai.dev/tempest-vs-conductor',
+            author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: {
+              '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev',
+              logo: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+            },
+            image: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+          }),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Tempest vs Conductor', item: 'https://www.tempestai.dev/tempest-vs-conductor' },
+            ],
+          }),
+        }}
+      />
+
       {/* Hero */}
       <Container>
         <section className="flex flex-col pt-10 pb-10 min-[1000px]:pb-12">
@@ -240,6 +272,36 @@ export default function TempestVsConductorPage() {
             </div>
           ))}
         </div>
+      </Container>
+
+      {/* Verdict */}
+      <Container className="pb-16">
+        <p className="text-sm text-muted-foreground font-semibold mb-4">WHEN TO PICK CONDUCTOR</p>
+        <p className="text-base text-foreground max-w-2xl leading-relaxed">
+          Pick Conductor if its specific orchestration model fits your team&apos;s workflow and token
+          cost is not a primary constraint. If you are already invested in its toolchain,
+          Conductor may serve you well.
+        </p>
+      </Container>
+
+      <Container className="pb-16">
+        <p className="text-sm text-muted-foreground font-semibold mb-4">WHEN TO PICK TEMPEST</p>
+        <p className="text-base text-foreground max-w-2xl leading-relaxed">
+          Pick Tempest if your API bill is the constraint. Token Intelligence indexes your
+          repository once and shares that index across every parallel agent session — up to 64%
+          fewer tokens, up to 58% fewer tool calls. The savings compound as you add more sessions.
+          Tempest is free, Apache 2.0, and runs entirely on your machine — your code never leaves it.
+        </p>
+      </Container>
+
+      <Container className="pb-12">
+        <p className="text-sm text-muted-foreground font-semibold mb-4">FURTHER READING</p>
+        <Link
+          href="/blog/why-parallel-agents-change-everything"
+          className="text-sm text-foreground underline underline-offset-4 decoration-foreground/25 hover:decoration-foreground transition-colors"
+        >
+          Why Parallel Agents Change Everything →
+        </Link>
       </Container>
 
       {/* CTA */}

@@ -6,7 +6,7 @@ export function Footer() {
   return (
     <footer className="border-t border-foreground/[0.08] mt-auto">
       <Container className="py-12 min-[700px]:py-16">
-        <div className="grid grid-cols-2 min-[1000px]:grid-cols-4 gap-10 min-[1000px]:gap-8">
+        <div className="grid grid-cols-2 min-[1000px]:grid-cols-6 gap-10 min-[1000px]:gap-8">
           <div className="col-span-2 min-[1000px]:col-span-1 flex flex-col gap-4">
             <div>
               <TempestLogo className="h-6 w-auto" />
@@ -47,6 +47,27 @@ export function Footer() {
               >
                 Roadmap
               </a>
+            </nav>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-medium">Company</p>
+            <nav className="flex flex-col gap-2.5">
+              <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">About</Link>
+              <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">Privacy</Link>
+              <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">Terms</Link>
+            </nav>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-medium">Compare</p>
+            <nav className="flex flex-col gap-2.5">
+              <Link href="/compare" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">All Comparisons</Link>
+              <Link href="/tempest-vs-conductor" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">vs Conductor</Link>
+              <Link href="/tempest-vs-superset" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">vs Superset</Link>
+              <Link href="/tempest-vs-emdash" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">vs Emdash</Link>
+              <Link href="/tempest-vs-agentsroom" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">vs AgentsRoom</Link>
+              <Link href="/tempest-vs-paseo" className="text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">vs Paseo</Link>
             </nav>
           </div>
 

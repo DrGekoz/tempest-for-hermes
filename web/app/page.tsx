@@ -24,13 +24,14 @@ const structuredDataSchema = {
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       downloadUrl: "https://www.tempestai.dev/download",
       license: "https://www.apache.org/licenses/LICENSE-2.0",
-      softwareVersion: "0.1.2",
+      softwareVersion: "0.1.6",
       url: "https://www.tempestai.dev",
     },
     {
       "@type": "Organization",
       name: "Tempest",
       url: "https://www.tempestai.dev",
+      logo: { "@type": "ImageObject", url: "https://www.tempestai.dev/og-image.png", width: 1280, height: 640 },
       sameAs: [
         "https://github.com/tempestai-dev/tempest",
         "https://x.com/usetempest",

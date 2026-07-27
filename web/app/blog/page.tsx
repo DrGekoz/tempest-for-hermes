@@ -17,12 +17,12 @@ function getCoverPath(slug: string): string | null {
 }
 
 export const metadata: Metadata = {
-  title: 'Blog — Tempest',
+  title: 'AI Agent Engineering Blog — Tempest',
   description:
     'Writing about parallel AI agents, token efficiency, open-source tooling, and how we build Tempest.',
   alternates: { canonical: 'https://www.tempestai.dev/blog' },
   openGraph: {
-    title: 'Blog — Tempest',
+    title: 'AI Agent Engineering Blog — Tempest',
     description:
       'Writing about parallel AI agents, token efficiency, open-source tooling, and how we build Tempest.',
     type: 'website',
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Blog — Tempest',
+    title: 'AI Agent Engineering Blog — Tempest',
     description: 'Writing about parallel AI agents, token efficiency, open-source tooling, and how we build Tempest.',
     images: ['/og-image.png'],
   },

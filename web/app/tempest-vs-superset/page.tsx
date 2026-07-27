@@ -7,12 +7,12 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.tempestai.dev"),
   title: "Tempest vs Superset — Local Multi-Agent Development, Token-Efficient",
   description:
-    "Superset is macOS-only and ELv2. Tempest is Apache 2.0, runs on Windows today, and uses a shared knowledge graph that cuts token usage by up to 64% across parallel agent sessions.",
+    "Superset is macOS-only and ELv2-licensed. Tempest is Apache 2.0, runs on Windows today, with a shared knowledge graph cutting token usage by up to 64%.",
   alternates: { canonical: "https://www.tempestai.dev/tempest-vs-superset" },
   openGraph: {
     title: "Tempest vs Superset — Local Multi-Agent Development, Token-Efficient",
     description:
-      "Superset is macOS-only and ELv2. Tempest is Apache 2.0, runs on Windows today, and uses a shared knowledge graph that cuts token usage by up to 64% across parallel agent sessions.",
+      "Superset is macOS-only and ELv2-licensed. Tempest is Apache 2.0, runs on Windows today, with a shared knowledge graph cutting token usage by up to 64%.",
     type: "website",
     url: "https://www.tempestai.dev/tempest-vs-superset",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Tempest vs Superset" }],
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Tempest vs Superset — Local Multi-Agent Development, Token-Efficient",
     description:
-      "Superset is macOS-only and ELv2. Tempest is Apache 2.0, runs on Windows today, and uses a shared knowledge graph that cuts token usage by up to 64% across parallel agent sessions.",
+      "Superset is macOS-only and ELv2-licensed. Tempest is Apache 2.0, runs on Windows today, with a shared knowledge graph cutting token usage by up to 64%.",
     images: ["/og-image.png"],
   },
   keywords: [
@@ -87,6 +87,37 @@ function Unknown() {
 export default function TempestVsSupersetPage() {
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Article',
+            headline: 'Tempest vs Superset — Local Multi-Agent Development, Token-Efficient',
+            description: 'Superset is macOS-only and ELv2-licensed. Tempest is Apache 2.0, runs on Windows today, with a shared knowledge graph cutting token usage by up to 64%.',
+            url: 'https://www.tempestai.dev/tempest-vs-superset',
+            author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: {
+              '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev',
+              logo: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+            },
+            image: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+          }),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Tempest vs Superset', item: 'https://www.tempestai.dev/tempest-vs-superset' },
+            ],
+          }),
+        }}
+      />
       <Container>
         <section className="flex flex-col pt-10 pb-10 min-[1000px]:pb-12">
           <p className="text-sm text-muted-foreground font-semibold mb-4">TOKEN INTELLIGENCE · SUPERSET ALTERNATIVE</p>
@@ -211,6 +242,16 @@ export default function TempestVsSupersetPage() {
             </div>
           ))}
         </div>
+      </Container>
+
+      <Container className="pb-12">
+        <p className="text-sm text-muted-foreground font-semibold mb-4">FURTHER READING</p>
+        <Link
+          href="/blog/token-intelligence-eliminating-redundant-reads"
+          className="text-sm text-foreground underline underline-offset-4 decoration-foreground/25 hover:decoration-foreground transition-colors"
+        >
+          Token Intelligence: Eliminating Redundant File Reads →
+        </Link>
       </Container>
 
       <Container className="pb-24">

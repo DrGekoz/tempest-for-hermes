@@ -143,9 +143,12 @@ export default async function BlogPostPage({
             datePublished: post.date,
             dateModified: post.date,
             mainEntityOfPage: `https://www.tempestai.dev/blog/${slug}`,
-            image: coverPath ? `https://www.tempestai.dev${coverPath}` : 'https://www.tempestai.dev/og-image.png',
+            image: { '@type': 'ImageObject', url: coverPath ? `https://www.tempestai.dev${coverPath}` : 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
             author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
-            publisher: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: {
+              '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev',
+              logo: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+            },
           }),
         }}
       />
@@ -199,6 +202,8 @@ export default async function BlogPostPage({
               <time dateTime={post.date} className="text-sm text-muted-foreground">
                 {formatDate(post.date)}
               </time>
+              <span className="size-1 rounded-full bg-foreground/20" />
+              <span className="text-sm text-muted-foreground">{post.author}</span>
             </div>
 
             <h1 className="text-3xl min-[700px]:text-4xl font-normal leading-snug">{post.title}</h1>

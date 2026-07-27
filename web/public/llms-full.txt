@@ -1,0 +1,379 @@
+# Tempest — Full Content
+
+> Tempest is a free, open-source desktop app for running AI coding agents in parallel. Each agent session runs in its own isolated git worktree and branch — no merge conflicts, no stepping on each other's files. Built with Tauri (Rust backend, React frontend). Apache 2.0. Supports Windows, macOS, and Linux.
+>
+> Website: https://www.tempestai.dev
+> Repository: https://github.com/tempestai-dev/tempest
+
+---
+
+## Blog Posts (Full Text)
+
+### Why Parallel Agents Change Everything
+
+URL: https://www.tempestai.dev/blog/why-parallel-agents-change-everything
+Published: 2026-06-28
+Author: Tempest Team
+Tags: parallel-agents, git, workflow, isolation
+
+Running one AI coding agent is a productivity multiplier. Running five at once, each isolated from the others, is something else entirely. It is not the same thing done faster. It is a qualitatively different way to work.
+
+Most developers who try parallel agents do it wrong first. They open more terminals. They stash changes. They try to mentally track which agent touched which file. It turns into chaos, they blame the agents, and they go back to running one at a time. The problem was never the agents. It was the missing infrastructure.
+
+#### What happens when two agents edit the same file?
+
+When two agents share a working directory, they will eventually step on each other. Agent A edits a file while agent B is reading it. Agent A commits something that conflicts with agent B's in-progress changes. You end up in a merge conflict in the middle of an automated run, and now you have to stop both agents and clean up the mess manually.
+
+The natural response is to run agents sequentially. Finish one, start the next. But then you have given up the whole point. Sequential agents do not multiply your throughput. They just automate one task at a time with extra steps.
+
+#### The git worktree solution
+
+Git worktrees exist to solve exactly this problem, and most developers have never used them. A worktree is a separate checked-out working directory linked to the same repository. Each worktree has its own branch and its own files. Changes in one do not affect any other until you explicitly merge.
+
+This is the correct isolation primitive for parallel agents. Each agent lives in its own worktree, works on its own branch, and never touches anything outside its directory. The blast radius of a bad agent run is zero: it cannot corrupt main, it cannot collide with another agent, and it cannot leave your working state in a broken condition.
+
+The catch is that managing worktrees manually is tedious. Creating them, naming them, cleaning them up, knowing which session corresponds to which worktree — it is enough friction that most developers skip it entirely.
+
+Tempest removes all of that friction. Open a new session tab and the worktree is created. Close it and the worktree persists. The state management is done for you.
+
+#### What isolation actually enables
+
+Once isolation is handled, the calculus changes.
+
+You can run five features in parallel. You can test three different approaches to the same problem simultaneously and pick the best result. You can have one agent on a bug fix while another is roughing out a new feature. None of them know the others exist, and none of them can interfere.
+
+This is not hypothetical. Tempest itself was built this way. The features in this release were shipped by parallel agents running inside the app.
+
+The feedback loop also tightens considerably. You are not waiting for one agent to finish before you can start the next one. You delegate five tasks, come back when they are done, review the diffs, and ship. The time cost of each task overlaps with every other task.
+
+#### Why most tools do not do this
+
+The tools that exist for running AI agents were built around a single agent, single working directory model. Adding parallelism on top of that architecture is not a small change. It requires rethinking session management, file isolation, diff review, and state persistence from the ground up.
+
+Tempest was designed for parallel agents from the start. The session model, the worktree management, the per-session diff viewer, the live status tracking — all of it is built around the assumption that you are running more than one agent at once.
+
+#### The practical effect
+
+Here is what changes in practice.
+
+You stop treating agent time as a scarce resource you have to ration. When each session is isolated and session state is persistent, launching an agent costs almost nothing. You try more things. You explore more approaches. You delegate more aggressively.
+
+You stop babysitting. Live status across all sessions means you know when each agent finishes without watching. You delegate, do something else, and come back to review.
+
+You stop losing context. Session continuity means closing and reopening a tab picks up exactly where you left off. The agent remembers the conversation. The worktree is still there. Nothing was lost because nothing needed to be lost.
+
+Parallel agents are not a power user feature. They are the natural way to work with AI coding tools once the isolation problem is actually solved. That is what Tempest is built to do.
+
+---
+
+### The Case Against Context Switching Between AI Agents
+
+URL: https://www.tempestai.dev/blog/the-case-against-context-switching
+Published: 2026-06-27
+Author: Tempest Team
+Tags: workflow, context-switching, productivity, agents
+
+There is a cost every developer pays when working with AI coding agents that nobody talks about directly. It is not the token cost. It is not even the waiting. It is the cost of context switching between sessions — the mental overhead of tracking what each agent was doing, what state the code is in, and where you left off.
+
+It shows up in small ways. You stash changes before switching to another task. You re-read a conversation thread to remember what the agent was working on. You try to remember which branch has which feature. You discover a conflict and spend twenty minutes untangling it. None of these are individually catastrophic. Together, they eat the productivity gains the agents were supposed to provide.
+
+#### Why does manual session management cost so much?
+
+When developers first try running multiple AI agents, the instinct is to open more terminal windows. This works until it does not. Three windows is manageable. Five is a cognitive load. Seven is chaos.
+
+The problem is not the number of agents. It is that every agent shares the same working state. The same branch, the same uncommitted files, the same stash. Managing that by hand requires tracking a mental model of each session's state, and that mental model gets stale constantly. Agents are running, modifying files, creating state. The moment you look away, your model of what is happening is out of date.
+
+The natural response is to run agents one at a time. But sequential execution defeats the point. You have turned a parallelism tool into a sequential pipeline with extra steps.
+
+#### What session continuity actually means
+
+Session continuity is not just about saving a conversation. It is about eliminating the cost of coming back to a session after you have been away.
+
+When you close a tab in Tempest and reopen it, the agent picks up exactly where it left off. The conversation history is intact. The branch is unchanged. The worktree is exactly as the agent left it. There is no re-orientation, no re-reading, no catching up. You are back where you were because the session state was never lost.
+
+This matters most when you are running several sessions in parallel. You delegate to five agents, then you come back to review them one by one. If each one requires five minutes of re-orientation before you can evaluate its output, you have added twenty-five minutes of overhead to what should have been a quick review pass. Session continuity eliminates that overhead entirely.
+
+#### The connection to isolation
+
+Session continuity and isolation are two sides of the same problem. Isolation prevents sessions from interfering with each other while they run. Continuity prevents sessions from losing state when you are not looking at them.
+
+Together, they mean you can treat each agent session as a stable, independent unit of work. You delegate to it, leave it alone, come back to it, and it is exactly where you expected it to be. The mental model you maintain is simple: each tab is one task, on one branch, in one state. The tool handles everything else.
+
+Without isolation, sessions bleed into each other and your mental model breaks down. Without continuity, sessions lose state between visits and you pay re-orientation costs constantly. You need both.
+
+#### What this enables in practice
+
+Once the overhead of context switching drops close to zero, the way you work changes.
+
+You start running more experiments. When spinning up a new agent session is cheap and the result persists until you decide to close it, you try things you would not have tried before. Explore an approach, evaluate it, keep it or discard it. The cost of being wrong is just closing a tab.
+
+You start reviewing in batches. When sessions are stable and persistent, you can let five agents run while you do something else, then come back and review all five in sequence. The agents' work happens in parallel even if your review happens linearly.
+
+You stop babysitting. When you know each session is isolated and its state is preserved, you do not need to check in on it constantly. You check the status indicator, see it is still running, and go back to what you were doing.
+
+#### The tool should disappear
+
+The best version of a productivity tool is one you stop noticing. Every second you spend managing sessions, tracking state, untangling conflicts, or re-orienting after a context switch is a second the tool failed to save you.
+
+Tempest is built to make that overhead disappear. Worktrees handle isolation automatically. Session state persists without you thinking about it. Live status tells you what is running without you having to check. The tool does the state management so you can focus on the work.
+
+That is the case against context switching: not that it is occasionally annoying, but that it is a recoverable cost that should not exist. The infrastructure to eliminate it is straightforward. Most tools just have not bothered to build it.
+
+---
+
+### Token Intelligence: Eliminating Redundant File Reads Across Agent Sessions
+
+URL: https://www.tempestai.dev/blog/token-intelligence-eliminating-redundant-reads
+Published: 2026-06-26
+Author: Tempest Team
+Tags: token-intelligence, performance, context, roadmap
+
+When you run five AI agents in parallel, you have five independent processes that know nothing about each other. Each one reads whatever files it needs to understand the codebase. Each one pays the full token cost for every read. If three of them need to understand the same module, that module gets sent to three different model contexts, billed three separate times.
+
+This is the token redundancy problem. It is not obvious when you are running one agent at a time, but it becomes significant quickly when you scale up. Token Intelligence is our answer to it.
+
+#### How do AI agents read your codebase today?
+
+When an AI coding agent starts a task, it reads files. A lot of them. It reads the files directly relevant to the task, but it also reads supporting files — imports, type definitions, shared utilities, configuration. It builds a picture of the codebase piece by piece through tool calls, each of which costs tokens.
+
+In a single agent session, this is the expected overhead. The agent learns what it needs to learn, and the cost is reasonable.
+
+In five parallel sessions working on the same codebase, the overhead multiplies. Each agent reads the same foundational files. The entry point. The type definitions. The core utilities. Every agent pays the full cost for every read, and there is no sharing between them. You are paying five times for the same knowledge.
+
+#### What Token Intelligence does
+
+Token Intelligence is a local code-knowledge graph. It builds an index of your codebase — not a simple file index, but a semantic graph of what each file contains, what it imports, and how it relates to everything else.
+
+When an agent needs to understand a file, Token Intelligence checks whether that file is already in the graph and whether it has changed since it was indexed. If the indexed version is current, the agent gets the information it needs without a full file read. The token cost of reading a file that has already been indexed drops to near zero.
+
+Across five parallel sessions working on the same codebase, this means the foundational reading happens once. The first agent to need a file pays the indexing cost. Every subsequent agent gets the result. The savings compound with the number of sessions.
+
+#### The numbers
+
+Early testing on real codebases shows context consumption reductions of up to 64% and tool call reductions of up to 58% when Token Intelligence is active across multiple parallel sessions.
+
+These are not theoretical numbers from a contrived benchmark. They come from running Tempest on actual codebases with actual agent tasks. The variance depends on how much codebase overlap exists between sessions — the more shared context, the larger the savings.
+
+The practical effect is that running five agents costs meaningfully less than five times what running one agent costs. Parallelism becomes cheaper to use, not just faster.
+
+#### Why local matters
+
+Token Intelligence runs entirely on your machine. The code-knowledge graph is built locally from your files, stored locally, and never leaves your system. There is no server that ingests your codebase, no cloud index to sync, no dependency on an external service.
+
+This is not just a privacy stance, though privacy is part of it. Local indexing means the graph is always current with your actual files. There is no propagation delay, no cache invalidation lag, no stale data from a remote index that has not caught up to your last commit. The graph reflects your codebase as it is right now, not as it was when some remote service last crawled it.
+
+#### The broader point
+
+The efficiency of parallel agents is not just about running more things simultaneously. It is about making parallel execution cheap enough to use casually. Token Intelligence is part of that. If running five agents costs five times as much in tokens as running one, there is a real cost ceiling on how much parallelism you can afford. If Token Intelligence cuts that multiplier significantly, the ceiling moves up and parallel agents become viable for a wider range of tasks.
+
+That is the goal: make the infrastructure cheap enough that the limiting factor is what you want to build, not what you can afford to compute.
+
+---
+
+### How to Reduce AI Agent Token Costs When Running Multiple Sessions
+
+URL: https://www.tempestai.dev/blog/reduce-ai-agent-token-costs
+Published: 2026-07-25
+Author: Tempest Team
+Tags: token-intelligence, cost, parallel-agents, performance
+
+Running one AI coding agent costs tokens. Running five costs five times as many — unless you change the architecture. When every agent reads the same files independently, you pay for every read, every time.
+
+#### Why parallel agents multiply token costs
+
+When an AI coding agent starts a task, it reads files to understand the codebase — not just the files directly involved, but also imports, type definitions, shared utilities, configuration. In five parallel sessions working on the same repository, this overhead multiplies. Three agents that all need to understand the same core module will read it three times. There is no sharing between them.
+
+#### The shared context problem
+
+The redundancy is structural. The parts of the codebase that are most important to understand — the core abstractions, the shared utilities, the type signatures — are exactly the parts that every agent will need to read. If three agents each need 10,000 tokens to understand the shared foundations, and each reads independently, you are paying 30,000 tokens for 10,000 tokens of unique information.
+
+#### How to cut token costs: the code-knowledge graph approach
+
+Token Intelligence (available since Tempest v0.1.2) builds a local semantic code graph once and shares it across every parallel session. Agents query the graph for symbol definitions, call chains, and cross-file relationships instead of reading files from scratch. The index is maintained by a file watcher and never leaves your machine.
+
+Results on real codebases: up to 64% reduction in context token consumption, up to 58% fewer tool calls per session.
+
+#### The economics
+
+Without shared context, running N agents costs approximately N times what running one costs. With shared context, the foundational reading is paid once and amortized across every session. As you add more sessions, cost-per-session drops because the shared base is already paid.
+
+#### How to enable it
+
+Settings → Token Intelligence → enable → index your project. Tempest writes Atlas MCP config for all supported agents automatically (Claude Code, Cline, Cursor, Gemini CLI, Kiro, Roo, Zed, Windsurf, opencode). No manual configuration required.
+
+---
+
+### Tempest v0.1.3: Chat
+
+URL: https://www.tempestai.dev/blog/tempest-v013-release
+Published: 2026-07-11
+Author: Tempest Team
+Tags: release, chat, atlas, parallel-agents
+
+v0.1.3 is the Chat release.
+
+#### Why Chat alongside agents
+
+Agent sessions in Tempest are execution tools. You give one a task, it writes code, you review the diff. That workflow is fast when you already know what to build.
+
+Most engineering work starts before that.
+
+Understanding a system. Researching an approach. Debugging a failure. Reviewing a design. Making a decision. That work does not belong in a terminal. It belongs in a conversation.
+
+Chat is your personal engineering companion inside Tempest. It has full access to your codebase through Atlas, can read files and git history, and understands your project the way a senior engineer would. When a conversation reaches the point where implementation is needed, Chat can spawn an agent session to handle it — and you stay in the conversation while the agent works in a background tab.
+
+Chat is where you figure something out. Agents are where you get it done. They are not the same surface.
+
+#### Chat Tab
+
+Open Chat from the + tab picker. It runs a live agentic loop — up to 24 sequential reasoning steps per response, with full tool use at every step. While the AI is thinking, a shimmer indicator shows it is working. Each tool call appears as a collapsible step card with the tool name, arguments, and result inline.
+
+Chat sessions are per-project. Your conversation, tool calls, and any spawned-agent cards all persist across tab close and app restart.
+
+Built-in tools: read_file, list_files, run_git_log, run_git_status, propose_agent_task, and all atlas_* tools via the Atlas MCP bridge.
+
+#### Atlas in Chat
+
+Chat connects directly to Atlas via a Rust-side MCP bridge. When you ask about your codebase, the AI queries the live knowledge graph rather than reading files from scratch. Symbol lookups, call chains, and cross-file relationships are answered in milliseconds with zero wasted tokens.
+
+#### Propose Agent Task
+
+When Chat reaches the point where implementation is needed, the AI proposes an agent task. A card appears in the conversation with the agent type, model, task description, and the AI's reasoning. Click Launch — a new agent tab opens in the background, receives the task prompt, and begins working immediately.
+
+Model selection is AI-controlled. The chat AI specifies the exact model variant and Tempest passes it directly to the agent CLI via --model.
+
+#### @ File Mentions
+
+Type @ in the chat input to open a file picker. Search by name, select a file, and it appears as a chip in the input. When you send, Tempest reads the file and prepends its full contents as context.
+
+---
+
+### Tempest v0.1.2: Token Intelligence
+
+URL: https://www.tempestai.dev/blog/tempest-v012-release
+Published: 2026-07-03
+Author: Tempest Team
+Tags: release, token-intelligence, atlas, parallel-agents
+
+v0.1.2 is the Token Intelligence release.
+
+#### Token Intelligence
+
+Tempest now ships a built-in code knowledge graph powered by Atlas, a local, offline semantic index of your project. When Token Intelligence is enabled, Tempest indexes your codebase and injects a live MCP server into every agent session. Agents query the graph to find callers, callees, symbol definitions, and cross-file relationships — without reading entire files from scratch on every turn.
+
+The work is done once. Every session benefits.
+
+Results: up to 64% less context token consumption. Up to 58% fewer tool calls.
+
+Token Intelligence is enabled in Settings → Token Intelligence. MCP config files are written automatically for Claude Code, Cline, Roo, Zed, Windsurf, Cursor, Gemini CLI, Kiro/AWS Q, and opencode. All generated files are gitignored automatically.
+
+#### Work-Done Detection: Full Rewrite
+
+The agent work-done detector has been rebuilt as a 9-layer state machine based on publicly documented terminal standards, with a title-based authoritative signal layer for agents that emit terminal titles. Cross-chunk OSC and CSI sequence reassembly is new.
+
+Layers include: OSC 0/2 title transitions (Claude Code spinner → done, Gemini transitions), OSC 9 shell notifications, OSC 9;4 ConEmu progress signals, OSC 133 FinalTerm prompts, OSC 777 urxvt notifications, bracketed paste signals, alt-screen leave, 5s byte-quiet timer, and a 12s hard ceiling.
+
+#### Overview: Pagination and Remove
+
+The recent projects list now has pagination (5 per page, arrow navigation) and a per-row remove button to clean up stale projects.
+
+---
+
+### Tempest v0.1.1: Prompt Library, Message Queue, and Branch Management
+
+URL: https://www.tempestai.dev/blog/tempest-v011-release
+Published: 2026-07-01
+Author: Tempest Team
+Tags: release, prompts, git, workflow, cross-platform
+
+v0.1.1 is a daily-driver release. Key features:
+
+**Native releases for Windows, macOS, and Linux.** Tempest ships pre-built binaries for every platform. Windows: Portable .exe, NSIS installer, MSI installer. macOS: .dmg installer. Linux: .AppImage and .deb packages. Automatic update manifests ship alongside every release.
+
+**Prompt Library.** Reusable library of prompts — create, edit, clone, delete, reorder by drag-and-drop, enable/disable individually, access from the workspace toolbar. Built-ins for Review, Tests, Security Review, Explain Changes, and Commit Messages.
+
+**Message Queue.** Queue instructions per agent; Tempest sends the next message automatically when the agent finishes. Queue panel (Ctrl+Shift+Q), badges on session tabs, automatic dequeue.
+
+**Branch Management.** Branch picker built into the Diff pane. Switch branches, delete local and remote branches, force-delete unmerged branches. Switching stashes changes automatically and restores after.
+
+**Safer Push Workflow.** Push and commit are now separate operations. Push only pushes the current branch; creating a new branch from the Diff pane automatically opens a Pull Request.
+
+**Workspace Persistence.** Session order, active session, open editor tabs, diff tabs, live preview URL, and workspace layout all restore on restart. State moved from browser storage to a dedicated runtime JSON file.
+
+---
+
+### Tempest v0.1.0: Parallel AI Agent Sessions Are Here
+
+URL: https://www.tempestai.dev/blog/tempest-v010-release
+Published: 2026-06-29
+Author: Tempest Team
+Tags: release, parallel-agents, worktrees, git
+
+Tempest v0.1.0 ships the core idea: run a fleet of AI coding agents in parallel, each on its own branch, none stepping on each other's work.
+
+**Isolated git worktrees per session.** Every session runs in its own git worktree — a real, separate working directory with its own branch. Created automatically on new session, persists on tab close.
+
+**One interface for every agent.** Claude Code, Aider, OpenCode, Copilot CLI, Cline, Goose — all run inside Tempest. Each has its own session, branch, and conversation history.
+
+**Session continuity.** Close a tab, reopen it. The agent picks up exactly where it left off — full conversation history, same branch, same state.
+
+**Live status across every session.** A live status indicator on every tab updates in real time. Know who is done and who is running without clicking into anything.
+
+**Built-in diff and push.** Stream diff viewer per session. Stage, commit, push, and open a PR without leaving Tempest.
+
+**Live preview.** Local dev server updates live as agents write code. Visible inside Tempest without switching to a browser.
+
+**Native terminal.** Every session has a real terminal — ANSI color, in-session search, clickable URLs.
+
+---
+
+## Comparison Pages
+
+### Tempest vs Conductor
+
+URL: https://www.tempestai.dev/tempest-vs-conductor
+
+Conductor is a polished, hosted platform for multi-agent AI development. Tempest is a free, open-source desktop app (Apache 2.0) with a local, shared code-knowledge graph that cuts token usage by up to 64% across parallel sessions. Key differences: Tempest is self-hosted and local-first; Conductor is cloud-based. Tempest has no project limits; Conductor's free tier is limited. Tempest uses git worktrees for isolation; both support parallel agents.
+
+### Tempest vs AgentsRoom
+
+URL: https://www.tempestai.dev/tempest-vs-agentsroom
+
+Both support Windows and parallel agents. Tempest adds Apache 2.0 licensing, no project limits, and a shared knowledge graph (Token Intelligence) that cuts token usage by up to 64%. AgentsRoom uses a proprietary license with tiered pricing.
+
+### Tempest vs Emdash
+
+URL: https://www.tempestai.dev/tempest-vs-emdash
+
+Both are local-first and open source. Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash leads on third-party integrations. Tempest focuses on git worktree isolation and token efficiency for parallel agent workflows.
+
+### Tempest vs Paseo
+
+URL: https://www.tempestai.dev/tempest-vs-paseo
+
+Paseo covers every device including mobile. Tempest cuts token cost — Windows-native today, daemon-free, with a shared knowledge graph reducing usage by up to 64%.
+
+### Tempest vs Superset
+
+URL: https://www.tempestai.dev/tempest-vs-superset
+
+Superset is macOS-only and ELv2-licensed. Tempest is Apache 2.0, runs on Windows today, with a shared knowledge graph cutting token usage by up to 64%. For teams needing commercial use rights or Windows support, Tempest is the open alternative.
+
+---
+
+## About
+
+URL: https://www.tempestai.dev/about
+
+Tempest is built to make running multiple AI coding agents practical. The core problems it solves are isolation (git worktrees per session) and cost (Token Intelligence shared code-knowledge graph, up to 64% fewer tokens). Built with Tauri 2.x (Rust backend, React frontend). Free and open source under Apache 2.0. Local-first — your code never leaves your machine.
+
+---
+
+## Technical Details
+
+- Built with: Tauri 2.x (Rust backend), React frontend
+- Supported platforms: Windows, macOS, Linux
+- Supported agents: Claude Code, Aider, OpenCode, Copilot CLI, Cline, Goose, and any terminal-based agent
+- License: Apache 2.0
+- Repository: https://github.com/tempestai-dev/tempest
+- Website: https://www.tempestai.dev

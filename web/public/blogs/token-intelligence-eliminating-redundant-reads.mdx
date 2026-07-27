@@ -12,7 +12,7 @@ When you run five AI agents in parallel, you have five independent processes tha
 
 This is the token redundancy problem. It is not obvious when you are running one agent at a time, but it becomes significant quickly when you scale up. Token Intelligence is our answer to it.
 
-## How agents read code today
+## How do AI agents read your codebase today?
 
 When an AI coding agent starts a task, it reads files. A lot of them. It reads the files directly relevant to the task, but it also reads supporting files — imports, type definitions, shared utilities, configuration. It builds a picture of the codebase piece by piece through tool calls, each of which costs tokens.
 
@@ -53,3 +53,10 @@ It will ship as part of a future Tempest release. The roadmap has the details.
 The efficiency of parallel agents is not just about running more things simultaneously. It is about making parallel execution cheap enough to use casually. Token Intelligence is part of that. If running five agents costs five times as much in tokens as running one, there is a real cost ceiling on how much parallelism you can afford. If Token Intelligence cuts that multiplier significantly, the ceiling moves up and parallel agents become viable for a wider range of tasks.
 
 That is the goal: make the infrastructure cheap enough that the limiting factor is what you want to build, not what you can afford to compute.
+
+---
+
+## Further reading
+
+- [Why Parallel Agents Change Everything](/blog/why-parallel-agents-change-everything)
+- [The Case Against Context Switching Between AI Agents](/blog/the-case-against-context-switching)

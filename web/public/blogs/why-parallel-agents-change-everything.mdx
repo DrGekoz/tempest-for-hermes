@@ -12,7 +12,7 @@ Running one AI coding agent is a productivity multiplier. Running five at once, 
 
 Most developers who try parallel agents do it wrong first. They open more terminals. They stash changes. They try to mentally track which agent touched which file. It turns into chaos, they blame the agents, and they go back to running one at a time. The problem was never the agents. It was the missing infrastructure.
 
-## The collision problem
+## What happens when two agents edit the same file?
 
 When two agents share a working directory, they will eventually step on each other. Agent A edits a file while agent B is reading it. Agent A commits something that conflicts with agent B's in-progress changes. You end up in a merge conflict in the middle of an automated run, and now you have to stop both agents and clean up the mess manually.
 
@@ -55,3 +55,10 @@ You stop babysitting. Live status across all sessions means you know when each a
 You stop losing context. Session continuity means closing and reopening a tab picks up exactly where you left off. The agent remembers the conversation. The worktree is still there. Nothing was lost because nothing needed to be lost.
 
 Parallel agents are not a power user feature. They are the natural way to work with AI coding tools once the isolation problem is actually solved. That is what Tempest is built to do.
+
+---
+
+## Further reading
+
+- [The Case Against Context Switching Between AI Agents](/blog/the-case-against-context-switching)
+- [Token Intelligence: Eliminating Redundant File Reads](/blog/token-intelligence-eliminating-redundant-reads)

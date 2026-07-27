@@ -90,7 +90,7 @@ function assetLabel(name: string): string {
 
 const mdxComponents = {
   h1: ({ children }: ComponentPropsWithoutRef<'h1'>) => (
-    <h1 className="text-xl font-medium text-foreground mt-10 mb-3 first:mt-0">{children}</h1>
+    <h2 className="text-xl font-medium text-foreground mt-10 mb-3 first:mt-0">{children}</h2>
   ),
   h2: ({ children }: ComponentPropsWithoutRef<'h2'>) => (
     <h2 className="text-base font-medium text-foreground mt-10 mb-3 first:mt-0 pt-8 border-t border-foreground/[0.08]">{children}</h2>
@@ -216,8 +216,12 @@ export default async function ReleaseNotesPostPage({
             headline: pageTitle,
             description: `What's new in Tempest ${release.tag_name}. Full changelog, downloads, and release details.`,
             datePublished: release.published_at,
+            image: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
             author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
-            publisher: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: {
+              '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev',
+              logo: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+            },
             mainEntityOfPage: `https://www.tempestai.dev/release-notes/${encodeURIComponent(release.tag_name)}`,
           }),
         }}

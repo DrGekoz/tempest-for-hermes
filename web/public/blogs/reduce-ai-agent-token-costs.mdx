@@ -1,0 +1,88 @@
+---
+slug: reduce-ai-agent-token-costs
+title: "How to Reduce AI Agent Token Costs When Running Multiple Sessions"
+date: 2026-07-25
+type: blog
+description: "Running multiple AI agents in parallel multiplies token costs — unless you share context between sessions. Here is how Token Intelligence cuts usage by up to 64%."
+author: "Tempest Team"
+tags: [token-intelligence, cost, parallel-agents, performance]
+---
+
+Running one AI coding agent costs tokens. Running five costs five times as many — unless you change the architecture. When every agent reads the same files independently, you pay for every read, every time. That is the default, and most teams accept it because there is no alternative built into the tools they are using.
+
+There is an alternative. This is how it works.
+
+## Why parallel agents multiply token costs
+
+When an AI coding agent starts a task, it reads files to understand the codebase. Not just the files directly involved in the task — also the supporting context. Imports, type definitions, shared utilities, configuration. The agent builds a picture of the system piece by piece through tool calls.
+
+In a single session this overhead is acceptable. In five parallel sessions working on the same repository, the overhead multiplies. Three agents that all need to understand the same core module will read it three times. Five agents that each start by reading the entry point and the type definitions will each pay the full cost for that reading.
+
+There is no sharing between them. The agents are isolated from each other and know nothing about what the others have already read.
+
+## The shared context problem
+
+The redundancy is not random. It is structural. Parallel agents working on the same codebase have a large overlap in what they need to understand. The parts of the codebase that are most important to understand — the core abstractions, the shared utilities, the type signatures — are exactly the parts that every agent will need to read.
+
+That overlap is where the cost multiplies. If three agents each need 10,000 tokens to understand the shared foundations of your codebase, and each reads those foundations independently, you are paying 30,000 tokens for 10,000 tokens of unique information.
+
+## How to cut token costs: the code-knowledge graph approach
+
+The solution is to build the shared understanding once and distribute it to every parallel session.
+
+Token Intelligence, available in Tempest since v0.1.2, does this through a local semantic code graph. Here is how:
+
+**Index once, share everywhere.** On first open of a project, Tempest builds an Atlas index — a semantic graph of every symbol, import, and cross-file relationship in the codebase. This happens once, in the background, and takes a few minutes on a large codebase.
+
+**Agents query the graph, not the files.** When Token Intelligence is active, each agent session gets an Atlas MCP server injected automatically. When an agent needs to understand how a function works, what its callers are, or what it imports — it queries the graph. The graph answers in milliseconds using a fraction of the tokens a full file read would cost.
+
+**File watcher keeps it current.** The index is maintained by a file watcher. When you save a file, that file is re-indexed. The rest of the graph is untouched. Agents always see current data.
+
+## The numbers
+
+Early measurements on real codebases:
+
+- Up to **64% reduction in context token consumption** across parallel sessions
+- Up to **58% fewer tool calls** per agent session on indexed codebases
+
+These are not from a synthetic benchmark. They come from running Tempest on actual repositories with real agent tasks. The savings vary with the codebase — the more shared context between sessions, the larger the reduction.
+
+## The economics of parallel agents with shared context
+
+Without shared context, running N agents costs approximately N times what running one agent costs. Token costs scale linearly with parallelism, and there is a real ceiling on how much parallelism you can afford.
+
+With shared context, the foundational reading is paid once. Each additional session costs the marginal context of its specific task, not the full context of the entire codebase. As you add more sessions, the cost-per-session drops because the shared base cost is amortized across more sessions.
+
+The practical effect: teams that were rationing parallel agents because of token cost can use more of them. The ceiling moves up.
+
+## What does not help
+
+A few common approaches that do not solve the problem:
+
+**Smaller context windows.** Compressing context helps with individual session cost but does not address the cross-session redundancy. You are still paying for the same information multiple times, just in a smaller window.
+
+**Running agents sequentially.** Sequential execution avoids the token redundancy problem but eliminates the time benefit. You are back to one agent at a time with extra steps.
+
+**Cloud-hosted indexes.** Remote code search adds a dependency, latency, and the risk of your codebase being transmitted to a third-party server. A local index avoids all three issues and is always current with your files.
+
+## How to enable it
+
+Token Intelligence is built into Tempest and ships ready to use:
+
+1. Open Tempest and navigate to **Settings → Token Intelligence**
+2. Enable it and open your project
+3. Tempest will ask if you want to index the project — confirm
+4. Indexing runs in the background; a progress toast tracks it
+5. Once done, every agent session in that project uses the graph automatically
+
+Tempest writes MCP configuration files for every supported agent automatically — Claude Code, Cline, Cursor, Gemini CLI, Kiro, Roo, Zed, Windsurf, and opencode. No manual configuration required. All generated config files are gitignored.
+
+The index lives at `<project>/.tempest/atlas/` on your machine and never leaves it.
+
+---
+
+## Further reading
+
+- [Token Intelligence: Eliminating Redundant File Reads Across Agent Sessions](/blog/token-intelligence-eliminating-redundant-reads)
+- [Why Parallel Agents Change Everything](/blog/why-parallel-agents-change-everything)
+- [The Case Against Context Switching Between AI Agents](/blog/the-case-against-context-switching)

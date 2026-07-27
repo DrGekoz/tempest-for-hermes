@@ -5,11 +5,11 @@ import { ArrowRight } from 'lucide-react'
 import { formatDate } from '@/lib/format-date'
 
 export const metadata: Metadata = {
-  title: 'Release Notes — Tempest',
+  title: 'Tempest Release Notes — AI Agent Runner Changelog',
   description: 'Every version, every improvement. Full changelog and release history for Tempest.',
   alternates: { canonical: 'https://www.tempestai.dev/release-notes' },
   openGraph: {
-    title: 'Release Notes — Tempest',
+    title: 'Tempest Release Notes — AI Agent Runner Changelog',
     description: 'Every version, every improvement. Full changelog and release history for Tempest.',
     type: 'website',
     url: 'https://www.tempestai.dev/release-notes',
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Release Notes — Tempest',
+    title: 'Tempest Release Notes — AI Agent Runner Changelog',
     description: 'Every version, every improvement. Full changelog and release history for Tempest.',
     images: ['/og-image.png'],
   },

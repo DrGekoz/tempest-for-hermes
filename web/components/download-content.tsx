@@ -84,7 +84,7 @@ export function DownloadContent({ version, date, windowsAssets, linuxAssets, mac
         <div className="flex flex-col gap-8">
           <div className="flex flex-col gap-3">
             <h1 className="flex items-center gap-3 text-4xl min-[1000px]:text-5xl font-normal tracking-tight leading-tight">
-              Get
+              Download Tempest
               <TempestLogo className="h-9 min-[1000px]:h-12 w-auto" />
             </h1>
             <p className="text-base text-muted-foreground">

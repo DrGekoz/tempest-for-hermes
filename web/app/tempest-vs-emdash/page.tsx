@@ -7,12 +7,12 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://www.tempestai.dev"),
   title: "Tempest vs Emdash — Shared Knowledge Graph for Parallel AI Agents",
   description:
-    "Emdash and Tempest are both local-first, free, and open source. The difference: Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash wins on features.",
+    "Both local-first, free, open source. Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash leads on integrations.",
   alternates: { canonical: "https://www.tempestai.dev/tempest-vs-emdash" },
   openGraph: {
     title: "Tempest vs Emdash — Shared Knowledge Graph for Parallel AI Agents",
     description:
-      "Emdash and Tempest are both local-first, free, and open source. The difference: Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash wins on features.",
+      "Both local-first, free, open source. Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash leads on integrations.",
     type: "website",
     url: "https://www.tempestai.dev/tempest-vs-emdash",
     images: [{ url: "/og-image.png", width: 1280, height: 640, alt: "Tempest vs Emdash" }],
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Tempest vs Emdash — Shared Knowledge Graph for Parallel AI Agents",
     description:
-      "Emdash and Tempest are both local-first, free, and open source. The difference: Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash wins on features.",
+      "Both local-first, free, open source. Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash leads on integrations.",
     images: ["/og-image.png"],
   },
   keywords: [
@@ -94,6 +94,37 @@ function Unknown() {
 export default function TempestVsEmdashPage() {
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Article',
+            headline: 'Tempest vs Emdash — Shared Knowledge Graph for Parallel AI Agents',
+            description: "Both local-first, free, open source. Tempest's shared knowledge graph cuts token usage by up to 64% across parallel sessions. Emdash leads on integrations.",
+            url: 'https://www.tempestai.dev/tempest-vs-emdash',
+            author: { '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev' },
+            publisher: {
+              '@type': 'Organization', name: 'Tempest', url: 'https://www.tempestai.dev',
+              logo: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+            },
+            image: { '@type': 'ImageObject', url: 'https://www.tempestai.dev/og-image.png', width: 1280, height: 640 },
+          }),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.tempestai.dev' },
+              { '@type': 'ListItem', position: 2, name: 'Tempest vs Emdash', item: 'https://www.tempestai.dev/tempest-vs-emdash' },
+            ],
+          }),
+        }}
+      />
       <Container>
         <section className="flex flex-col pt-10 pb-10 min-[1000px]:pb-12">
           <p className="text-sm text-muted-foreground font-semibold mb-4">TOKEN INTELLIGENCE · EMDASH ALTERNATIVE</p>
@@ -219,6 +250,16 @@ export default function TempestVsEmdashPage() {
             </div>
           ))}
         </div>
+      </Container>
+
+      <Container className="pb-12">
+        <p className="text-sm text-muted-foreground font-semibold mb-4">FURTHER READING</p>
+        <Link
+          href="/blog/token-intelligence-eliminating-redundant-reads"
+          className="text-sm text-foreground underline underline-offset-4 decoration-foreground/25 hover:decoration-foreground transition-colors"
+        >
+          Token Intelligence: Eliminating Redundant File Reads →
+        </Link>
       </Container>
 
       <Container className="pb-24">
