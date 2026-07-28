@@ -1,16 +1,13 @@
 import { Mark } from "../assets/Mark";
 import { DynamicIsland } from "./DynamicIsland";
-import type { QuotaWindow } from "../lib/quota";
 
 interface Props {
   tabsMode: "designed" | "tabbed" | "ver1" | "designer";
   projectName: string;
   rightActions: React.ReactNode;
-  /** Empty until a reader supplies it; the island renders nothing then. */
-  quotas?: QuotaWindow[];
 }
 
-export function Toolbar({ tabsMode, projectName, rightActions, quotas = [] }: Props) {
+export function Toolbar({ tabsMode, projectName, rightActions }: Props) {
   const modeClass = tabsMode === "tabbed" ? " tabs-tabbed"
     : tabsMode === "ver1"      ? " tabs-ver1"
     : tabsMode === "designer"  ? " tabs-designer"
@@ -32,7 +29,7 @@ export function Toolbar({ tabsMode, projectName, rightActions, quotas = [] }: Pr
 
       {/* Centred on the bar itself, not between the ends — so it holds the
           middle no matter how wide the project name or the actions slot get. */}
-      <DynamicIsland quotas={quotas} />
+      <DynamicIsland />
 
       {/* Right end — actions slot */}
       <div className="bar-end">

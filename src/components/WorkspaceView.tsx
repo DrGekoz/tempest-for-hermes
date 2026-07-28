@@ -82,7 +82,6 @@ import { startAgentHooks } from "../store/agentHooks";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
 import { Toolbar } from "./Toolbar";
-import { SAMPLE_QUOTAS } from "../lib/quota";
 import AgentTabs from "./AgentTabs";
 import IconCapsule from "./IconCapsule";
 import { SidebarWorkBadge, ProjectWorkBadge, AttentionPill } from "./SessionBadges";
@@ -1837,7 +1836,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
       <Toolbar
         tabsMode={tabsMode}
         projectName={activeSessionProject?.name ?? projects[0]?.name ?? ""}
-        quotas={import.meta.env.DEV ? SAMPLE_QUOTAS : []}
         rightActions={
           <>
             <Tooltip content="Open diff view" placement="bottom">

@@ -493,6 +493,13 @@ class SessionManager {
 
   private markAttention(record: SessionRecord, sessionId: string) {
     if (record.attentionFired) return;
+    // Under hook authority the hook owns the turn boundary. A genuine "needs you"
+    // (an inline approval pause) always lands mid-turn, while the hook still says
+    // "working". A PTY attention signal that arrives AFTER the hook declared the
+    // turn done — e.g. an agent that rings the terminal bell on completion — is a
+    // notification, not a waiting prompt, and must not flip the finished green dot
+    // to a bell. Pure-PTY sessions (hookAuthoritative=false) are unaffected.
+    if (record.hookAuthoritative && getWorkState(sessionId) !== "working") return;
     record.attentionFired = true;
     if (record.quietTimer !== null) { clearTimeout(record.quietTimer); record.quietTimer = null; }
     if (record.ceilTimer !== null) { clearTimeout(record.ceilTimer); record.ceilTimer = null; }

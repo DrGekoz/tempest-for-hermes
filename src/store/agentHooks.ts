@@ -51,7 +51,14 @@ export async function startAgentHooks(): Promise<void> {
 
   if (getSettings().preciseAgentStatus) {
     try {
-      await installAll();
+      const results = await installAll();
+      // Surface adapters that failed to wire their config — a silently
+      // half-wired agent is the failure mode where the session never turns
+      // hook-authoritative and the PTY heuristics run its status instead.
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        console.error("[agent-hooks] not wired:", failed.map((r) => `${r.id} (${r.detail})`).join(", "));
+      }
     } catch (e) {
       console.error("[agent-hooks] install failed", e);
     }
