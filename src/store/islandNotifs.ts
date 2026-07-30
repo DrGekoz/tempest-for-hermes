@@ -33,8 +33,12 @@ export function pushIslandNotif(n: Omit<IslandNotif, "id">): void {
   // noise — they see the terminal directly. Suppress it at the source so every
   // caller (hook receiver + PTY heuristics) is covered by one guard.
   if (isViewingSession(n.sessionId)) return;
+  // One notif per session per type. The same permission prompt is surfaced by
+  // several sources (hook receiver plus the 3s/8s/20s PTY rechecks), so without
+  // this a single event stacks 4–5 identical "permission needed" rows. Drop any
+  // prior match and keep the freshest.
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-  _notifs = [{ ...n, id }, ..._notifs].slice(0, MAX);
+  _notifs = [{ ...n, id }, ..._notifs.filter((e) => !(e.sessionId === n.sessionId && e.type === n.type))].slice(0, MAX);
   emit();
 }
 
@@ -45,6 +49,18 @@ export function dismissIslandNotif(id: string): void {
 
 export function getIslandNotifs(): IslandNotif[] {
   return _notifs;
+}
+
+// "View Agent" in the island lives in the title bar; the session it focuses is
+// owned by WorkspaceView. WorkspaceView registers a handler here, the island
+// calls it — same shape as `setActiveIslandSession`, other direction.
+let _focusHandler: ((sessionId: string) => void) | null = null;
+export function onIslandFocusRequest(fn: (sessionId: string) => void): () => void {
+  _focusHandler = fn;
+  return () => { if (_focusHandler === fn) _focusHandler = null; };
+}
+export function requestIslandFocus(sessionId: string): void {
+  _focusHandler?.(sessionId);
 }
 
 export function subscribeIslandNotifs(cb: () => void): () => void {

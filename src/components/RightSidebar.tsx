@@ -21,6 +21,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { Tooltip } from "./Tooltip";
+import { portForWorkspace } from "../lib/servicePort";
 import type { DiffLine, FileStats } from "../types/git";
 import "./RightSidebar.css";
 
@@ -379,7 +380,8 @@ export function RightSidebar({ cwd, rootPath, open, gitRevision, noGit, onOpenDi
   async function runScript(cmd: string) {
     if (!cwd || runningId) return;
     const id = crypto.randomUUID();
-    setRunLog([`$ ${cmd}`]);
+    const port = portForWorkspace(cwd);
+    setRunLog([`PORT=${port}`, `$ ${cmd}`]);
     setRunningId(id);
     setBottomTab("terminal");
     const unlistenLine = await listen<string>(`run:${id}`, (e) => {
@@ -391,7 +393,7 @@ export function RightSidebar({ cwd, rootPath, open, gitRevision, noGit, onOpenDi
       unlistenDone();
     });
     try {
-      await invoke("shell_run", { sessionId: id, cwd, cmd });
+      await invoke("shell_run", { sessionId: id, cwd, cmd, env: { PORT: String(port), TEMPEST_PORT: String(port) } });
     } catch (e) {
       setRunLog((prev) => [...prev, `Error: ${e}`]);
       setRunningId(null);

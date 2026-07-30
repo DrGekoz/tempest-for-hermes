@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import "./DynamicIsland.css";
 import {
-  subscribeIslandNotifs, getIslandNotifs, dismissIslandNotif, type IslandNotif,
+  subscribeIslandNotifs, getIslandNotifs, dismissIslandNotif, requestIslandFocus, type IslandNotif,
 } from "../store/islandNotifs";
 import { getAgent } from "../lib/agentRegistry";
 
@@ -825,7 +825,12 @@ export function DynamicIsland() {
                 >
                   Mark as read
                 </button>
-                <button style={allowBtnStyle}>View Agent</button>
+                <button
+                  style={allowBtnStyle}
+                  onClick={() => { requestIslandFocus(notif.sessionId); dismissIslandNotif(notif.id); toListView(); }}
+                >
+                  View Agent
+                </button>
               </div>
             </div>
           )}

@@ -542,11 +542,15 @@ async fn shell_run(
     session_id: String,
     cwd: String,
     cmd: String,
+    env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<(), String> {
+    // Per-workspace PORT etc., so parallel worktrees' dev servers don't collide.
+    let env = env.unwrap_or_default();
     #[cfg(windows)]
     let mut child = std::process::Command::new("cmd")
         .args(["/C", &cmd])
         .current_dir(&cwd)
+        .envs(env)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -555,6 +559,7 @@ async fn shell_run(
     let mut child = std::process::Command::new("sh")
         .args(["-c", &cmd])
         .current_dir(&cwd)
+        .envs(env)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()

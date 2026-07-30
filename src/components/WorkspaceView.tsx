@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { sessionManager } from "../store/sessionManager";
-import { setActiveIslandSession } from "../store/islandNotifs";
+import { setActiveIslandSession, onIslandFocusRequest } from "../store/islandNotifs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { createWorktree, gitInit, NotAGitRepoError } from "../lib/worktree";
@@ -117,6 +117,7 @@ function sbRows(live: Session[], ghosts: WorktreeSession[]): SbRow[] {
 
 import { folderName, timeAgo } from "../lib/format";
 import { getHookCommands, runHook, type HookKind } from "../lib/worktreeHooks";
+import { portForWorkspace } from "../lib/servicePort";
 import { buildAgentArgs } from "../lib/agentArgs";
 import {
   type SplitDir,
@@ -313,6 +314,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
   // Let the island suppress notifs for the tab the user is actively viewing.
   useEffect(() => { setActiveIslandSession(activeSessionId); }, [activeSessionId]);
+
+  // "View Agent" in the island focuses that session's tab.
+  useEffect(() => onIslandFocusRequest((id) => setActiveSessionId(id)), []);
 
   // On mount: scan every open project for valid worktrees, prune stale session
   // entries that no longer correspond to any path on disk, then restore only
@@ -1074,8 +1078,11 @@ export function WorkspaceView({ zen, name, path }: Props) {
     if (existing) { setActiveSessionId(existing.id); return; }
     const sessionId = crypto.randomUUID();
     // A project that declares its dev-server port in tempest.yml opens straight
-    // at the app instead of the port picker.
-    const port = (await loadTempestConfig(getProjectPath(projectId) ?? "")).preview?.port;
+    // at the app; otherwise fall back to this workspace's allocated service port
+    // (the same one the Run tab injects), so the preview points where the dev
+    // server actually binds instead of the port picker.
+    const projectPath = getProjectPath(projectId) ?? "";
+    const port = (await loadTempestConfig(projectPath)).preview?.port ?? portForWorkspace(cwd || projectPath);
     const previewUrl = port ? `http://localhost:${port}` : undefined;
     const tab: PersistedTab = { instanceId: sessionId, kind: "preview", projectId, cwd, name: "Live Preview", previewUrl };
     upsertTab(tab);
