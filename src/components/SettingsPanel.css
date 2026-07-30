@@ -1378,3 +1378,106 @@
   font-family: "Geist Mono", monospace;
   font-size: 11px;
 }
+
+/* ── Agents section ─────────────────────────────────────────────────────── */
+.sp-agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.sp-agent-row {
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sp-agent-row--open {
+  border-color: var(--tempest-border-subtle);
+}
+
+.sp-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--tempest-fg-default);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  text-align: left;
+}
+
+.sp-agent-head:hover {
+  background: var(--tempest-bg-hover);
+}
+
+.sp-agent-name {
+  flex: 1;
+}
+
+.sp-agent-logo-invert {
+  filter: brightness(0) invert(1);
+  opacity: 0.85;
+}
+
+.sp-agent-badge {
+  font-size: 10px;
+  color: var(--tempest-fg-subtle);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.sp-agent-body {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 12px 14px;
+  border-top: 1px solid var(--tempest-border-default);
+}
+
+.sp-agent-label {
+  font-size: 11px;
+  color: var(--tempest-fg-muted);
+  margin: 12px 0 5px;
+}
+
+.sp-agent-hint {
+  color: var(--tempest-fg-subtle);
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.sp-agent-textarea,
+.sp-agent-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  background: var(--tempest-bg-base);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  color: var(--tempest-fg-default);
+  resize: vertical;
+}
+
+.sp-agent-textarea:focus,
+.sp-agent-input:focus {
+  border-color: var(--tempest-accent-blue);
+  outline: none;
+}
+
+.sp-agent-textarea::placeholder,
+.sp-agent-input::placeholder {
+  color: var(--tempest-fg-subtle);
+}
+
+.sp-agent-warn {
+  font-size: 11px;
+  color: var(--tempest-accent-yellow, #d29922);
+  margin: 6px 0 0;
+}

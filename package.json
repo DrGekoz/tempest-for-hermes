@@ -18,6 +18,7 @@
     "build:web": "npm run build --workspace=tempest-web",
     "build:docs": "npm run build --workspace=tempest-docs",
     "preview": "vite preview",
+    "test": "node tests/run.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

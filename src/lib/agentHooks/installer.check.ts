@@ -118,7 +118,11 @@ function managedCount(config: JsonObject): number {
   assert.strictEqual(s({ hook_event_name: "PreToolUse", tool_name: "AskUserQuestion" }), "waiting", "AskUserQuestion blocks for a human");
   assert.strictEqual(s({ hook_event_name: "PermissionRequest", tool_name: "Bash" }), "waiting");
   assert.strictEqual(s({ hook_event_name: "Notification", notification_type: "permission_prompt" }), "waiting");
-  assert.strictEqual(s({ hook_event_name: "Notification", message: "Claude needs your permission to use Bash" }), "waiting");
+  // A message-only notification is NOT a transition: matching permission prompts on
+  // the message string raised a bogus bell on completed turns, so waiting is now
+  // driven by PermissionRequest / notification_type / AskUserQuestion only. See
+  // adapters/claude.ts parse().
+  assert.strictEqual(s({ hook_event_name: "Notification", message: "Claude needs your permission to use Bash" }), null, "message-string notifications aren't a transition");
   assert.strictEqual(s({ hook_event_name: "Notification", message: "Compacting conversation" }), null, "generic notifications aren't a transition");
   assert.strictEqual(s({ hook_event_name: "Stop" }), "done");
   assert.strictEqual(s({ hook_event_name: "SomethingNew" }), null, "unknown events ignored");

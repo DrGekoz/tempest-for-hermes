@@ -1,5 +1,6 @@
 import { getAgent } from "./agentRegistry";
 import { getSettings } from "../store/appSettings";
+import { getAgentConfig } from "./runtimeState";
 
 // The generic "cli" adapter: turn an agent's structured flags into an argv. Every
 // bundled and remote agent runs through here — the only per-agent knowledge is
@@ -45,6 +46,13 @@ export function buildAgentArgs(
     for (const arg of config.autoApproveArgs) {
       args.push(arg);
     }
+  }
+
+  // User-configured per-agent flags (global, applied to every launch of this
+  // agent type). Appended after the structured flags, before the positional
+  // prompt. Keyed by stable id so it survives an agent's CLI command changing.
+  if (config) {
+    for (const arg of getAgentConfig(config.id).args) args.push(arg);
   }
 
   if (prompt) args.push(prompt);

@@ -119,6 +119,7 @@ import { folderName, timeAgo } from "../lib/format";
 import { getHookCommands, runHook, type HookKind } from "../lib/worktreeHooks";
 import { portForWorkspace } from "../lib/servicePort";
 import { buildAgentArgs } from "../lib/agentArgs";
+import { getAgentConfig } from "../lib/runtimeState";
 import {
   type SplitDir,
   type SplitBranch,
@@ -851,6 +852,13 @@ export function WorkspaceView({ zen, name, path }: Props) {
       const args = agent ? buildAgentArgs(agent, sessionId, originalId, prompt, model) : null;
 
       const config = agent ? AGENT_CONFIGS.find((a) => a.hint === agent) : null;
+      // Per-agent launch defaults (global, set in Settings → Agents). Only agent
+      // sessions have a type; plain terminals get none.
+      const agentCfg = config ? getAgentConfig(config.id) : null;
+      // The agent's configured working subdirectory is entered relative to the
+      // worktree root. Session identity, sandbox rw paths, and DB isolation keep
+      // using the worktree `cwd`; only the PTY's start directory moves.
+      const effectiveCwd = agentCfg?.subdir ? `${cwd}/${agentCfg.subdir}` : cwd;
       const usesCapturePattern = !!(config?.capturePattern && config.captureResumeArgs);
       const conversationId = usesCapturePattern && !originalId ? undefined : (originalId ?? sessionId);
 
@@ -928,7 +936,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
       try {
         await invoke<void>("create_pty_session", {
           sessionId,
-          cwd,
+          cwd: effectiveCwd,
           rows: 24,
           cols: 80,
           command: agent ?? null,
@@ -936,10 +944,12 @@ export function WorkspaceView({ zen, name, path }: Props) {
           sandbox: sandboxParam,
           policy: policyParam,
           dbIsolation: projectSettings.database.isolationEnabled,
-          // TEMPEST_SESSION lets an installed agent hook (see src/lib/agentHooks)
-          // attribute its lifecycle POSTs back to this exact session, without
-          // touching the PTY spawn internals. Merged over tempest.yml env.
-          env: { ...(tempestConfig.env ?? {}), TEMPEST_SESSION: sessionId },
+          // Env precedence, lowest → highest: per-agent global defaults, then the
+          // repo's tempest.yml (project-specific wins over the org default), then
+          // the reserved TEMPEST_SESSION. The last lets an installed agent hook
+          // (see src/lib/agentHooks) attribute its lifecycle POSTs back to this
+          // exact session, without touching the PTY spawn internals.
+          env: { ...(agentCfg?.env ?? {}), ...(tempestConfig.env ?? {}), TEMPEST_SESSION: sessionId },
           onEvent: channel,
         });
       } catch (e) {

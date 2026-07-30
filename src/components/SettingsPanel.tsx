@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Palette, Keyboard, Info, GitCommitHorizontal, Terminal as TerminalIcon, GitBranch, BookOpen, Cpu, Shield, KeyRound } from "lucide-react";
+import { X, Palette, Keyboard, Info, GitCommitHorizontal, Terminal as TerminalIcon, GitBranch, BookOpen, Cpu, Shield, KeyRound, Bot } from "lucide-react";
 import { Tooltip } from "./Tooltip";
 import { useTheme } from "../themes/ThemeContext";
 import { AppearanceSection } from "./SettingsPanel/AppearanceSection";
@@ -9,6 +9,7 @@ import { GitSection } from "./SettingsPanel/GitSection";
 import { SecuritySection } from "./SettingsPanel/SecuritySection";
 import { TokenIntelligenceSection } from "./SettingsPanel/TokenIntelligenceSection";
 import { ApiKeysSection } from "./SettingsPanel/ApiKeysSection";
+import { AgentsSection } from "./SettingsPanel/AgentsSection";
 import { PromptsSection } from "./SettingsPanel/PromptsSection";
 import { KeyboardSection } from "./SettingsPanel/KeyboardSection";
 import { AttributionSection } from "./SettingsPanel/AttributionSection";
@@ -17,7 +18,7 @@ import "./SettingsPanel.css";
 
 export { AttributionSection } from "./SettingsPanel/AttributionSection";
 
-type Section = "appearance" | "terminal" | "git" | "intelligence" | "security" | "apikeys" | "prompts" | "keyboard" | "attribution" | "about";
+type Section = "appearance" | "terminal" | "git" | "intelligence" | "security" | "agents" | "apikeys" | "prompts" | "keyboard" | "attribution" | "about";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -88,7 +89,14 @@ export function SettingsPanel({ onClose, onAttributionToggle, initialSection }: 
               <Shield size={14} />
               Security
             </button>
-<button
+            <button
+              className={`sp-nav-item${activeSection === "agents" ? " sp-nav-item--active" : ""}`}
+              onClick={() => setActiveSection("agents")}
+            >
+              <Bot size={14} />
+              Agents
+            </button>
+            <button
               className={`sp-nav-item${activeSection === "apikeys" ? " sp-nav-item--active" : ""}`}
               onClick={() => setActiveSection("apikeys")}
             >
@@ -134,6 +142,7 @@ export function SettingsPanel({ onClose, onAttributionToggle, initialSection }: 
             {activeSection === "git" && <GitSection />}
             {activeSection === "intelligence" && <TokenIntelligenceSection />}
             {activeSection === "security" && <SecuritySection />}
+            {activeSection === "agents" && <AgentsSection />}
             {activeSection === "apikeys" && <ApiKeysSection />}
             {activeSection === "prompts" && <PromptsSection />}
             {activeSection === "keyboard" && <KeyboardSection />}

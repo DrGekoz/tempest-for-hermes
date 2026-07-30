@@ -42,6 +42,15 @@ const ENV_DENY = new Set([
 ]);
 const ENV_DENY_UPPER = new Set([...ENV_DENY].map((k) => k.toUpperCase()));
 
+/// Reason a variable name may not be set from config — a loader / DB-isolation
+/// vector, or a malformed name — or null when it is safe. Shared by tempest.yml
+/// parsing and the per-agent config UI so both paths agree on what is dangerous.
+export function envKeyRejection(k: string): string | null {
+  if (!ENV_NAME_RE.test(k)) return "is not a valid variable name";
+  if (ENV_DENY_UPPER.has(k.toUpperCase())) return "is a loader or DB-isolation variable and cannot be set";
+  return null;
+}
+
 // ── shape helpers ────────────────────────────────────────────────────────────
 // YAML is untyped, so every field is validated before it reaches settings —
 // a mistyped key must be dropped, never coerced into something enforceable.
@@ -218,11 +227,8 @@ export function parseTempestConfig(text: string): TempestConfig {
                   : typeof v === "number" || typeof v === "boolean" ? String(v)
                   : undefined;
       if (value === undefined) { warnings.push(`env.${k} is not a scalar — ignored.`); continue; }
-      if (!ENV_NAME_RE.test(k)) { warnings.push(`env.${k} is not a valid variable name — ignored.`); continue; }
-      if (ENV_DENY_UPPER.has(k.toUpperCase())) {
-        warnings.push(`env.${k} is not settable from tempest.yml (loader or DB-isolation variable) — ignored.`);
-        continue;
-      }
+      const rej = envKeyRejection(k);
+      if (rej) { warnings.push(`env.${k} ${rej} — ignored.`); continue; }
       env[k] = value;
     }
     if (Object.keys(env).length) out.env = env;
