@@ -51,6 +51,8 @@ import {
   GitBranch,
   Cog,
   Loader,
+  Waypoints,
+  Trash2,
 } from "lucide-react";
 import { setWorkState, clearWorkState, getWorkState, setAttention, getAttention } from "../store/workState";
 import { useKeybindings, matchesEvent, formatShortcut } from "../store/keybindings";
@@ -61,6 +63,11 @@ import { DiffPane } from "./DiffPane";
 import { PreviewPane } from "./PreviewPane";
 import { CodeMirrorPane } from "./CodeMirrorPane";
 import { ChatPane } from "./ChatPane";
+import { ThreadsView } from "./ThreadsView";
+import {
+  getProjectThreads, getThread, loadProjectThreads,
+  saveThread, deleteThread as deleteThreadFromStore,
+} from "../store/threads";
 import { RightSidebar } from "./RightSidebar";
 import { NewSessionMenu, NewSessionPlacement, AgentConfig, AGENT_CONFIGS, AgentIcon } from "./NewSessionMenu";
 import { BranchSessionMenu } from "./BranchSessionMenu";
@@ -246,6 +253,14 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
   // Chat tab remount nonces — incrementing forces the ChatPane to remount (clears in-memory messages)
   const [chatNonce, setChatNonce] = useState<Record<string, number>>({});
+
+  // Threads canvases (sidebar dropdown). Loaded lazily on first expand; the store
+  // is the source of truth, this counter just forces a re-render after async load.
+  const [threadsVersion, setThreadsVersion] = useState(0);
+  const bumpThreads = () => setThreadsVersion((v) => v + 1);
+  const loadedThreadProjects = useRef<Set<string>>(new Set());
+  const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
+  const [threadRenameValue, setThreadRenameValue] = useState("");
 
   // Sidebar right-click context menu
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
@@ -1145,6 +1160,65 @@ export function WorkspaceView({ zen, name, path }: Props) {
     setActiveSessionId(sessionId);
   }
 
+  // ── Threads (canvas chat) ──────────────────────────────────────────────────
+  // A canvas is one top-level tab, keyed by its threadId (reused as session id +
+  // instanceId), so reopening the same canvas dedups naturally.
+  function openThreadTab(projectId: string, threadId: string) {
+    const existing = sessionsRef.current.find((s) => s.kind === "thread" && s.id === threadId);
+    if (existing) { setActiveSessionId(existing.id); return; }
+    const name = getThread(threadId)?.name ?? "Thread";
+    if (!getTabs().some((t) => t.instanceId === threadId)) {
+      upsertTab({ instanceId: threadId, kind: "thread", projectId, cwd: "", name });
+    }
+    setSessions((prev) => [...prev, {
+      id: threadId, instanceId: threadId, name, cwd: "", projectId, kind: "thread",
+      createdAt: new Date().toISOString(),
+      metadata: { resumeCount: 0, hasBeenResumed: false },
+    }]);
+    setActiveSessionId(threadId);
+  }
+
+  // Lazily hydrate a project's canvases the first time its Threads row is opened.
+  function ensureThreadsLoaded(projectId: string) {
+    if (loadedThreadProjects.current.has(projectId)) return;
+    loadedThreadProjects.current.add(projectId);
+    loadProjectThreads(projectId).then(bumpThreads).catch(() => {
+      loadedThreadProjects.current.delete(projectId);
+    });
+  }
+
+  function createThread(projectId: string) {
+    const id = crypto.randomUUID();
+    const order = getProjectThreads(projectId).reduce((m, t) => Math.max(m, t.sortOrder), -1) + 1;
+    saveThread({ id, projectId, name: "New thread", viewport: null, sortOrder: order });
+    bumpThreads();
+    const path = projects.find((p) => p.id === projectId)?.path;
+    if (path) setExpandedWorktrees((prev) => new Set([...prev, path + "::threads"]));
+    openThreadTab(projectId, id);
+  }
+
+  function renameThread(threadId: string, name: string) {
+    const t = getThread(threadId);
+    const trimmed = name.trim();
+    if (t && trimmed) {
+      saveThread({ ...t, name: trimmed });
+      // Keep an open tab's title in sync.
+      setSessions((prev) => prev.map((s) => (s.id === threadId ? { ...s, name: trimmed } : s)));
+      const tab = getTabs().find((tb) => tb.instanceId === threadId);
+      if (tab) upsertTab({ ...tab, name: trimmed });
+    }
+    setRenamingThreadId(null);
+    bumpThreads();
+  }
+
+  function removeThread(threadId: string) {
+    deleteThreadFromStore(threadId);
+    // Close the tab if open; drop its PersistedTab so it can't restore.
+    if (sessionsRef.current.some((s) => s.id === threadId)) closeSession(threadId);
+    else removeTab(threadId);
+    bumpThreads();
+  }
+
   function clearChatHistory(projectId: string, sessionId?: string) {
     const projectPath = projects.find((p) => p.id === projectId)?.path;
     if (projectPath) saveChatHistory(projectPath, []);
@@ -1480,14 +1554,14 @@ export function WorkspaceView({ zen, name, path }: Props) {
       const closing = sessions.find((s) => s.id === id);
       if (closing?.kind === "chat") {
         // Chat tabs: keep the PersistedTab (for ghost + restart restore) — just remove from live sessions.
-      } else if (closing?.kind !== "diff" && closing?.kind !== "preview" && closing?.kind !== "editor") {
+      } else if (closing?.kind !== "diff" && closing?.kind !== "preview" && closing?.kind !== "editor" && closing?.kind !== "thread") {
         invoke("close_pty_session", { sessionId: id }).catch(() => {});
         // Mark the persisted row closed (ghost). No-op for session-scoped sessions
         // that were never persisted (e.g. one with no resolvable project).
         markSessionClosed(id);
         sessionManager.unregister(id);
       } else if (closing) {
-        // Remove the persisted tab entry for non-terminal tabs (diff, preview, editor).
+        // Remove the persisted tab entry for non-terminal tabs (diff, preview, editor, thread).
         removeTab(closing.instanceId);
       }
       clearWorkState(id);
@@ -2380,9 +2454,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
                             );
                           })}
 
-                          {/* Non-worktree tabs (diff, preview, editor, chat) */}
+                          {/* Non-worktree tabs (diff, preview, editor, chat) — threads live in their own dropdown below */}
                           {projectSessions
-                            .filter((s) => !s.isRootSession && !s.parentSessionId && !project.worktrees.some((w) => w.path === s.cwd))
+                            .filter((s) => s.kind !== "thread" && !s.isRootSession && !s.parentSessionId && !project.worktrees.some((w) => w.path === s.cwd))
                             .map((s) => (
                               <div key={s.id} className="sidebar-session-group">
                                 <button
@@ -2411,6 +2485,74 @@ export function WorkspaceView({ zen, name, path }: Props) {
                               </button>
                             </div>
                           )}
+
+                          {/* Threads (canvas chat) — project-scoped collapsible dropdown */}
+                          {(() => {
+                            const threadsKey = project.path + "::threads";
+                            const threadsExpanded = expandedWorktrees.has(threadsKey);
+                            void threadsVersion; // re-render on lazy load
+                            const canvases = getProjectThreads(project.id);
+                            return (
+                              <div className="sidebar-session-group">
+                                <div
+                                  className="sidebar-project-session"
+                                  style={{ cursor: "pointer" }}
+                                  onClick={() => { ensureThreadsLoaded(project.id); toggleWorktree(threadsKey); }}
+                                >
+                                  {threadsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                  <Waypoints size={12} />
+                                  <span>Threads</span>
+                                  <button
+                                    className="sidebar-project-add-btn"
+                                    onClick={(e) => { e.stopPropagation(); ensureThreadsLoaded(project.id); createThread(project.id); }}
+                                    aria-label="New thread"
+                                  >
+                                    <Plus size={12} />
+                                  </button>
+                                </div>
+                                {threadsExpanded && canvases.map((c) => (
+                                  renamingThreadId === c.id ? (
+                                    <input
+                                      key={c.id}
+                                      autoFocus
+                                      className="sb-inline-create-input"
+                                      value={threadRenameValue}
+                                      onChange={(e) => setThreadRenameValue(e.target.value)}
+                                      onBlur={() => renameThread(c.id, threadRenameValue)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") renameThread(c.id, threadRenameValue);
+                                        else if (e.key === "Escape") setRenamingThreadId(null);
+                                      }}
+                                    />
+                                  ) : (
+                                    <div key={c.id} style={{ display: "flex", alignItems: "center" }}>
+                                      <button
+                                        className={`sidebar-project-session${c.id === activeSessionId ? " sidebar-project-session--active" : ""}`}
+                                        style={{ flex: 1, paddingLeft: 22 }}
+                                        onClick={() => openThreadTab(project.id, c.id)}
+                                        onDoubleClick={() => { setThreadRenameValue(c.name); setRenamingThreadId(c.id); }}
+                                      >
+                                        <Waypoints size={12} />
+                                        <span>{c.name}</span>
+                                      </button>
+                                      <button
+                                        className="sidebar-project-settings-btn"
+                                        onClick={() => removeThread(c.id)}
+                                        aria-label="Delete thread"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  )
+                                ))}
+                                {threadsExpanded && canvases.length === 0 && (
+                                  <div className="sb-dropdown-empty-box">
+                                    <span className="sb-dropdown-empty-text">No threads yet. Create one with +</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Project-level empty state */}
                           {(() => {
@@ -2661,6 +2803,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
                       })()}
                       onLaunchAgent={(hint, prompt, model) => launchAgentFromChat(s.projectId, hint, prompt, model)}
                     />
+                  ) : s.kind === "thread" ? (
+                    <ThreadsView threadId={s.id} projectId={s.projectId} hidden={hidden} />
                   ) : (
                     <TerminalPane
                       sessionId={s.id}

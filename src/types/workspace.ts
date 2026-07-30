@@ -3,7 +3,7 @@ export interface Session {
   name: string;
   cwd: string;
   projectId: string;
-  kind?: "terminal" | "diff" | "preview" | "editor" | "chat";
+  kind?: "terminal" | "diff" | "preview" | "editor" | "chat" | "thread";
   previewUrl?: string;
   agent?: string;
   conversationId?: string;
