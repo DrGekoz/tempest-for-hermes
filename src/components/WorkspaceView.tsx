@@ -3066,9 +3066,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
           setTerminalPrompt("");
           setShowTerminalNaming(true);
         }}
-        onChat={pendingProjectId ? () => {
+        onThread={pendingProjectId ? () => {
           setSessionMenuOpen(false);
-          openChatTab(pendingProjectId);
+          createThread(pendingProjectId);
         } : undefined}
         onLivePreview={pendingProjectId ? () => {
           setSessionMenuOpen(false);

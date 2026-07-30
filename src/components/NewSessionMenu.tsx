@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAgentAvailability } from "../store/agentAvailability";
-import { Bot, TerminalSquare, MessageSquare, Globe, ChevronRight, Download } from "lucide-react";
+import { Bot, TerminalSquare, Globe, ChevronRight, Download, Waypoints } from "lucide-react";
 import { useAgents, getAgent, getIconDataUrl, remoteIconUrl, type AgentConfig } from "../lib/agentRegistry";
 import "./NewSessionMenu.css";
 
@@ -49,7 +49,7 @@ interface Props {
   onClose: () => void;
   onNewTerminal: () => void;
   onAgentSession: (agent: AgentConfig) => void;
-  onChat?: () => void;
+  onThread?: () => void;
   onLivePreview?: () => void;
 }
 
@@ -60,7 +60,7 @@ export function NewSessionMenu({
   onClose,
   onNewTerminal,
   onAgentSession,
-  onChat,
+  onThread,
   onLivePreview,
 }: Props) {
   const [agentHovered, setAgentHovered] = useState(false);
@@ -166,14 +166,14 @@ export function NewSessionMenu({
         </div>
 
         <button
-          className={`nsm-item${!onChat ? " nsm-item--disabled" : ""}`}
-          disabled={!onChat}
-          onClick={() => { onChat?.(); onClose(); }}
+          className={`nsm-item${!onThread ? " nsm-item--disabled" : ""}`}
+          disabled={!onThread}
+          onClick={() => { onThread?.(); onClose(); }}
         >
-          <MessageSquare size={14} className="nsm-item-icon" />
+          <Waypoints size={14} className="nsm-item-icon" />
           <div className="nsm-item-text">
-            <span className="nsm-item-label">Chat</span>
-            <span className="nsm-item-desc">AI engineering companion</span>
+            <span className="nsm-item-label">Thread</span>
+            <span className="nsm-item-desc">Node-based canvas for research & agents</span>
           </div>
         </button>
 
