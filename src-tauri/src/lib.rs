@@ -1028,6 +1028,48 @@ CREATE TABLE IF NOT EXISTS app_state (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL                        -- JSON-encoded preference value
 );
+
+-- ── Threads (canvas chat) — see claude-docs/threads-plan.md ──────────────────
+-- One canvas, listed directly under a project in the sidebar Threads dropdown.
+CREATE TABLE IF NOT EXISTS threads (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  viewport    TEXT,                          -- JSON {x,y,zoom} camera state
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  last_opened_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_id);
+
+-- A node on a canvas.
+CREATE TABLE IF NOT EXISTS thread_nodes (
+  id          TEXT PRIMARY KEY,
+  thread_id   TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,                 -- 'chat' | 'text' | 'agent' | 'terminal'
+  x           REAL NOT NULL,
+  y           REAL NOT NULL,
+  width       REAL,
+  height      REAL,
+  branch_id   TEXT REFERENCES branches(id) ON DELETE SET NULL,  -- execution binding; NULL = thinking node
+  session_id  TEXT REFERENCES sessions(id) ON DELETE SET NULL,  -- agent/terminal nodes: the real PTY session
+  data        TEXT,                          -- JSON: node-kind-specific
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_thread_nodes_thread ON thread_nodes(thread_id);
+
+-- Messages for chat nodes. Keyed by node, not project.
+CREATE TABLE IF NOT EXISTS thread_messages (
+  id          TEXT PRIMARY KEY,
+  node_id     TEXT NOT NULL REFERENCES thread_nodes(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL,                 -- 'user' | 'assistant'
+  parts       TEXT NOT NULL,                 -- JSON MessagePart[]
+  seq         INTEGER NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_thread_messages ON thread_messages(node_id, seq);
 ";
 
 fn init_db(handle: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
@@ -1472,6 +1514,161 @@ fn db_replace_chat(state: tauri::State<'_, DbState>, project_id: String, message
         tx.execute(
             "INSERT INTO chat_messages (id, project_id, role, parts, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![m.id, project_id, m.role, m.parts, seq as i64],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── Threads (canvas chat) — see claude-docs/threads-plan.md ───────────────────
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbThread {
+    pub id:         String,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub name:       String,
+    pub viewport:   Option<String>,
+    #[serde(rename = "sortOrder", default)]
+    pub sort_order: i64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbThreadNode {
+    pub id:         String,
+    #[serde(rename = "threadId")]
+    pub thread_id:  String,
+    pub kind:       String,
+    pub x:          f64,
+    pub y:          f64,
+    pub width:      Option<f64>,
+    pub height:     Option<f64>,
+    #[serde(rename = "branchId")]
+    pub branch_id:  Option<String>,
+    #[serde(rename = "sessionId")]
+    pub session_id: Option<String>,
+    pub data:       Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbThreadMessage {
+    pub id:    String,
+    pub role:  String,
+    pub parts: String, // JSON MessagePart[]
+}
+
+#[tauri::command(async)]
+fn db_list_threads(state: tauri::State<'_, DbState>, project_id: String) -> Result<Vec<DbThread>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.prepare(
+        "SELECT id, project_id, name, viewport, sort_order FROM threads \
+         WHERE project_id = ?1 ORDER BY sort_order, created_at",
+    )
+    .and_then(|mut stmt| {
+        stmt.query_map(rusqlite::params![project_id], |r| {
+            Ok(DbThread {
+                id: r.get(0)?, project_id: r.get(1)?, name: r.get(2)?,
+                viewport: r.get(3)?, sort_order: r.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+fn db_upsert_thread(state: tauri::State<'_, DbState>, thread: DbThread) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO threads (id, project_id, name, viewport, sort_order) VALUES (?1, ?2, ?3, ?4, ?5) \
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, viewport = excluded.viewport, \
+           sort_order = excluded.sort_order, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+        rusqlite::params![thread.id, thread.project_id, thread.name, thread.viewport, thread.sort_order],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn db_delete_thread(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM threads WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn db_list_thread_nodes(state: tauri::State<'_, DbState>, thread_id: String) -> Result<Vec<DbThreadNode>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.prepare(
+        "SELECT id, thread_id, kind, x, y, width, height, branch_id, session_id, data \
+         FROM thread_nodes WHERE thread_id = ?1 ORDER BY created_at",
+    )
+    .and_then(|mut stmt| {
+        stmt.query_map(rusqlite::params![thread_id], |r| {
+            Ok(DbThreadNode {
+                id: r.get(0)?, thread_id: r.get(1)?, kind: r.get(2)?,
+                x: r.get(3)?, y: r.get(4)?, width: r.get(5)?, height: r.get(6)?,
+                branch_id: r.get(7)?, session_id: r.get(8)?, data: r.get(9)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+fn db_upsert_thread_node(state: tauri::State<'_, DbState>, node: DbThreadNode) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO thread_nodes (id, thread_id, kind, x, y, width, height, branch_id, session_id, data) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+         ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, x = excluded.x, y = excluded.y, \
+           width = excluded.width, height = excluded.height, branch_id = excluded.branch_id, \
+           session_id = excluded.session_id, data = excluded.data, \
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+        rusqlite::params![
+            node.id, node.thread_id, node.kind, node.x, node.y, node.width, node.height,
+            node.branch_id, node.session_id, node.data,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn db_delete_thread_node(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM thread_nodes WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn db_load_thread_messages(state: tauri::State<'_, DbState>, node_id: String) -> Result<Vec<DbThreadMessage>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.prepare("SELECT id, role, parts FROM thread_messages WHERE node_id = ?1 ORDER BY seq")
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![node_id], |r| {
+                Ok(DbThreadMessage { id: r.get(0)?, role: r.get(1)?, parts: r.get(2)? })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|e| e.to_string())
+}
+
+// Replace a node's entire conversation in one transaction (mirrors db_replace_chat).
+#[tauri::command(async)]
+fn db_replace_thread_messages(state: tauri::State<'_, DbState>, node_id: String, messages: Vec<DbThreadMessage>) -> Result<(), String> {
+    let mut conn = state.0.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM thread_messages WHERE node_id = ?1", rusqlite::params![node_id])
+        .map_err(|e| e.to_string())?;
+    for (seq, m) in messages.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO thread_messages (id, node_id, role, parts, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![m.id, node_id, m.role, m.parts, seq as i64],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -3684,6 +3881,14 @@ pub fn run() {
             db_set_app_state,
             db_load_chat,
             db_replace_chat,
+            db_list_threads,
+            db_upsert_thread,
+            db_delete_thread,
+            db_list_thread_nodes,
+            db_upsert_thread_node,
+            db_delete_thread_node,
+            db_load_thread_messages,
+            db_replace_thread_messages,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

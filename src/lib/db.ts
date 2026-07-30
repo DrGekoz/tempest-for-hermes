@@ -124,3 +124,51 @@ export const dbDeleteProject = (id: string): Promise<void> =>
 
 export const dbPruneSessions = (validIds: string[]): Promise<void> =>
   invoke("db_prune_sessions", { validIds });
+
+// ── Threads (canvas chat) — see claude-docs/threads-plan.md ───────────────────
+
+export interface DbThread {
+  id: string;
+  projectId: string;
+  name: string;
+  viewport: string | null; // JSON {x,y,zoom}
+  sortOrder: number;
+}
+
+export interface DbThreadNode {
+  id: string;
+  threadId: string;
+  kind: string; // 'chat' | 'text' | 'agent' | 'terminal'
+  x: number;
+  y: number;
+  width: number | null;
+  height: number | null;
+  branchId: string | null;
+  sessionId: string | null;
+  data: string | null; // JSON, node-kind-specific
+}
+
+export interface DbThreadMessage {
+  id: string;
+  role: string;
+  parts: string; // JSON MessagePart[]
+}
+
+export const dbListThreads = (projectId: string): Promise<DbThread[]> =>
+  invoke("db_list_threads", { projectId });
+export const dbUpsertThread = (thread: DbThread): Promise<void> =>
+  invoke("db_upsert_thread", { thread });
+export const dbDeleteThread = (id: string): Promise<void> =>
+  invoke("db_delete_thread", { id });
+
+export const dbListThreadNodes = (threadId: string): Promise<DbThreadNode[]> =>
+  invoke("db_list_thread_nodes", { threadId });
+export const dbUpsertThreadNode = (node: DbThreadNode): Promise<void> =>
+  invoke("db_upsert_thread_node", { node });
+export const dbDeleteThreadNode = (id: string): Promise<void> =>
+  invoke("db_delete_thread_node", { id });
+
+export const dbLoadThreadMessages = (nodeId: string): Promise<DbThreadMessage[]> =>
+  invoke("db_load_thread_messages", { nodeId });
+export const dbReplaceThreadMessages = (nodeId: string, messages: DbThreadMessage[]): Promise<void> =>
+  invoke("db_replace_thread_messages", { nodeId, messages });
