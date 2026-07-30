@@ -11,6 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 import { sessionManager } from "./sessionManager";
 import { getSettings } from "./appSettings";
 import { getAdapter, installAll, uninstallAll } from "../lib/agentHooks";
+import { pushIslandNotif } from "./islandNotifs";
 
 interface AgentHookEvent {
   agent: string;
@@ -46,7 +47,17 @@ export async function startAgentHooks(): Promise<void> {
       if (rec.hook_event_name === undefined) rec.hook_event_name = event;
     }
     const state = adapter.parse(parsed);
-    if (state) sessionManager.applyHookState(session, state, adapter.coversWaiting);
+    if (state) {
+      sessionManager.applyHookState(session, state, adapter.coversWaiting);
+      if (state === "waiting") {
+        const detail = (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+          ? String((parsed as Record<string, unknown>).tool_name ?? "")
+          : "";
+        pushIslandNotif({ type: "permission", agent, title: "Permission needed", detail, sessionId: session });
+      } else if (state === "done") {
+        pushIslandNotif({ type: "done", agent, title: "Task complete", detail: "", sessionId: session });
+      }
+    }
   });
 
   if (getSettings().preciseAgentStatus) {

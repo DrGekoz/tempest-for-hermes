@@ -1,5 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 import { getWorkState, setWorkState, setAttention } from "./workState";
+import { pushIslandNotif } from "./islandNotifs";
 
 // Byte-quiet timer: ms with no PTY output before a working session is marked done.
 const QUIET_MS = 5000;
@@ -511,6 +512,7 @@ class SessionManager {
     setWorkState(sessionId, "done");
     setAttention(sessionId, true);
     record.onDone?.();
+    pushIslandNotif({ type: "permission", agent: record.agentHint, title: "Permission needed", detail: "", sessionId });
   }
 
   private markDone(record: SessionRecord, sessionId: string) {
@@ -526,6 +528,7 @@ class SessionManager {
     if (getWorkState(sessionId) === "working") {
       setWorkState(sessionId, "done");
       record.onDone?.();
+      pushIslandNotif({ type: "done", agent: record.agentHint, title: "Task complete", detail: "", sessionId });
       // Claude: schedule a delayed recheck against the raw buffer, since the
       // permission dialog is often painted after the OSC 9 that just tripped
       // markDone. If the fingerprint shows up within the window, upgrade

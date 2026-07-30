@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { sessionManager } from "../store/sessionManager";
+import { setActiveIslandSession } from "../store/islandNotifs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { createWorktree, gitInit, NotAGitRepoError } from "../lib/worktree";
@@ -309,6 +310,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
     const active = sessions.find((s) => s.id === activeSessionId);
     setRuntimeState({ activeInstanceId: active?.instanceId ?? null });
   }, [activeSessionId, sessions, zen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Let the island suppress notifs for the tab the user is actively viewing.
+  useEffect(() => { setActiveIslandSession(activeSessionId); }, [activeSessionId]);
 
   // On mount: scan every open project for valid worktrees, prune stale session
   // entries that no longer correspond to any path on disk, then restore only
