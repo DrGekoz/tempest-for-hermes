@@ -36,10 +36,6 @@ function fmtTime(s: number) {
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
-function cssVar(name: string) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
 function TimerArc({ progress, color }: { progress: number; color: string }) {
   const r = 9; const circ = 2 * Math.PI * r;
   return (
@@ -311,7 +307,6 @@ export function DynamicIsland() {
     setTimerPaused(false); timerPausedRef.current = false;
     setTimerNotif(null); setTimerShowList(false);
     syncPhase("idle");
-    gsap.to(pill.current, { backgroundColor: cssVar("--tempest-island-bg-open"), duration: 0.3 });
     gsap.timeline()
       .to([compactLayer.current, expandedLayer.current], { autoAlpha: 0, duration: 0.15 })
       .to(pill.current, { width: W_IDLE, height: H_ACTIVE, borderRadius: 32, duration: 0.35, ease: "power3.inOut" });
@@ -436,17 +431,6 @@ export function DynamicIsland() {
     setTimerElapsed(0);
   }, [restElapsed, timerState, restMins]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!pill.current) return;
-    gsap.to(pill.current, {
-      backgroundColor: timerState === "resting"
-        ? cssVar("--tempest-island-timer-rest-bg")
-        : cssVar("--tempest-island-bg-open"),
-      duration: 0.6,
-    });
-  }, [timerState]);
-
   useEffect(() => {
     if (timerState === "off") return;
     let idx = 0;
@@ -514,7 +498,10 @@ export function DynamicIsland() {
           position: "absolute", top: 0, left: "50%",
           overflow: "hidden", borderRadius: 32,
           border: "1px solid var(--tempest-island-border-open)",
-          background: "var(--tempest-island-bg-open)",
+          background: timerState === "resting"
+            ? "var(--tempest-island-timer-rest-bg)"
+            : "var(--tempest-island-bg-open)",
+          transition: "background-color 0.3s ease",
           pointerEvents: "auto",
           cursor: phase === "active" ? "pointer" : "default",
         }}

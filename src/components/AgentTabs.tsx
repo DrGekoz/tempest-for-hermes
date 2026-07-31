@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from "react";
-import { X, Eye, Globe, FileCode, MessageSquare, TerminalSquare, Waypoints } from "lucide-react";
+import { X, Eye, Globe, FileCode, TerminalSquare, Waypoints } from "lucide-react";
 import { AgentIcon } from "./NewSessionMenu";
 import { WorkStateBadge, QueueBadge } from "./SessionBadges";
 import ProgressiveBlur from "./ProgressiveBlur";
@@ -26,7 +26,7 @@ export interface SessionTab {
   id: string;
   name: string;
   projectId: string;
-  kind?: "terminal" | "diff" | "preview" | "editor" | "chat" | "thread";
+  kind?: "terminal" | "diff" | "preview" | "editor" | "thread";
   agent?: string;
 }
 
@@ -59,7 +59,6 @@ function SessionIcon({ session }: { session: SessionTab }) {
   if (session.kind === "diff")    return <Eye            size={13} className="agent-icon" />;
   if (session.kind === "preview") return <Globe          size={13} className="agent-icon" />;
   if (session.kind === "editor")  return <FileCode       size={13} className="agent-icon" />;
-  if (session.kind === "chat")    return <MessageSquare  size={13} className="agent-icon" />;
   if (session.kind === "thread")  return <Waypoints      size={13} className="agent-icon" />;
   if (session.agent)              return <AgentIcon hint={session.agent} size={13} />;
   return                                 <TerminalSquare size={13} className="agent-icon" />;

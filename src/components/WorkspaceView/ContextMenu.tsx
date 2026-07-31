@@ -1,9 +1,8 @@
 import { createPortal } from "react-dom";
-import { MessageSquare, Eye, X, Database, Trash2, FolderOpen } from "lucide-react";
+import { Eye, X, Database, Trash2, FolderOpen } from "lucide-react";
 import { getSettings } from "../../store/appSettings";
 import { getRuntimeState, setRuntimeState } from "../../lib/runtimeState";
 import { removeSession } from "../../store/sessions";
-import { getTabs, removeTab } from "../../store/tabs";
 import { invoke } from "@tauri-apps/api/core";
 import type { Session, Worktree } from "../../types/workspace";
 
@@ -16,17 +15,14 @@ export type CtxMenuState = {
   isProjectHeader?: boolean;
   isRootSession?: boolean;
   rootKey?: string;
-  isChatGhost?: boolean;
 };
 
 type Props = {
   menu: CtxMenuState;
   sessions: Session[];
   onClose: () => void;
-  onOpenChat: (projectId: string) => void;
   onOpenDiff: (path: string, projectId: string) => void;
   onCloseSession: (sessionId: string) => void;
-  onClearChatHistory: (projectId: string, sessionId?: string) => void;
   onOpenDeleteDialog: (
     worktree: Worktree,
     projectPath: string,
@@ -40,7 +36,7 @@ type Props = {
 
 export function ContextMenu({
   menu, sessions, onClose,
-  onOpenChat, onOpenDiff, onCloseSession, onClearChatHistory,
+  onOpenDiff, onCloseSession,
   onOpenDeleteDialog, onRemoveProject, onAtlasIndexingStart,
 }: Props) {
   const m = menu;
@@ -48,9 +44,6 @@ export function ContextMenu({
   const atlasOn = getSettings().atlasEnabled;
   const indexed = (getRuntimeState().atlasProjects ?? {})[m.projectPath] === true;
   const canClose = !!m.sessionId;
-  const hasChat = getTabs().some(
-    (t) => t.kind === "chat" && t.projectId === m.projectId
-  );
   const diffPath = m.worktree ? m.worktree.path : m.projectPath;
 
   const indexProject = () => {
@@ -72,12 +65,12 @@ export function ContextMenu({
     onClose();
   };
 
-  const hasToolItems = atlasOn || hasChat;
+  const hasToolItems = atlasOn;
   const hasDestructiveWorktree = !!m.worktree;
   // "Remove session" deletes the persisted session row so no ghost reappears.
   // Show it for any right-clicked PTY session (terminal/agent — `kind` unset) and
   // for ghost rows (m.rootKey carries the persisted id). Non-terminal tabs
-  // (diff/preview/editor/chat) have a `kind` and no persisted row, so they're excluded.
+  // (diff/preview/editor/thread) have a `kind` and no persisted row, so they're excluded.
   const hasDestructiveSession =
     m.isRootSession || !!m.rootKey || (!!targetSession && !targetSession.kind);
 
@@ -88,9 +81,6 @@ export function ContextMenu({
         style={{ top: m.y, left: m.x }}
         onClick={(e) => e.stopPropagation()}
       >
-        <button className="ctx-item" onClick={() => { onOpenChat(m.projectId); onClose(); }}>
-          <MessageSquare size={13} /> Open chat
-        </button>
         <button className="ctx-item" onClick={() => { onOpenDiff(diffPath, m.projectId); onClose(); }}>
           <Eye size={13} /> Open diff
         </button>
@@ -105,22 +95,6 @@ export function ContextMenu({
           <button className="ctx-item" onClick={indexProject}>
             <Database size={13} /> {indexed ? "Re-index project" : "Index project"}
           </button>
-        )}
-        {hasChat && (
-          <>
-            <button className="ctx-item ctx-item--danger" onClick={() => { onClearChatHistory(m.projectId, targetSession?.id); onClose(); }}>
-              <Trash2 size={13} /> Clear history
-            </button>
-            <button className="ctx-item ctx-item--danger" onClick={() => {
-              const chatSess = sessions.find((s) => s.kind === "chat" && s.projectId === m.projectId);
-              if (chatSess) onCloseSession(chatSess.id);
-              for (const t of getTabs().filter((t) => t.kind === "chat" && t.projectId === m.projectId)) removeTab(t.instanceId);
-              onClearChatHistory(m.projectId, chatSess?.id);
-              onClose();
-            }}>
-              <X size={13} /> Remove chat
-            </button>
-          </>
         )}
 
         <div className="ctx-sep" />

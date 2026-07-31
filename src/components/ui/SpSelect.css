@@ -1,0 +1,98 @@
+/* Custom dropdown (SpSelect) — shadcn-style select used app-wide. The menu is
+   portaled to <body> and positioned fixed, so it never clips inside overflow:hidden
+   containers (e.g. canvas nodes). */
+
+.sp-drop {
+  position: relative;
+  min-width: 150px;
+}
+
+/* Fills its wrapper instead of the 150px default — for tight rows / full-width cells. */
+.sp-drop--full {
+  width: 100%;
+  min-width: 0;
+}
+
+.sp-drop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--tempest-bg-hover);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  color: var(--tempest-fg-default);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sp-drop-btn:hover {
+  background: var(--tempest-bg-active);
+}
+
+.sp-drop-btn--open {
+  border-color: var(--tempest-accent-blue);
+}
+
+.sp-drop-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-drop-chevron {
+  flex-shrink: 0;
+  color: var(--tempest-fg-muted);
+  transition: transform 150ms ease;
+}
+
+.sp-drop-btn--open .sp-drop-chevron {
+  transform: rotate(180deg);
+}
+
+/* Transparent full-screen catcher so an outside click closes the menu. */
+.sp-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 590;
+}
+
+.sp-drop-menu {
+  z-index: 600;
+  background: var(--tempest-bg-panel);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 3px;
+}
+
+.sp-drop-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--tempest-fg-default);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sp-drop-item:hover {
+  background: var(--tempest-bg-hover);
+}
+
+.sp-drop-item--active {
+  color: var(--tempest-accent-blue);
+  background: var(--tempest-bg-hover);
+}

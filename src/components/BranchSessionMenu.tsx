@@ -4,7 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAgentAvailability } from "../store/agentAvailability";
 import { AGENT_CONFIGS, type AgentConfig } from "./NewSessionMenu";
 import type { NewSessionPlacement } from "./NewSessionMenu";
-import { TerminalSquare, MessageSquare, Globe, Download, CornerDownLeft, ArrowLeft } from "lucide-react";
+import { TerminalSquare, Globe, Download, CornerDownLeft, ArrowLeft } from "lucide-react";
 import "./BranchSessionMenu.css";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,7 +26,6 @@ interface Props {
   onClose: () => void;
   onTerminal: () => void;
   onAgent: (agent: AgentConfig, prompt?: string) => void;
-  onChat: () => void;
   onLivePreview: () => void;
 }
 
@@ -34,7 +33,6 @@ interface Props {
 type NavItem =
   | { kind: "terminal" }
   | { kind: "agent"; agent: AgentConfig; available: boolean }
-  | { kind: "chat" }
   | { kind: "preview" };
 
 export function BranchSessionMenu({
@@ -45,7 +43,6 @@ export function BranchSessionMenu({
   onClose,
   onTerminal,
   onAgent,
-  onChat,
   onLivePreview,
 }: Props) {
   const available = useAgentAvailability();
@@ -66,7 +63,7 @@ export function BranchSessionMenu({
       agent,
       available: available[agent.hint] !== false, // true until confirmed absent
     }));
-    return [{ kind: "terminal" }, ...agentItems, { kind: "chat" }, { kind: "preview" }];
+    return [{ kind: "terminal" }, ...agentItems, { kind: "preview" }];
   }, [available]);
 
   // Indices that Arrow navigation is allowed to land on.
@@ -100,17 +97,13 @@ export function BranchSessionMenu({
           setPromptAgent(item.agent);
           setView("prompt");
           break;
-        case "chat":
-          onClose();
-          onChat();
-          break;
         case "preview":
           onClose();
           onLivePreview();
           break;
       }
     },
-    [onClose, onTerminal, onChat, onLivePreview]
+    [onClose, onTerminal, onLivePreview]
   );
 
   // Keyboard: arrow navigation within the menu view; Escape closes (or, in the
@@ -253,20 +246,6 @@ export function BranchSessionMenu({
                       </button>
                     )}
                   </div>
-                );
-              }
-              if (item.kind === "chat") {
-                return (
-                  <button
-                    key="chat"
-                    className={`bsm-item${isActive ? " bsm-item--active" : ""}`}
-                    onMouseEnter={() => setActiveIndex(i)}
-                    onClick={() => activate(item)}
-                  >
-                    <MessageSquare size={14} className="bsm-item-icon" />
-                    <span className="bsm-item-label">Chat</span>
-                    <span className="bsm-item-hint">companion</span>
-                  </button>
                 );
               }
               return (

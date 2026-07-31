@@ -1,3 +1,24 @@
+/* Native form controls + scrollbars follow the theme. `data-theme` is stamped on
+   :root by applyTheme; color-scheme makes Chromium render native <select> dropdown
+   popups and default scrollbars dark/light to match. */
+:root[data-theme="dark"]  { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+/* Sleek app-wide scrollbar (matches the sidebar). Components that hide their bar
+   (scrollbar-width:none) or restyle it still win by specificity — e.g. xterm, which
+   renders its own themed DOM slider. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tempest-border-subtle) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--tempest-border-subtle);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--tempest-border-default); }
+
 /* ── Phase 1: CSS token bridge — mockup vars → --tempest-* ── */
 :root {
   --divider:      var(--tempest-border-default);

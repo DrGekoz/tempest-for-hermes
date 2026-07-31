@@ -1,47 +1,59 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
+import "./SpSelect.css";
 
-export function SpSelect({ value, options, onChange }: {
+export function SpSelect({ value, options, onChange, className }: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // Menu is portaled + position:fixed off the button's viewport rect, so it never
+  // clips inside overflow:hidden parents (canvas nodes) and isn't scaled by canvas zoom.
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
   const label = options.find((o) => o.value === value)?.label ?? value;
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setRect({ left: r.left, top: r.bottom + 3, width: r.width });
   }, [open]);
 
   return (
-    <div className="sp-drop" ref={ref}>
+    <div className={`sp-drop${className ? " " + className : ""}`}>
       <button
+        ref={btnRef}
         className={`sp-drop-btn${open ? " sp-drop-btn--open" : ""}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         type="button"
       >
         <span className="sp-drop-label">{label}</span>
         <ChevronDown size={11} className="sp-drop-chevron" />
       </button>
-      {open && (
-        <div className="sp-drop-menu">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              className={`sp-drop-item${o.value === value ? " sp-drop-item--active" : ""}`}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
+      {open && rect && createPortal(
+        <>
+          <div className="sp-drop-overlay" onMouseDown={() => setOpen(false)} />
+          <div
+            className="sp-drop-menu nodrag nowheel"
+            style={{ position: "fixed", left: rect.left, top: rect.top, minWidth: rect.width }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {options.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={`sp-drop-item${o.value === value ? " sp-drop-item--active" : ""}`}
+                onClick={() => { onChange(o.value); setOpen(false); }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

@@ -1,0 +1,47 @@
+/* Shared markdown styles — the single source of truth for rendered markdown
+   (chat, note nodes, anywhere <Markdown> is used). */
+.tempest-md {
+  font-size: 13px;
+  color: var(--tempest-fg-default);
+  line-height: 1.65;
+  word-break: break-word;
+}
+.tempest-md > :first-child { margin-top: 0; }
+.tempest-md > :last-child { margin-bottom: 0; }
+
+.tempest-md p { margin: 0 0 8px; }
+.tempest-md pre {
+  background: var(--tempest-bg-panel);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tempest-md code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.tempest-md :not(pre) > code {
+  background: var(--tempest-bg-active);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.tempest-md ul,
+.tempest-md ol { padding-left: 20px; margin: 4px 0; }
+.tempest-md li { margin: 2px 0; }
+.tempest-md h1,
+.tempest-md h2,
+.tempest-md h3 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tempest-md blockquote {
+  border-left: 3px solid var(--tempest-border-default);
+  padding-left: 10px;
+  color: var(--tempest-fg-muted);
+  margin: 6px 0;
+}

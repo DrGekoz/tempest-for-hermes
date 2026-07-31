@@ -936,8 +936,6 @@ CREATE TABLE IF NOT EXISTS projects (
   expanded       INTEGER NOT NULL DEFAULT 1,
   worktree_order TEXT,                       -- JSON array of worktree paths (user drag order)
   atlas_indexed  INTEGER NOT NULL DEFAULT 0, -- Token Intelligence index decision
-  context_tokens INTEGER,                    -- last known chat input-token count
-  system_prompt  TEXT,                       -- user's custom chat system prompt
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   last_opened_at TEXT,
@@ -966,6 +964,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   conversation_id   TEXT,
   no_git            INTEGER NOT NULL DEFAULT 0,
   state             TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(state IN ('ACTIVE', 'CLOSED')),
+  -- Where the session's terminal lives: 'tab' = the top tab bar (default), 'canvas'
+  -- = a Threads canvas agent/terminal node. Canvas sessions are excluded from the
+  -- startup tab-restore sweep and resumed lazily when their canvas opens.
+  placement         TEXT NOT NULL DEFAULT 'tab',
   created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   last_active_at    TEXT,
@@ -1006,23 +1008,13 @@ CREATE TABLE IF NOT EXISTS recents (
 CREATE TABLE IF NOT EXISTS tabs (
   id          TEXT PRIMARY KEY,
   project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL,                 -- diff | preview | editor | chat
+  kind        TEXT NOT NULL,                 -- diff | preview | editor | thread
   cwd         TEXT NOT NULL DEFAULT '',
   name        TEXT NOT NULL,
   preview_url TEXT,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_tabs_project_id ON tabs(project_id);
-
-CREATE TABLE IF NOT EXISTS chat_messages (
-  id          TEXT PRIMARY KEY,
-  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  role        TEXT NOT NULL,                 -- user | assistant
-  parts       TEXT NOT NULL,                 -- JSON MessagePart[]
-  seq         INTEGER NOT NULL,              -- order within a project's conversation
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_project ON chat_messages(project_id, seq);
 
 CREATE TABLE IF NOT EXISTS app_state (
   key   TEXT PRIMARY KEY,
@@ -1070,6 +1062,18 @@ CREATE TABLE IF NOT EXISTS thread_messages (
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_thread_messages ON thread_messages(node_id, seq);
+
+-- Directed connections between nodes on a canvas. source feeds context into target.
+CREATE TABLE IF NOT EXISTS thread_edges (
+  id             TEXT PRIMARY KEY,
+  thread_id      TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  source         TEXT NOT NULL REFERENCES thread_nodes(id) ON DELETE CASCADE,
+  target         TEXT NOT NULL REFERENCES thread_nodes(id) ON DELETE CASCADE,
+  source_handle  TEXT,
+  target_handle  TEXT,
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_thread_edges_thread ON thread_edges(thread_id);
 ";
 
 fn init_db(handle: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
@@ -1078,6 +1082,10 @@ fn init_db(handle: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let conn = rusqlite::Connection::open(dir.join("tempest.db")).map_err(|e| e.to_string())?;
     conn.execute_batch(DB_SCHEMA).map_err(|e| e.to_string())?;
+    // Best-effort column adds for DBs created before the column existed
+    // (CREATE TABLE IF NOT EXISTS never alters an existing table). The dup-column
+    // error on already-migrated DBs is expected and ignored.
+    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN placement TEXT NOT NULL DEFAULT 'tab'", []);
     Ok(conn)
 }
 
@@ -1096,10 +1104,6 @@ pub struct DbProject {
     pub worktree_order: Option<String>, // JSON array
     #[serde(rename = "atlasIndexed")]
     pub atlas_indexed:  bool,
-    #[serde(rename = "contextTokens")]
-    pub context_tokens: Option<i64>,
-    #[serde(rename = "systemPrompt")]
-    pub system_prompt:  Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -1110,6 +1114,8 @@ pub struct DbBranch {
     pub name:       String,
     pub path:       String,
 }
+
+fn placement_tab() -> String { "tab".to_string() }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct DbSession {
@@ -1127,6 +1133,9 @@ pub struct DbSession {
     #[serde(rename = "noGit")]
     pub no_git:            bool,
     pub closed:            bool,
+    // 'tab' (default) or 'canvas' — see the sessions table comment.
+    #[serde(default = "placement_tab")]
+    pub placement:        String,
     // Stable creation stamp — the sidebar orders rows by it so a session never
     // moves when it is closed and re-opened. Written once on INSERT.
     #[serde(rename = "createdAt", default)]
@@ -1148,7 +1157,7 @@ fn db_load(state: tauri::State<'_, DbState>) -> Result<DbSnapshot, String> {
 
     let projects = conn
         .prepare(
-            "SELECT id, name, path, expanded, worktree_order, atlas_indexed, context_tokens, system_prompt \
+            "SELECT id, name, path, expanded, worktree_order, atlas_indexed \
              FROM projects WHERE archived_at IS NULL",
         )
         .and_then(|mut stmt| {
@@ -1160,8 +1169,6 @@ fn db_load(state: tauri::State<'_, DbState>) -> Result<DbSnapshot, String> {
                     expanded:       r.get(3)?,
                     worktree_order: r.get(4)?,
                     atlas_indexed:  r.get(5)?,
-                    context_tokens: r.get(6)?,
-                    system_prompt:  r.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()
@@ -1180,7 +1187,7 @@ fn db_load(state: tauri::State<'_, DbState>) -> Result<DbSnapshot, String> {
 
     let sessions = conn
         .prepare(
-            "SELECT id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state, created_at \
+            "SELECT id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state, placement, created_at \
              FROM sessions WHERE archived_at IS NULL",
         )
         .and_then(|mut stmt| {
@@ -1195,7 +1202,8 @@ fn db_load(state: tauri::State<'_, DbState>) -> Result<DbSnapshot, String> {
                     conversation_id:   r.get(6)?,
                     no_git:            r.get(7)?,
                     closed:            r.get::<_, String>(8)? == "CLOSED",
-                    created_at:        r.get(9)?,
+                    placement:         r.get(9)?,
+                    created_at:        r.get(10)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()
@@ -1227,9 +1235,8 @@ fn db_ensure_project(state: tauri::State<'_, DbState>, id: String, name: String,
 #[tauri::command(async)]
 fn db_upsert_project(state: tauri::State<'_, DbState>, project: DbProject) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    // atlas_indexed / context_tokens / system_prompt are intentionally NOT written
-    // here — they are owned by the atlas decision and chat stores respectively, and
-    // this list-level upsert must not reset them.
+    // atlas_indexed is intentionally NOT written here — it is owned by the atlas
+    // decision store, and this list-level upsert must not reset it.
     conn.execute(
         "INSERT INTO projects (id, name, path, expanded, worktree_order, last_opened_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
@@ -1249,22 +1256,6 @@ fn db_upsert_project(state: tauri::State<'_, DbState>, project: DbProject) -> Re
 fn db_set_project_atlas_indexed(state: tauri::State<'_, DbState>, id: String, indexed: bool) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute("UPDATE projects SET atlas_indexed = ?2 WHERE id = ?1", rusqlite::params![id, indexed])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command(async)]
-fn db_set_project_context_tokens(state: tauri::State<'_, DbState>, id: String, tokens: Option<i64>) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("UPDATE projects SET context_tokens = ?2 WHERE id = ?1", rusqlite::params![id, tokens])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command(async)]
-fn db_set_project_system_prompt(state: tauri::State<'_, DbState>, id: String, prompt: Option<String>) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("UPDATE projects SET system_prompt = ?2 WHERE id = ?1", rusqlite::params![id, prompt])
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -1291,14 +1282,14 @@ fn db_upsert_session(state: tauri::State<'_, DbState>, session: DbSession) -> Re
         // sends none) and deliberately left alone by the UPDATE branch — it is
         // the sidebar's ordering key and must survive close/re-open.
         "INSERT INTO sessions \
-           (id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, \
-                 COALESCE(NULLIF(?10, ''), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))) \
+           (id, project_id, branch_id, parent_session_id, name, agent, conversation_id, no_git, state, placement, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
+                 COALESCE(NULLIF(?11, ''), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))) \
          ON CONFLICT(id) DO UPDATE SET \
            project_id = excluded.project_id, branch_id = excluded.branch_id, \
            parent_session_id = excluded.parent_session_id, name = excluded.name, \
            agent = excluded.agent, conversation_id = excluded.conversation_id, \
-           no_git = excluded.no_git, state = excluded.state, \
+           no_git = excluded.no_git, state = excluded.state, placement = excluded.placement, \
            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
         rusqlite::params![
             session.id,
@@ -1310,6 +1301,7 @@ fn db_upsert_session(state: tauri::State<'_, DbState>, session: DbSession) -> Re
             session.conversation_id,
             session.no_git,
             db_state,
+            session.placement,
             session.created_at,
         ],
     )
@@ -1480,47 +1472,6 @@ fn db_set_app_state(state: tauri::State<'_, DbState>, key: String, value: String
     Ok(())
 }
 
-// ── Chat history ─────────────────────────────────────────────────────────────
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct DbChatMessage {
-    pub id:    String,
-    pub role:  String,
-    pub parts: String, // JSON MessagePart[]
-}
-
-#[tauri::command(async)]
-fn db_load_chat(state: tauri::State<'_, DbState>, project_id: String) -> Result<Vec<DbChatMessage>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.prepare("SELECT id, role, parts FROM chat_messages WHERE project_id = ?1 ORDER BY seq")
-        .and_then(|mut stmt| {
-            stmt.query_map(rusqlite::params![project_id], |r| {
-                Ok(DbChatMessage { id: r.get(0)?, role: r.get(1)?, parts: r.get(2)? })
-            })?
-            .collect::<Result<Vec<_>, _>>()
-        })
-        .map_err(|e| e.to_string())
-}
-
-// Replace a project's entire conversation in one transaction (matches the
-// save-whole-array semantics of the chat store).
-#[tauri::command(async)]
-fn db_replace_chat(state: tauri::State<'_, DbState>, project_id: String, messages: Vec<DbChatMessage>) -> Result<(), String> {
-    let mut conn = state.0.lock().map_err(|e| e.to_string())?;
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM chat_messages WHERE project_id = ?1", rusqlite::params![project_id])
-        .map_err(|e| e.to_string())?;
-    for (seq, m) in messages.iter().enumerate() {
-        tx.execute(
-            "INSERT INTO chat_messages (id, project_id, role, parts, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![m.id, project_id, m.role, m.parts, seq as i64],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 // ── Threads (canvas chat) — see claude-docs/threads-plan.md ───────────────────
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1556,6 +1507,19 @@ pub struct DbThreadMessage {
     pub id:    String,
     pub role:  String,
     pub parts: String, // JSON MessagePart[]
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbThreadEdge {
+    pub id:        String,
+    #[serde(rename = "threadId")]
+    pub thread_id: String,
+    pub source:    String,
+    pub target:    String,
+    #[serde(rename = "sourceHandle")]
+    pub source_handle: Option<String>,
+    #[serde(rename = "targetHandle")]
+    pub target_handle: Option<String>,
 }
 
 #[tauri::command(async)]
@@ -1658,7 +1622,7 @@ fn db_load_thread_messages(state: tauri::State<'_, DbState>, node_id: String) ->
         .map_err(|e| e.to_string())
 }
 
-// Replace a node's entire conversation in one transaction (mirrors db_replace_chat).
+// Replace a node's entire conversation in one transaction.
 #[tauri::command(async)]
 fn db_replace_thread_messages(state: tauri::State<'_, DbState>, node_id: String, messages: Vec<DbThreadMessage>) -> Result<(), String> {
     let mut conn = state.0.lock().map_err(|e| e.to_string())?;
@@ -1673,6 +1637,49 @@ fn db_replace_thread_messages(state: tauri::State<'_, DbState>, node_id: String,
         .map_err(|e| e.to_string())?;
     }
     tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn db_list_thread_edges(state: tauri::State<'_, DbState>, thread_id: String) -> Result<Vec<DbThreadEdge>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.prepare(
+        "SELECT id, thread_id, source, target, source_handle, target_handle \
+         FROM thread_edges WHERE thread_id = ?1 ORDER BY created_at",
+    )
+    .and_then(|mut stmt| {
+        stmt.query_map(rusqlite::params![thread_id], |r| {
+            Ok(DbThreadEdge {
+                id: r.get(0)?, thread_id: r.get(1)?, source: r.get(2)?, target: r.get(3)?,
+                source_handle: r.get(4)?, target_handle: r.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+fn db_upsert_thread_edge(state: tauri::State<'_, DbState>, edge: DbThreadEdge) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO thread_edges (id, thread_id, source, target, source_handle, target_handle) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+         ON CONFLICT(id) DO UPDATE SET source = excluded.source, target = excluded.target, \
+           source_handle = excluded.source_handle, target_handle = excluded.target_handle",
+        rusqlite::params![
+            edge.id, edge.thread_id, edge.source, edge.target, edge.source_handle, edge.target_handle,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn db_delete_thread_edge(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM thread_edges WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -3863,8 +3870,6 @@ pub fn run() {
             db_ensure_project,
             db_upsert_project,
             db_set_project_atlas_indexed,
-            db_set_project_context_tokens,
-            db_set_project_system_prompt,
             db_upsert_branch,
             db_upsert_session,
             db_delete_session,
@@ -3879,8 +3884,6 @@ pub fn run() {
             db_delete_tab,
             db_load_app_state,
             db_set_app_state,
-            db_load_chat,
-            db_replace_chat,
             db_list_threads,
             db_upsert_thread,
             db_delete_thread,
@@ -3889,6 +3892,9 @@ pub fn run() {
             db_delete_thread_node,
             db_load_thread_messages,
             db_replace_thread_messages,
+            db_list_thread_edges,
+            db_upsert_thread_edge,
+            db_delete_thread_edge,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

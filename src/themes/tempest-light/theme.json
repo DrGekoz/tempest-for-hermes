@@ -4,6 +4,7 @@
   "colors": {
     "bg.base":        "#f7f7f7",
     "bg.editor":      "#ffffff",
+    "bg.elevated":    "#ffffff",
     "bg.toolbar":     "#efefef",
     "bg.canvas-wrap": "#e4e4e4",
     "bg.sidebar":  "#f7f7f7",

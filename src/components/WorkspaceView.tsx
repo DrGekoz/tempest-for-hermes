@@ -8,12 +8,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { createWorktree, gitInit, NotAGitRepoError } from "../lib/worktree";
 import { addRecent, getRecents, removeRecent } from "../store/recents";
 import { getOpenProjects, saveOpenProjects } from "../store/openProjects";
-import { getSession, getBranchSessions, getWorktreeAgentSession, getRootSessionsForProject, getAllSessions, getBranchPath, getProjectPath, saveSession, setSessionConversationId, markSessionClosed, markSessionOpen, removeBranchByPath, pruneSessions, type WorktreeSession } from "../store/sessions";
+import { getSession, getBranchSessions, getWorktreeAgentSession, getRootSessionsForProject, getAllSessions, getBranchPath, getProjectPath, saveSession, setSessionConversationId, markSessionClosed, markSessionOpen, removeBranchByPath, removeSession, pruneSessions, type WorktreeSession } from "../store/sessions";
 import { getRuntimeState, setRuntimeState } from "../lib/runtimeState";
 import { loadProjectSettings } from "./ProjectSettingsPanel/useProjectSettings";
 import { loadTempestConfig } from "../lib/tempestConfig";
 import { getTabs, upsertTab, removeTab, type PersistedTab } from "../store/tabs";
-import { saveChatHistory } from "../lib/chatHistory";
 import type { BranchInfo } from "../types/git";
 import type { Session, Worktree, Project, NavSection } from "../types/workspace";
 import { DeleteWorkspaceDialog, type DeleteDialogState } from "./WorkspaceView/DeleteWorkspaceDialog";
@@ -42,7 +41,6 @@ import {
   FileCode,
   BookOpen,
   Cpu,
-  MessageSquare,
   SplitSquareHorizontal,
   Keyboard,
   PanelLeft,
@@ -62,7 +60,6 @@ import { TerminalPane } from "./TerminalPane";
 import { DiffPane } from "./DiffPane";
 import { PreviewPane } from "./PreviewPane";
 import { CodeMirrorPane } from "./CodeMirrorPane";
-import { ChatPane } from "./ChatPane";
 import { ThreadsView } from "./ThreadsView";
 import {
   getProjectThreads, getThread, loadProjectThreads,
@@ -251,9 +248,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
   // Always-current keyboard shortcut handler (avoids stale closure on the listener).
   const shortcutHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
-  // Chat tab remount nonces — incrementing forces the ChatPane to remount (clears in-memory messages)
-  const [chatNonce, setChatNonce] = useState<Record<string, number>>({});
-
   // Threads canvases (sidebar dropdown). Loaded lazily on first expand; the store
   // is the source of truth, this counter just forces a re-render after async load.
   const [threadsVersion, setThreadsVersion] = useState(0);
@@ -408,7 +402,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
       const orderMap = new Map(sessionOrder.map((id, i) => [id, i]));
       const openedIds = new Set<string>();
 
-      type RestoreItem = { id: string; sortIndex: number; open: () => Promise<void> };
+      type RestoreItem = { id: string; sortIndex: number; open: () => Promise<unknown> };
       const items: RestoreItem[] = [];
 
       for (const { project, wts } of allProjectData) {
@@ -449,11 +443,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
       }
 
       // Non-terminal tabs (diff, preview, editor) — only for projects still open.
-      // Chat tabs are intentionally excluded: their PersistedTab is kept as a ghost
-      // sidebar marker even after the user closes them, so restoring them here would
-      // re-open a tab the user explicitly closed. The ghost handles re-entry instead.
       const openProjectIds = new Set(projects.map((p) => p.id));
-      for (const tab of savedTabs.filter((t) => openProjectIds.has(t.projectId) && t.kind !== "chat")) {
+      for (const tab of savedTabs.filter((t) => openProjectIds.has(t.projectId))) {
         items.push({
           id: tab.instanceId,
           sortIndex: orderMap.get(tab.instanceId) ?? Infinity,
@@ -704,11 +695,10 @@ export function WorkspaceView({ zen, name, path }: Props) {
     isProjectHeader = false,
     isRootSession = false,
     rootKey?: string,
-    isChatGhost = false
   ) {
     e.preventDefault();
     e.stopPropagation();
-    setCtxMenu({ x: e.clientX, y: e.clientY, worktree, projectPath, projectId, sessionId, isProjectHeader, isRootSession, rootKey, isChatGhost });
+    setCtxMenu({ x: e.clientX, y: e.clientY, worktree, projectPath, projectId, sessionId, isProjectHeader, isRootSession, rootKey });
   }
 
   function removeProject(projectId: string) {
@@ -847,6 +837,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
     providedSessionId?: string, // pre-minted ID so splitPane() can set up the tree before the PTY spawns
     parentSessionId?: string, // set when spawned via a split — makes this a sub-session of another
     model?: string, // specific model override passed as --model to supported agent CLIs
+    placement: "tab" | "canvas" = "tab", // "canvas" = a Threads node owns it; no tab bar entry
   ) {
     // Guard is scoped to the restore loop (dedupe=true). User-triggered opens never block
     // each other, so two root sessions at the same cwd can be opened intentionally.
@@ -882,7 +873,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
       if (!dedupe) {
         saveSession({
           id: sessionId, name: sessionName, agent, conversationId, projectId,
-          cwd, isRootSession, parentSessionId, noGit,
+          cwd, isRootSession, parentSessionId, noGit, placement,
         });
       }
 
@@ -996,9 +987,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
       // Kick the PTY with an initial resize immediately after spawn. Agent CLIs
       // (Claude Code, Gemini, etc.) don't begin rendering / running their task
       // until they receive a real terminal size + resize event. A pane launched
-      // in the background (e.g. via launchAgentFromChat — the user stays on the
-      // chat tab) mounts its TerminalPane with display:none, so its container is
-      // 0×0 and the visibility-gated fitAndResize/ResizeObserver never fires
+      // in the background (e.g. a canvas agent node whose canvas isn't focused, or
+      // an unfocused tab) mounts its TerminalPane with display:none, so its container
+      // is 0×0 and the visibility-gated fitAndResize/ResizeObserver never fires
       // resize_pty. Without this, the agent stays idle at the 24×80 spawn size
       // until the tab is focused. We size from the shared workspace area — which
       // is always laid out — so a hidden pane gets the same dimensions a focused
@@ -1036,11 +1027,17 @@ export function WorkspaceView({ zen, name, path }: Props) {
         metadata: { resumeCount: 0, hasBeenResumed: false },
       };
 
+      // Canvas-placed sessions have no tab bar entry — a Threads agent/terminal
+      // node is their sole home. The PTY, sessionManager registration, and
+      // persistence above are identical; only the tab/focus is skipped.
+      if (placement === "canvas") return sessionId;
+
       // Always append as a new tab. Never replace an existing active session at the
       // same cwd — doing so would silently evict its tab while leaving the old PTY
       // alive and orphaned in the Rust backend.
       setSessions((prev) => [...prev, newSession]);
       setActiveSessionId(sessionId);
+      return sessionId;
     } finally {
       // Always release the guard — even if create_pty_session rejects — so a failed
       // spawn never permanently blocks this path from opening future sessions.
@@ -1136,30 +1133,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
     setActiveSessionId(sessionId);
   }
 
-  function openChatTab(projectId: string, cwd = "") {
-    const existing = sessionsRef.current.find((s) => s.kind === "chat" && s.projectId === projectId && s.cwd === cwd);
-    if (existing) { setActiveSessionId(existing.id); return; }
-    // Reuse the existing PersistedTab's instanceId when the chat is a ghost (closed but
-    // not removed). Without this, every click on the ghost mints a new UUID and pushes a
-    // second PersistedTab — leading to two tabs restored side-by-side on the next boot.
-    const existingChatTabs = getTabs().filter((t) => t.kind === "chat" && t.projectId === projectId && t.cwd === cwd);
-    const existingTab = existingChatTabs[0];
-    const sessionId = existingTab?.instanceId ?? crypto.randomUUID();
-    if (existingChatTabs.length > 1) {
-      // Purge accidental duplicates: keep only the first entry.
-      for (const t of existingChatTabs.slice(1)) removeTab(t.instanceId);
-    }
-    if (!existingTab) {
-      upsertTab({ instanceId: sessionId, kind: "chat", projectId, cwd, name: "Chat" });
-    }
-    setSessions((prev) => [...prev, {
-      id: sessionId, instanceId: sessionId, name: "Chat", cwd, projectId, kind: "chat",
-      createdAt: new Date().toISOString(),
-      metadata: { resumeCount: 0, hasBeenResumed: false },
-    }]);
-    setActiveSessionId(sessionId);
-  }
-
   // ── Threads (canvas chat) ──────────────────────────────────────────────────
   // A canvas is one top-level tab, keyed by its threadId (reused as session id +
   // instanceId), so reopening the same canvas dedups naturally.
@@ -1219,35 +1192,83 @@ export function WorkspaceView({ zen, name, path }: Props) {
     bumpThreads();
   }
 
-  function clearChatHistory(projectId: string, sessionId?: string) {
-    const projectPath = projects.find((p) => p.id === projectId)?.path;
-    if (projectPath) saveChatHistory(projectPath, []);
-    if (sessionId) {
-      setChatNonce((prev) => ({ ...prev, [sessionId]: (prev[sessionId] ?? 0) + 1 }));
+  // Spawn a canvas-owned PTY session (no tab). Returns the new session id, or null
+  // on failure. The agent/terminal Threads node is the session's sole home; a chat
+  // node's launch proposal and a bare node's "Launch" button both route here.
+  // A `worktreePath` binds the session to a branch (isRootSession=false → saveSession
+  // mints/finds the branch row and stamps session.branchId, which resume then reads);
+  // omitted = project root, as before.
+  async function spawnCanvasSession(
+    projectId: string,
+    opts: { agent?: string; name?: string; prompt?: string; model?: string; worktreePath?: string },
+  ): Promise<string | null> {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return null;
+    const cwd = opts.worktreePath ?? project.path;
+    const isRoot = !opts.worktreePath;
+    const cfg = opts.agent ? AGENT_CONFIGS.find((a) => a.hint === opts.agent) : null;
+    const name = opts.name ?? (cfg
+      ? `${cfg.name}${opts.model ? ` (${opts.model.split("-").slice(-2).join("-")})` : ""}`
+      : (opts.agent ?? "Terminal"));
+    const sessionId = crypto.randomUUID();
+    try {
+      await openSession(
+        name, cwd, projectId, opts.agent, opts.prompt,
+        undefined, undefined, isRoot, false, false,
+        sessionId, undefined, opts.model, "canvas",
+      );
+      // Agents receive their prompt as a CLI arg — no markUserInput fires — so stamp
+      // "working" here for the node badge, mirroring the old launch-from-chat path.
+      if (opts.agent) setWorkState(sessionId, "working");
+      return sessionId;
+    } catch (e) {
+      console.error("Failed to spawn canvas session:", e);
+      return null;
     }
   }
 
-  // Launch a temporary agent session from within a Chat conversation. Opens a
-  // root agent session in the project root with the given prompt and model pre-loaded.
-  // Keeps focus on the chat tab; immediately marks the new session as "working" since
-  // the prompt is passed as a CLI arg (no user Enter to trigger the normal work detector).
-  async function launchAgentFromChat(projectId: string, agentHint: string, prompt: string, model?: string) {
+  // Cut a new worktree for a canvas node's "New worktree…" pick. Reuses the same
+  // createWorktree + setup-hook path the sidebar uses; returns the new path so the
+  // caller can spawn a session into it. null on failure (e.g. not a git repo).
+  async function createCanvasWorktree(projectId: string, name: string): Promise<string | null> {
     const project = projects.find((p) => p.id === projectId);
-    if (!project) return;
-    const cfg = AGENT_CONFIGS.find((a) => a.hint === agentHint);
-    const name = cfg ? `${cfg.name}${model ? ` (${model.split("-").slice(-2).join("-")})` : ""}` : agentHint;
-    const prevActiveId = activeSessionId;
-    const newSessionId = crypto.randomUUID();
+    if (!project || !name.trim()) return null;
     try {
-      await openSession(name, project.path, projectId, agentHint, prompt, undefined, undefined, true, undefined, false, newSessionId, undefined, model);
-      // Prompt is sent as a CLI arg — the terminal never fires markUserInput, so set
-      // "working" here so the tab badge appears immediately.
-      setWorkState(newSessionId, "working");
-      // Stay on the chat tab
-      setActiveSessionId(prevActiveId);
+      const result = await createWorktree({ projectPath: project.path, name });
+      addWorktreeToState({ name: name.trim(), path: result.path }, projectId);
+      await runWorktreeHook("setup", project.path, projectId, result.path);
+      return result.path;
     } catch (e) {
-      console.error("Failed to launch agent from chat:", e);
+      console.error("Failed to create canvas worktree:", e);
+      return null;
     }
+  }
+
+  // Re-spawn a persisted canvas session whose PTY died (app restart). Idempotent:
+  // no-op if already live. Agents resume via their stored conversationId; plain
+  // terminals get a fresh shell (as tab terminals do on restart). Resolves once the
+  // session is registered in sessionManager so the node can safely mount its pane.
+  async function resumeCanvasSession(sessionId: string): Promise<void> {
+    if (sessionManager.has(sessionId)) return;
+    const s = getSession(sessionId);
+    if (!s) return;
+    const cwd = s.branchId ? getBranchPath(s.branchId) : getProjectPath(s.projectId);
+    if (!cwd) return;
+    await openSession(
+      s.name, cwd, s.projectId, s.agent, undefined,
+      undefined, s.agent ? s.conversationId : undefined, !s.branchId, s.noGit, false,
+      s.id, s.parentSessionId, undefined, "canvas",
+    ).catch((e) => console.error("Failed to resume canvas session:", e));
+  }
+
+  // Tear down a canvas session for good — its node was deleted. Unlike a tab close
+  // (which ghosts the row for re-open), the session row is removed so it never
+  // resumes or lingers. Kills the PTY, unregisters, and clears work state.
+  function closeCanvasSession(sessionId: string) {
+    invoke("close_pty_session", { sessionId }).catch(() => {});
+    sessionManager.unregister(sessionId);
+    clearWorkState(sessionId);
+    removeSession(sessionId);
   }
 
   function updateSessionPreviewUrl(sessionId: string, url: string) {
@@ -1552,9 +1573,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
 
     for (const id of toClose) {
       const closing = sessions.find((s) => s.id === id);
-      if (closing?.kind === "chat") {
-        // Chat tabs: keep the PersistedTab (for ghost + restart restore) — just remove from live sessions.
-      } else if (closing?.kind !== "diff" && closing?.kind !== "preview" && closing?.kind !== "editor" && closing?.kind !== "thread") {
+      if (closing?.kind !== "diff" && closing?.kind !== "preview" && closing?.kind !== "editor" && closing?.kind !== "thread") {
         invoke("close_pty_session", { sessionId: id }).catch(() => {});
         // Mark the persisted row closed (ghost). No-op for session-scoped sessions
         // that were never persisted (e.g. one with no resolvable project).
@@ -2285,7 +2304,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
                             const wtAgentRows    = wtRows.filter((r) => !!(r.live ?? r.ghost)!.agent);
                             const wtTerminalRows = wtRows.filter((r) =>  !(r.live ?? r.ghost)!.agent);
                             const primaryAgent = wtAgentRows.find((r) => r.live)?.live ?? null;
-                            const branchChatGhostTabs = getTabs().filter((t) => t.kind === "chat" && t.projectId === project.id && t.cwd === wt.path && !allAtPath.some((s) => s.kind === "chat"));
                             const wtExpanded = expandedWorktrees.has(wt.path);
 
                             return (
@@ -2352,7 +2370,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                   const wtTerminalsEmpty = wtTerminalRows.length === 0;
                                   return (
                                     <div className="sb-worktree-dropdown">
-                                      {wtAgentsEmpty && wtTerminalsEmpty && wtKindTabs.length === 0 && branchChatGhostTabs.length === 0 ? (
+                                      {wtAgentsEmpty && wtTerminalsEmpty && wtKindTabs.length === 0 ? (
                                         <div className="sb-dropdown-empty-box">
                                           <span className="sb-dropdown-empty-text">No sessions open. Start one with +</span>
                                         </div>
@@ -2420,7 +2438,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                               </div>
                                             )}
                                           </div>
-                                          {(wtKindTabs.length > 0 || branchChatGhostTabs.length > 0) && (
+                                          {wtKindTabs.length > 0 && (
                                             <div className="sb-dropdown-section">
                                               {wtKindTabs.map((s) => (
                                                 <button
@@ -2429,18 +2447,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                                   onClick={() => setActiveSessionId(s.id)}
                                                   onContextMenu={(e) => openCtxMenu(e, wt, project.path, project.id, s.id)}
                                                 >
-                                                  {s.kind === "chat" ? <MessageSquare size={11} /> : <Globe size={11} />}
+                                                  <Globe size={11} />
                                                   <span className="sb-dropdown-item-name">{s.name}</span>
-                                                </button>
-                                              ))}
-                                              {branchChatGhostTabs.map((t) => (
-                                                <button
-                                                  key={t.instanceId}
-                                                  className="sb-dropdown-item"
-                                                  onClick={() => openChatTab(project.id, wt.path)}
-                                                >
-                                                  <MessageSquare size={11} />
-                                                  <span className="sb-dropdown-item-name">{t.name}</span>
                                                 </button>
                                               ))}
                                             </div>
@@ -2464,27 +2472,12 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                   onClick={() => setActiveSessionId(s.id)}
                                   onContextMenu={(e) => openCtxMenu(e, null, project.path, project.id, s.id)}
                                 >
-                                  {s.kind === "diff" ? <Eye size={12} /> : s.kind === "preview" ? <Globe size={12} /> : s.kind === "editor" ? <FileCode size={12} /> : s.kind === "chat" ? <MessageSquare size={12} /> : s.agent ? <AgentIcon hint={s.agent} size={12} /> : <TerminalSquare size={12} />}
+                                  {s.kind === "diff" ? <Eye size={12} /> : s.kind === "preview" ? <Globe size={12} /> : s.kind === "editor" ? <FileCode size={12} /> : s.agent ? <AgentIcon hint={s.agent} size={12} /> : <TerminalSquare size={12} />}
                                   <span>{s.name}</span>
                                   {s.agent && <SidebarWorkBadge sessionId={s.id} />}
                                 </button>
                               </div>
                             ))}
-
-                          {/* Chat ghost — project-scoped only (branch-scoped ghosts appear inside the branch dropdown) */}
-                          {getTabs().some((t) => t.kind === "chat" && t.projectId === project.id && t.cwd === "") &&
-                            !projectSessions.some((s) => s.kind === "chat" && s.cwd === "") && (
-                            <div className="sidebar-session-group">
-                              <button
-                                className="sidebar-project-session"
-                                onClick={() => openChatTab(project.id)}
-                                onContextMenu={(e) => openCtxMenu(e, null, project.path, project.id, null, false, false, undefined, true)}
-                              >
-                                <MessageSquare size={12} />
-                                <span>Chat</span>
-                              </button>
-                            </div>
-                          )}
 
                           {/* Threads (canvas chat) — project-scoped collapsible dropdown */}
                           {(() => {
@@ -2500,7 +2493,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                   onClick={() => { ensureThreadsLoaded(project.id); toggleWorktree(threadsKey); }}
                                 >
                                   {threadsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                  <Waypoints size={12} />
                                   <span>Threads</span>
                                   <button
                                     className="sidebar-project-add-btn"
@@ -2528,7 +2520,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                     <div key={c.id} style={{ display: "flex", alignItems: "center" }}>
                                       <button
                                         className={`sidebar-project-session${c.id === activeSessionId ? " sidebar-project-session--active" : ""}`}
-                                        style={{ flex: 1, paddingLeft: 22 }}
+                                        style={{ flex: 1 }}
                                         onClick={() => openThreadTab(project.id, c.id)}
                                         onDoubleClick={() => { setThreadRenameValue(c.name); setRenamingThreadId(c.id); }}
                                       >
@@ -2559,8 +2551,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                             const hasGitRows = isGitProject;
                             const hasRootRows = !isGitProject && rootRows.length > 0;
                             const hasOtherSessions = projectSessions.some((s) => !s.isRootSession && !s.parentSessionId && !project.worktrees.some((w) => w.path === s.cwd));
-                            const hasChatGhost = getTabs().some((t) => t.kind === "chat" && t.projectId === project.id && t.cwd === "") && !projectSessions.some((s) => s.kind === "chat" && s.cwd === "");
-                            if (!hasGitRows && !hasRootRows && !hasOtherSessions && !hasChatGhost && inlineCreateProjectId !== project.id) {
+                            if (!hasGitRows && !hasRootRows && !hasOtherSessions && inlineCreateProjectId !== project.id) {
                               return (
                                 <div className="sb-dropdown-empty-box">
                                   <span className="sb-dropdown-empty-text">No sessions open. Start one with +</span>
@@ -2791,20 +2782,22 @@ export function WorkspaceView({ zen, name, path }: Props) {
                       filePath={s.cwd}
                       hidden={hidden}
                     />
-                  ) : s.kind === "chat" ? (
-                    <ChatPane
-                      key={`chat-${s.id}-${chatNonce[s.id] ?? 0}`}
-                      sessionId={s.id}
+                  ) : s.kind === "thread" ? (
+                    <ThreadsView
+                      threadId={s.id}
+                      projectId={s.projectId}
                       hidden={hidden}
                       projectPath={projects.find((p) => p.id === s.projectId)?.path}
                       atlasIndexed={(() => {
                         const p = projects.find((pr) => pr.id === s.projectId)?.path;
                         return atlasEnabled && !!p && getRuntimeState().atlasProjects[p] === true;
                       })()}
-                      onLaunchAgent={(hint, prompt, model) => launchAgentFromChat(s.projectId, hint, prompt, model)}
+                      spawnCanvasSession={spawnCanvasSession}
+                      resumeCanvasSession={resumeCanvasSession}
+                      closeCanvasSession={closeCanvasSession}
+                      worktrees={projects.find((p) => p.id === s.projectId)?.worktrees ?? []}
+                      createCanvasWorktree={createCanvasWorktree}
                     />
-                  ) : s.kind === "thread" ? (
-                    <ThreadsView threadId={s.id} projectId={s.projectId} hidden={hidden} />
                   ) : (
                     <TerminalPane
                       sessionId={s.id}
@@ -3092,7 +3085,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
             launchInWorktree(pendingWorktreePath, pendingProjectId ?? "", agent, prompt, branchMenuIsRoot);
           }
         }}
-        onChat={() => { if (pendingProjectId) openChatTab(pendingProjectId, branchMenuIsRoot ? "" : (pendingWorktreePath ?? "")); }}
         onLivePreview={() => { if (pendingProjectId) openPreviewTab(pendingProjectId, branchMenuIsRoot ? "" : (pendingWorktreePath ?? "")); }}
       />
 
@@ -3101,10 +3093,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
           menu={ctxMenu}
           sessions={sessions}
           onClose={() => setCtxMenu(null)}
-          onOpenChat={openChatTab}
           onOpenDiff={openDiffTab}
           onCloseSession={closeSession}
-          onClearChatHistory={clearChatHistory}
           onOpenDeleteDialog={openDeleteDialog}
           onRemoveProject={removeProject}
           onAtlasIndexingStart={(path) => setAtlasIndexingPaths((prev) => prev.includes(path) ? prev : [...prev, path])}

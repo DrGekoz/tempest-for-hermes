@@ -19,7 +19,7 @@ function toDb(p: StoredProject): DbProject {
     id: p.id, name: p.name, path: p.path, expanded: p.expanded,
     worktreeOrder: p.worktreeOrder ? JSON.stringify(p.worktreeOrder) : null,
     // Owned by other stores; ignored by db_upsert_project.
-    atlasIndexed: false, contextTokens: null, systemPrompt: null,
+    atlasIndexed: false,
   };
 }
 

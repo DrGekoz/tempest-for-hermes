@@ -20,6 +20,10 @@ export interface WorktreeSession {
   parentSessionId?: string;   // FK -> sessions.id; set for sub-sessions only
   closed?:          boolean;  // true = ghost; false/absent = open
   noGit?:           boolean;
+  // 'tab' (default): lives in the top tab bar. 'canvas': lives as a Threads canvas
+  // agent/terminal node — excluded from the tab bar, sidebar rows, and the startup
+  // tab-restore sweep; resumed lazily when its canvas opens.
+  placement?:       "tab" | "canvas";
   createdAt:        string;   // ISO stamp; the stable order sessions are listed in
 }
 
@@ -57,6 +61,7 @@ export async function loadSessions(): Promise<void> {
       parentSessionId: s.parentSessionId ?? undefined,
       closed: s.closed,
       noGit: s.noGit,
+      placement: s.placement === "canvas" ? "canvas" : "tab",
       createdAt: s.createdAt,
     });
   }
@@ -75,6 +80,9 @@ export function getBranchPath(branchId: string): string | undefined {
 export function getProjectPath(projectId: string): string | undefined {
   return _projects.get(projectId)?.path;
 }
+export function getBranch(branchId: string): DbBranch | undefined {
+  return _branchById.get(branchId);
+}
 
 // ── Reads (synchronous, against the mirror) ──────────────────────────────────
 export function getAllSessions(): WorktreeSession[] {
@@ -85,14 +93,16 @@ export function getSession(id: string): WorktreeSession | null {
   return _sessions.get(id) ?? null;
 }
 
-// All non-sub sessions living in the worktree at `worktreePath` (the branch's
-// primary agent plus any extra agents/terminals). Replaces the old cwd-keyed
-// getWorktreeSession + getTermSessionsForWorktree pair.
+// All non-sub, tab-placed sessions living in the worktree at `worktreePath` (the
+// branch's primary agent plus any extra agents/terminals). Canvas-placed sessions
+// are excluded — they live on a Threads canvas, not the tab bar/sidebar, and are
+// restored by their canvas, never the startup tab sweep. Replaces the old
+// cwd-keyed getWorktreeSession + getTermSessionsForWorktree pair.
 export function getBranchSessions(worktreePath: string): WorktreeSession[] {
   const branch = _branchByPath.get(worktreePath);
   if (!branch) return [];
   return [..._sessions.values()]
-    .filter((s) => s.branchId === branch.id && !s.parentSessionId)
+    .filter((s) => s.branchId === branch.id && !s.parentSessionId && s.placement !== "canvas")
     .sort(byCreatedAt);
 }
 
@@ -106,7 +116,7 @@ export function getRootSessionsForProject(projectPath: string): WorktreeSession[
   const project = [..._projects.values()].find((p) => p.path === projectPath);
   if (!project) return [];
   return [..._sessions.values()]
-    .filter((s) => s.projectId === project.id && !s.branchId && !s.parentSessionId)
+    .filter((s) => s.projectId === project.id && !s.branchId && !s.parentSessionId && s.placement !== "canvas")
     .sort(byCreatedAt);
 }
 
@@ -133,8 +143,7 @@ function ensureProject(projectId: string, cwd: string): DbProject | undefined {
     const src = byId ?? byPath;
     if (!src) return undefined;
     proj = { id: src.id, name: src.name, path: src.path,
-             expanded: true, worktreeOrder: null, atlasIndexed: false,
-             contextTokens: null, systemPrompt: null };
+             expanded: true, worktreeOrder: null, atlasIndexed: false };
     _projects.set(proj.id, proj);
   }
   return proj;
@@ -174,6 +183,7 @@ function persistSession(s: WorktreeSession): void {
     conversationId: s.conversationId ?? null,
     noGit: !!s.noGit,
     closed: !!s.closed,
+    placement: s.placement ?? "tab",
     createdAt: s.createdAt,
   };
   let chain: Promise<unknown> = proj
@@ -194,6 +204,7 @@ export interface SaveSessionInput {
   parentSessionId?: string;
   noGit?:           boolean;
   closed?:          boolean;
+  placement?:       "tab" | "canvas";
 }
 
 // Persist a session, creating its project/branch rows first so the FKs hold.
@@ -219,6 +230,7 @@ export function saveSession(input: SaveSessionInput): void {
     parentSessionId: input.parentSessionId,
     closed: input.closed,
     noGit: input.noGit,
+    placement: input.placement ?? "tab",
     // Keep the original stamp when a known session is re-saved (re-opening a
     // ghost goes through here) — restamping would move its sidebar row.
     createdAt: _sessions.get(input.id)?.createdAt ?? new Date().toISOString(),

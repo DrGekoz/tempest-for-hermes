@@ -149,6 +149,13 @@ class SessionManager {
     channel.onmessage = (payload) => this.processChunk(sessionId, payload.data);
   }
 
+  // True once register() has run for this session and before unregister() — i.e.
+  // the PTY is live and buffering. Canvas nodes use it to decide whether a
+  // persisted session needs resuming after an app restart.
+  has(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
+  }
+
   unregister(sessionId: string) {
     const record = this.sessions.get(sessionId);
     if (!record) return;

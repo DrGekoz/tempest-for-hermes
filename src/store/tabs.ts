@@ -1,9 +1,9 @@
 import { dbLoadTabs, dbUpsertTab, dbDeleteTab, type DbTab } from "../lib/db";
 
-// A non-terminal tab (diff, preview, editor, chat) that survives app restarts.
+// A non-terminal tab (diff, preview, editor, thread) that survives app restarts.
 export interface PersistedTab {
   instanceId: string;
-  kind: "diff" | "preview" | "editor" | "chat" | "thread";
+  kind: "diff" | "preview" | "editor" | "thread";
   projectId: string;
   cwd: string;
   name: string;

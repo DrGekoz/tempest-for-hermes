@@ -1,6 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { invoke } from "@tauri-apps/api/core";
+import { getThreadNodes, getNodeData } from "../store/threads";
+import { getBranch } from "../store/sessions";
+import { sessionManager } from "../store/sessionManager";
+import { loadNodeMessages } from "../store/threadMessages";
+import type { TextPart } from "../types/chat";
 
 export interface CommitInfo {
   hash: string;
@@ -20,8 +25,16 @@ function resolvePath(p: string, root: string): string {
   return root.replace(/[/\\]+$/, "") + "/" + p;
 }
 
-export async function createChatTools(opts: { projectPath: string; atlasIndexed: boolean }) {
-  const { projectPath, atlasIndexed } = opts;
+export async function createChatTools(opts: {
+  projectPath: string;
+  atlasIndexed: boolean;
+  threadId?: string;
+  selfNodeId?: string;
+}) {
+  const { projectPath, atlasIndexed, threadId, selfNodeId } = opts;
+
+  const cap = (s: string) => (s.length > 16000 ? s.slice(0, 16000) + "\n…(truncated)" : s);
+  const nodeTitle = (id: string, kind: string) => getNodeData<{ title?: string }>(id).title ?? kind;
 
   const baseTools = {
     read_file: tool({
@@ -117,7 +130,66 @@ export async function createChatTools(opts: { projectPath: string; atlasIndexed:
     }),
   };
 
-  if (!atlasIndexed) return baseTools;
+  // Canvas retrieval: the chat's system prompt carries a "Canvas map" — every node's
+  // title + a one-line gist. When that gist isn't enough (a long note, another chat's
+  // transcript), the model reads the node's FULL content on demand with this tool,
+  // instead of every node's body being stuffed into context up front.
+  const canvasTools = threadId
+    ? {
+        read_canvas_node: tool({
+          description:
+            "Read the FULL content of another node on this canvas, identified by its title as shown in the " +
+            "Canvas map. Use when a node's one-line gist there is not enough — e.g. to read a note/text node's " +
+            "whole body, or another chat node's full transcript. Returns complete content, not a preview.",
+          inputSchema: z.object({
+            title: z.string().describe("The node's title exactly as it appears in the Canvas map"),
+          }),
+          execute: async ({ title }) => {
+            const nodes = getThreadNodes(threadId).filter((n) => n.id !== selfNodeId);
+            const q = title.trim().toLowerCase();
+            const node =
+              nodes.find((n) => nodeTitle(n.id, n.kind).toLowerCase() === q) ??
+              nodes.find((n) => nodeTitle(n.id, n.kind).toLowerCase().includes(q));
+            if (!node) {
+              return {
+                error: `No node titled "${title}". Available: ${nodes.map((n) => nodeTitle(n.id, n.kind)).join(", ") || "(none)"}`,
+              };
+            }
+
+            const t = nodeTitle(node.id, node.kind);
+            if (node.kind === "text") {
+              const body = getNodeData<{ body?: string }>(node.id).body ?? "";
+              return { kind: node.kind, title: t, content: cap(body) };
+            }
+            if (node.kind === "chat") {
+              const msgs = await loadNodeMessages(node.id);
+              const transcript = msgs
+                .map((m) => {
+                  const text = m.parts
+                    .filter((p): p is TextPart => p.type === "text")
+                    .map((p) => p.content)
+                    .join("")
+                    .trim();
+                  return text ? `${m.role}: ${text}` : "";
+                })
+                .filter(Boolean)
+                .join("\n\n");
+              return { kind: node.kind, title: t, content: cap(transcript) };
+            }
+            // agent / terminal — no readable PTY scrollback from here; return status.
+            const branch = node.branchId ? getBranch(node.branchId)?.name : undefined;
+            const live = node.sessionId ? sessionManager.has(node.sessionId) : false;
+            return {
+              kind: node.kind,
+              title: t,
+              content: `${node.kind} session "${t}"${branch ? `, branch ${branch}` : ""}, ${live ? "running" : "idle"}. Live terminal output isn't readable from here.`,
+            };
+          },
+        }),
+      }
+    : {};
+
+  if (!atlasIndexed) return { ...baseTools, ...canvasTools };
 
   try {
     const toolsJson = await invoke<string>("atlas_mcp_tools", { projectPath });
@@ -151,9 +223,9 @@ export async function createChatTools(opts: { projectPath: string; atlasIndexed:
       ])
     );
 
-    return { ...baseTools, ...atlasTools };
+    return { ...baseTools, ...canvasTools, ...atlasTools };
   } catch {
-    return baseTools;
+    return { ...baseTools, ...canvasTools };
   }
 }
 
@@ -173,6 +245,8 @@ export function argsPreview(toolName: string, args: unknown): string {
       return "";
     case "propose_agent_task":
       return String(a.agent ?? "");
+    case "read_canvas_node":
+      return String(a.title ?? "");
     default: {
       if (toolName.startsWith("atlas_")) {
         return String(a.query ?? "").slice(0, 40) || toolName.replace("atlas_", "");

@@ -1,3 +1,5 @@
+import { getSession } from "./sessions";
+
 export type IslandNotifType = "permission" | "done";
 
 export interface IslandNotif {
@@ -29,6 +31,10 @@ function emit() {
 }
 
 export function pushIslandNotif(n: Omit<IslandNotif, "id">): void {
+  // Canvas-placed sessions (agent/terminal nodes) have no tab and no island — the
+  // node is their sole home. Never route their permission/done events to the island.
+  // Both sources (agent-hook receiver + PTY heuristics) funnel through here.
+  if (getSession(n.sessionId)?.placement === "canvas") return;
   // If the user is already looking at this session's tab, the notif is just
   // noise — they see the terminal directly. Suppress it at the source so every
   // caller (hook receiver + PTY heuristics) is covered by one guard.

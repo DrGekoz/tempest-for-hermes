@@ -10,8 +10,6 @@ export interface DbProject {
   expanded: boolean;
   worktreeOrder: string | null; // JSON array
   atlasIndexed: boolean;
-  contextTokens: number | null;
-  systemPrompt: string | null;
 }
 
 export interface DbBranch {
@@ -31,6 +29,7 @@ export interface DbSession {
   conversationId: string | null;
   noGit: boolean;
   closed: boolean;
+  placement: string;   // 'tab' (top tab bar) | 'canvas' (Threads canvas node)
   createdAt: string;   // stable ordering key; written once, on INSERT
 }
 
@@ -56,13 +55,7 @@ export interface DbTab {
   previewUrl: string | null;
 }
 
-export interface DbChatMessage {
-  id: string;
-  role: string;
-  parts: string; // JSON MessagePart[]
-}
-
-// Three independent stores (sessions, projects, chat) each hydrate from the full
+// Two independent stores (sessions, projects) each hydrate from the full
 // snapshot at boot. Share one in-flight request between concurrent callers so the
 // projects+branches+sessions query set runs once instead of three times. The
 // promise is dropped as soon as it settles, so later callers always get fresh data.
@@ -84,12 +77,6 @@ export const dbUpsertProject = (project: DbProject): Promise<void> =>
 export const dbSetProjectAtlasIndexed = (id: string, indexed: boolean): Promise<void> =>
   invoke("db_set_project_atlas_indexed", { id, indexed });
 
-export const dbSetProjectContextTokens = (id: string, tokens: number | null): Promise<void> =>
-  invoke("db_set_project_context_tokens", { id, tokens });
-
-export const dbSetProjectSystemPrompt = (id: string, prompt: string | null): Promise<void> =>
-  invoke("db_set_project_system_prompt", { id, prompt });
-
 export const dbLoadRecents = (): Promise<DbRecent[]> => invoke("db_load_recents");
 export const dbUpsertRecent = (recent: DbRecent): Promise<void> => invoke("db_upsert_recent", { recent });
 export const dbDeleteRecent = (path: string): Promise<void> => invoke("db_delete_recent", { path });
@@ -101,11 +88,6 @@ export const dbDeleteTab = (id: string): Promise<void> => invoke("db_delete_tab"
 export const dbLoadAppState = (): Promise<[string, string][]> => invoke("db_load_app_state");
 export const dbSetAppState = (key: string, value: string): Promise<void> =>
   invoke("db_set_app_state", { key, value });
-
-export const dbLoadChat = (projectId: string): Promise<DbChatMessage[]> =>
-  invoke("db_load_chat", { projectId });
-export const dbReplaceChat = (projectId: string, messages: DbChatMessage[]): Promise<void> =>
-  invoke("db_replace_chat", { projectId, messages });
 
 export const dbUpsertBranch = (branch: DbBranch): Promise<void> =>
   invoke("db_upsert_branch", { branch });
@@ -154,6 +136,15 @@ export interface DbThreadMessage {
   parts: string; // JSON MessagePart[]
 }
 
+export interface DbThreadEdge {
+  id: string;
+  threadId: string;
+  source: string;
+  target: string;
+  sourceHandle: string | null;
+  targetHandle: string | null;
+}
+
 export const dbListThreads = (projectId: string): Promise<DbThread[]> =>
   invoke("db_list_threads", { projectId });
 export const dbUpsertThread = (thread: DbThread): Promise<void> =>
@@ -172,3 +163,10 @@ export const dbLoadThreadMessages = (nodeId: string): Promise<DbThreadMessage[]>
   invoke("db_load_thread_messages", { nodeId });
 export const dbReplaceThreadMessages = (nodeId: string, messages: DbThreadMessage[]): Promise<void> =>
   invoke("db_replace_thread_messages", { nodeId, messages });
+
+export const dbListThreadEdges = (threadId: string): Promise<DbThreadEdge[]> =>
+  invoke("db_list_thread_edges", { threadId });
+export const dbUpsertThreadEdge = (edge: DbThreadEdge): Promise<void> =>
+  invoke("db_upsert_thread_edge", { edge });
+export const dbDeleteThreadEdge = (id: string): Promise<void> =>
+  invoke("db_delete_thread_edge", { id });

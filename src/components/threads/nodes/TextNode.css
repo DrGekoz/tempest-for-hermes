@@ -1,0 +1,251 @@
+/* Text toolbar — icon-only formatting controls below the header. */
+.tnode-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 6px;
+}
+.tnode-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--tempest-fg-muted, #888);
+  cursor: pointer;
+}
+.tnode-tool:hover {
+  background: var(--tempest-bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--tempest-fg-default, #e6e6e6);
+}
+.tnode-tool-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 5px;
+  background: var(--tempest-border-subtle, #2a2a2a);
+}
+
+/* Floating selection toolbar — hovers above the selection, portaled to body. */
+.tnode-bubble {
+  position: fixed;
+  z-index: 1000;
+  transform: translate(-50%, calc(-100% - 8px));
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: var(--tempest-bg-elevated, #161616);
+  border: 1px solid var(--tempest-border-subtle, #2a2a2a);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.tnode-bubble .tnode-tool-sep {
+  margin: 4px 4px;
+}
+
+/* Editable title pill for the note node — mirrors the designer-mode agent tab:
+   a rounded chip whose edit affordance (here a pencil, not an X) fades in on
+   hover while the label masks out beneath it. */
+.tnode-title-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--tempest-bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--tempest-fg-default, #e6e6e6);
+  font: 12px "Geist", system-ui, sans-serif;
+  cursor: text;
+}
+.tnode-title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tnode-title-pill:hover .tnode-title-text {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 22px), transparent calc(100% - 8px));
+  mask-image: linear-gradient(to right, black calc(100% - 22px), transparent calc(100% - 8px));
+}
+.tnode-title-edit {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.tnode-title-pill:hover .tnode-title-edit {
+  opacity: 0.7;
+  pointer-events: auto;
+}
+.tnode-title-edit:hover { opacity: 1; }
+/* Header action icons — muted, brighten on hover. */
+.tnode-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--tempest-fg-muted, #888);
+  padding: 2px;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.tnode-header-btn:hover { color: var(--tempest-fg-default, #e6e6e6); }
+
+/* Connector = a React Flow source Handle rendered inline in the header (not the
+   usual edge dot). Neutralize the library's absolute positioning/dot styling so
+   it sits as a muted icon; it still starts a connection drag. */
+.react-flow__handle.tnode-connector {
+  position: relative;
+  inset: auto;
+  transform: none;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tempest-fg-muted, #888);
+  cursor: crosshair;
+  transition: color 0.12s ease;
+}
+/* The SVG icon must not eat pointer events: React Flow's click-to-connect reads
+   event.target's handle attributes, so a click landing on the inner <path>
+   (which has none) is ignored — only drag worked. Route clicks to the handle. */
+.react-flow__handle.tnode-connector svg { pointer-events: none; }
+.react-flow__handle.tnode-connector:hover { color: var(--tempest-accent-yellow, #f5c518); }
+/* Filled while wired into an edge; the muted base rule covers the hollow state. */
+.react-flow__handle.tnode-connector.connected { color: var(--tempest-fg-default, #e6e6e6); }
+.react-flow__handle.tnode-connector.connecting { color: var(--tempest-accent-yellow, #f5c518); }
+/* Click-to-connect: React Flow arms the connection on the first single click and
+   tags the handle `.clickconnecting`, but drives no fill (that's drag-only, via
+   the inline fill attr). Without this the click silently arms with no feedback.
+   CSS `fill` overrides the inline `fill="none"` presentation attribute. */
+.react-flow__handle.tnode-connector.clickconnecting { color: var(--tempest-accent-yellow, #f5c518); }
+.react-flow__handle.tnode-connector.clickconnecting svg { fill: var(--tempest-accent-yellow, #f5c518); }
+
+/* Midpoint × on each connection edge (ThreadEdge). EdgeLabelRenderer children
+   are pointer-events:none by default, so re-enable it here. */
+.thread-edge-del {
+  position: absolute;
+  pointer-events: all;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--tempest-bg-base, #0a0a0a);
+  background: var(--tempest-fg-default, #e6e6e6);
+  color: var(--tempest-bg-base, #0a0a0a);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.thread-edge-del:hover {
+  background: var(--tempest-accent-red, #ff5f56);
+  color: #fff;
+}
+
+/* Divider fencing the left (incoming) connector off from the title. */
+.tnode-connector-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 16px;
+  background: var(--tempest-border-subtle, #2a2a2a);
+}
+
+.tnode-title-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  box-sizing: content-box;
+}
+
+/* Body is read-only until you double-click in — let clicks fall through to the
+   node so the whole card drags; re-enable pointer events once editing. */
+.tnode-body:not(.editing) .cm-editor { pointer-events: none; }
+
+/* Resize affordance — one invisible full-edge control per side. React Flow's
+   default line is 1px (impossible to grab in a hurry), so we widen each edge to
+   a forgiving 14px grab-band centered on the border (the base rule's
+   translate(±50%) keeps it centered as the size grows). A grip pill sits at the
+   midpoint and appears whenever the node is hovered, so it's never a hunt. The
+   accent ring still confirms a precise border hover (box-shadow follows the 8px
+   radius; border-color can't — the border is set inline). */
+.react-flow__resize-control.line.tnode-edge {
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Float each grab-band just outside its side with a 6px gap (translate past the
+   band's own size, then the gap). The whole floated strip stays the hit-area, so
+   the visible grip is what you aim at. */
+/* top/bottom:0 forces the strip to span the full side even on auto-height nodes
+   (where height:100% can't resolve), so the flex-centered grip stays mid-side. */
+.react-flow__resize-control.line.tnode-edge.left {
+  width: 18px;
+  top: 0;
+  bottom: 0;
+  height: auto;
+  transform: translate(calc(-100% - 6px), 0);
+}
+.react-flow__resize-control.line.tnode-edge.right {
+  width: 18px;
+  top: 0;
+  bottom: 0;
+  height: auto;
+  transform: translate(6px, 0);
+}
+.react-flow__resize-control.line.tnode-edge.top {
+  height: 18px;
+  transform: translate(0, calc(-100% - 6px));
+}
+.react-flow__resize-control.line.tnode-edge.bottom {
+  height: 18px;
+  transform: translate(0, 6px);
+}
+
+.react-flow__node:has(.tnode-edge:hover) .tnode-card {
+  box-shadow: 0 0 0 1px var(--tempest-accent-blue, #4a9eff);
+}
+.tnode-grip {
+  background: var(--tempest-accent-blue, #4a9eff);
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none; /* the edge control handles the drag */
+}
+.tnode-grip--h { width: 36px; height: 8px; }
+.tnode-grip--v { width: 8px; height: 36px; }
+.react-flow__node:hover .tnode-grip { opacity: 0.55; }
+.tnode-edge:hover .tnode-grip { opacity: 1; }
