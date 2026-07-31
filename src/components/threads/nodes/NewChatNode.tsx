@@ -96,7 +96,7 @@ function buildLineageContext(sourceIds: string[]): string {
 // of its (mirrored) body; chat → persisted msgCount + gist; agent/terminal → branch
 // + live/idle. The pure formatter (canvasContext.ts) turns these + the edge graph
 // into the `## Canvas map` block. Rebuilt each send so it reflects the live canvas.
-function buildCanvasGraph(threadId: string, selfId: string): string {
+function buildCanvasGraph(threadId: string, selfId: string, canReadNodes = true): string {
   const metas: CanvasNodeMeta[] = getThreadNodes(threadId).map((n) => {
     const data = getNodeData<{ title?: string; body?: string; gist?: string; msgCount?: number }>(n.id);
     const title = data.title ?? n.kind;
@@ -120,7 +120,17 @@ function buildCanvasGraph(threadId: string, selfId: string): string {
   });
 
   const edges = getThreadEdges(threadId).map((e) => ({ source: e.source, target: e.target }));
-  return formatCanvasGraph(metas, edges, selfId);
+  return formatCanvasGraph(metas, edges, selfId, undefined, canReadNodes);
+}
+
+// Tempest Bridge (tier-4 opt 1): seed an external CLI agent with the same canvas
+// awareness a chat node builds for itself — the launching chat's transcript as
+// inherited lineage + the ambient canvas map — prepended to its initial prompt at
+// spawn. The CLI agent has no `read_canvas_node` tool, so the map drops that line.
+export function buildAgentSeedContext(threadId: string, sourceNodeId?: string): string {
+  const lineage = sourceNodeId ? buildLineageContext([sourceNodeId]) : "";
+  const canvasMap = buildCanvasGraph(threadId, sourceNodeId ?? "", false);
+  return [lineage, canvasMap].filter(Boolean).join("\n\n");
 }
 
 // New canvas chat node — auto-height card that grows downward as messages stack.

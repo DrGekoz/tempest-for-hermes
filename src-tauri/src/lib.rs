@@ -7,6 +7,7 @@ use tauri::Emitter;
 use hephaestus::Isolate;
 
 mod agent_hooks;
+mod canvas_mcp;
 
 /// Process-global isolation backend (Job Objects on Windows). Provisioned lazily
 /// the first time a sandboxed PTY session is created.
@@ -246,6 +247,59 @@ fn write_atlas_mcp_config(project_path: &str, entry: &std::path::Path) -> Result
     // All config files contain absolute machine-specific paths — keep out of git.
     ensure_atlas_mcp_gitignore(project_path);
 
+    Ok(())
+}
+
+/// Register the canvas MCP server (`tempest-canvas`) in the agent-config files at
+/// `project_path` (the cwd a canvas agent runs in). `command` points at our own exe
+/// with `--canvas-mcp` — see `canvas_mcp.rs`. Merges alongside atlas's own entry.
+/// Called from the canvas UI just before spawning an agent/terminal node's session.
+#[tauri::command]
+fn write_canvas_mcp_config(app: tauri::AppHandle, project_path: String, project_id: String) -> Result<(), String> {
+    use tauri::Manager;
+    let db = app.path().app_data_dir().map_err(|e| e.to_string())?.join("tempest.db");
+    let db_str = db.to_string_lossy().replace('\\', "/");
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_str = exe.to_string_lossy().replace('\\', "/");
+    let root = std::path::Path::new(&project_path);
+
+    let upsert = |file: &std::path::Path| -> Result<(), String> {
+        let existing = std::fs::read_to_string(file).unwrap_or_default();
+        let mut v: serde_json::Value = serde_json::from_str(&existing)
+            .unwrap_or_else(|_| serde_json::json!({}));
+        v["mcpServers"]["tempest-canvas"] = serde_json::json!({
+            "type": "stdio",
+            "command": &exe_str,
+            "args": ["--canvas-mcp", "--db", &db_str, "--project", &project_id]
+        });
+        let out = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(file, out + "\n").map_err(|e| e.to_string())
+    };
+
+    upsert(&root.join(".mcp.json"))?;                                  // Claude Code, Cline/Roo, Zed, Windsurf
+    upsert(&root.join(".cursor").join("mcp.json"))?;                   // Cursor
+    upsert(&root.join(".gemini").join("settings.json"))?;             // Gemini CLI
+    upsert(&root.join(".kiro").join("settings").join("mcp.json"))?;   // Kiro
+
+    // opencode — different shape (mcp.<name>, command as array).
+    {
+        let oc_path = { let j = root.join("opencode.json"); if j.exists() { j } else { root.join("opencode.jsonc") } };
+        let existing = std::fs::read_to_string(&oc_path).unwrap_or_default();
+        let mut v: serde_json::Value = serde_json::from_str(&existing)
+            .unwrap_or_else(|_| serde_json::json!({}));
+        v["mcp"]["tempest-canvas"] = serde_json::json!({
+            "type": "local",
+            "command": [&exe_str, "--canvas-mcp", "--db", &db_str, "--project", &project_id],
+            "enabled": true
+        });
+        let out = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+        std::fs::write(&oc_path, out + "\n").map_err(|e| e.to_string())?;
+    }
+
+    ensure_atlas_mcp_gitignore(&project_path);
     Ok(())
 }
 
@@ -3773,6 +3827,12 @@ async fn get_ide_panel_url(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Sidecar MCP mode: an external CLI agent spawned us as its canvas MCP server
+    // (`--canvas-mcp`). Serve stdio and exit *before* touching Tauri/single-instance,
+    // so this instance never becomes a second window.
+    if canvas_mcp::maybe_serve() {
+        return;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -3860,6 +3920,7 @@ pub fn run() {
             remove_atlas_index,
             start_atlas_daemon,
             stop_atlas_daemon,
+            write_canvas_mcp_config,
             atlas_mcp_tools,
             atlas_mcp_call,
             git_ls_files,

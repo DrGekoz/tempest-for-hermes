@@ -40,6 +40,7 @@ export function formatCanvasGraph(
   edges: CanvasEdgeMeta[],
   selfId: string,
   max = 60,
+  canReadNodes = true,
 ): string {
   const others = nodes.filter((n) => n.id !== selfId);
   if (others.length === 0) return "";
@@ -62,9 +63,12 @@ export function formatCanvasGraph(
   let out =
     "## Canvas map (reference)\n" +
     "Every node on this canvas and how it's wired — ambient reference only: titles and a " +
-    "one-line gist, NOT full content. Background you MAY consult, not your task. To read any " +
-    "node's FULL content (a note's whole body, another chat's transcript), call " +
-    "`read_canvas_node` with its title. Node(s) wired INTO this chat are its lineage — their " +
+    "one-line gist, NOT full content. Background you MAY consult, not your task. " +
+    (canReadNodes
+      ? "To read any node's FULL content (a note's whole body, another chat's transcript), call " +
+        "`read_canvas_node` with its title. "
+      : "") +
+    "Node(s) wired INTO this chat are its lineage — their " +
     'full content is inherited above under "Lineage".\n\n' +
     "Nodes:\n" +
     nodeLines.join("\n");

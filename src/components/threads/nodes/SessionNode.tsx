@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { NodeResizeControl, ResizeControlVariant, useReactFlow } from "@xyflow/react";
 import { Trash2 } from "lucide-react";
 import { SpSelect } from "../../ui/SpSelect";
@@ -63,6 +64,9 @@ function SessionNode({ id, isAgent }: { id: string; isAgent: boolean }) {
     } else if (target) {
       worktreePath = target;
     }
+    // Canvas MCP config in the agent's cwd → it discovers canvas_map / read_canvas_node.
+    const cwd = worktreePath ?? ctx.projectPath;
+    if (cwd) { try { await invoke("write_canvas_mcp_config", { projectPath: cwd, projectId: ctx.projectId }); } catch { /* best-effort */ } }
     const sid = await ctx.spawnCanvasSession({ agent: agentHint, worktreePath });
     setLaunching(false);
     if (!sid) return; // spawn failed (policy refusal etc. surfaced upstream)

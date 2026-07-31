@@ -16,7 +16,8 @@ import {
 import type { DbThreadEdge } from "../lib/db";
 import { useTheme } from "../themes/ThemeContext";
 import { TextNode } from "./threads/nodes/TextNode";
-import { NewChatNode } from "./threads/nodes/NewChatNode";
+import { invoke } from "@tauri-apps/api/core";
+import { NewChatNode, buildAgentSeedContext } from "./threads/nodes/NewChatNode";
 import { AgentNode, TerminalNode } from "./threads/nodes/SessionNode";
 import { ThreadEdge } from "./threads/ThreadEdge";
 import { ThreadNodeContext } from "./threads/ThreadNodeContext";
@@ -246,7 +247,14 @@ export function ThreadsView({
   const launchAgentNode = useCallback(
     async (agentHint: string, prompt: string, model?: string, sourceNodeId?: string, worktreePath?: string) => {
       if (!spawnCanvasSession) return;
-      const sid = await spawnCanvasSession(projectId, { agent: agentHint, prompt, model, worktreePath });
+      // Drop a canvas MCP config into the agent's cwd so it discovers canvas_map /
+      // read_canvas_node on its own (the Tempest Bridge — works for any launch path).
+      const cwd = worktreePath ?? projectPath;
+      if (cwd) { try { await invoke("write_canvas_mcp_config", { projectPath: cwd, projectId }); } catch { /* best-effort */ } }
+      // Seed the CLI agent with canvas context (lineage from the firing chat + ambient map).
+      const seed = buildAgentSeedContext(threadId, sourceNodeId);
+      const seededPrompt = seed ? `${seed}\n\n---\n\n${prompt}` : prompt;
+      const sid = await spawnCanvasSession(projectId, { agent: agentHint, prompt: seededPrompt, model, worktreePath });
       if (!sid) return;
 
       const src = sourceNodeId ? getThreadNodes(threadId).find((n) => n.id === sourceNodeId) : undefined;
