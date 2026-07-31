@@ -24,7 +24,7 @@ const structuredDataSchema = {
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       downloadUrl: "https://www.tempestai.dev/download",
       license: "https://www.apache.org/licenses/LICENSE-2.0",
-      softwareVersion: "0.1.6",
+      softwareVersion: "0.1.7",
       url: "https://www.tempestai.dev",
     },
     {
