@@ -17,7 +17,7 @@ import type { DbThreadEdge } from "../lib/db";
 import { useTheme } from "../themes/ThemeContext";
 import { TextNode } from "./threads/nodes/TextNode";
 import { invoke } from "@tauri-apps/api/core";
-import { NewChatNode, buildAgentSeedContext } from "./threads/nodes/NewChatNode";
+import { ChatNode, buildAgentSeedContext } from "./threads/nodes/ChatNode";
 import { AgentNode, TerminalNode } from "./threads/nodes/SessionNode";
 import { ThreadEdge } from "./threads/ThreadEdge";
 import { ThreadNodeContext } from "./threads/ThreadNodeContext";
@@ -27,7 +27,7 @@ import type { DbThreadNode } from "../lib/db";
 // Custom node kinds → their component. Module-level so the object identity is
 // stable across renders (React Flow warns otherwise). Unlisted kinds fall back to
 // React Flow's default box.
-const nodeTypes: NodeTypes = { text: TextNode, chat: NewChatNode, agent: AgentNode, terminal: TerminalNode };
+const nodeTypes: NodeTypes = { text: TextNode, chat: ChatNode, agent: AgentNode, terminal: TerminalNode };
 const CUSTOM_KINDS = new Set(Object.keys(nodeTypes));
 // Kinds whose height is driven by content — the node grows downward as messages
 // stack instead of scrolling. We apply width only and let React Flow measure height.

@@ -1,6 +1,6 @@
 // Ambient "canvas-as-context" — a lightweight metadata graph of every node on a
 // thread canvas, injected into a chat node's system prompt alongside the heavy
-// wired-content block (see NewChatNode.buildConnectedContext). The model gets
+// wired-content block (see ChatNode.buildConnectedContext). The model gets
 // awareness of the whole canvas (kinds, titles, one-line gists, wiring) without
 // paying for each node's full content — content still flows only through explicit
 // incoming edges. Mirrors Slashspace's "context graph + metadata of the canvas".

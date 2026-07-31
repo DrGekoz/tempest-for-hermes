@@ -138,7 +138,7 @@ export function buildAgentSeedContext(threadId: string, sourceNodeId?: string): 
 // the footer holds the composer. Streaming, tools, and project-context injection
 // are wired against the same libs as the old ChatNode; history is node-scoped via
 // threadMessages. Slash/@ affordances and the system-prompt popover are omitted.
-export function NewChatNode({ id }: { id: string }) {
+export function ChatNode({ id }: { id: string }) {
   const { deleteElements } = useReactFlow();
   const ctx = useContext(ThreadNodeContext);
   const projectPath = ctx?.projectPath;
