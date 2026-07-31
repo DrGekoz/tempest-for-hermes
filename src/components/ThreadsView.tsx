@@ -132,7 +132,7 @@ function ClickConnectLine() {
 
 export function ThreadsView({
   threadId, projectId, hidden, projectPath, atlasIndexed, spawnCanvasSession, resumeCanvasSession, closeCanvasSession,
-  worktrees, createCanvasWorktree,
+  worktrees, createCanvasWorktree, autoNameThread,
 }: {
   threadId: string;
   projectId: string;
@@ -144,6 +144,7 @@ export function ThreadsView({
   closeCanvasSession?: (sessionId: string) => void;
   worktrees?: { name: string; path: string }[];
   createCanvasWorktree?: (projectId: string, name: string) => Promise<string | null>;
+  autoNameThread?: (threadId: string, firstMessage: string) => void;
 }) {
   const { theme } = useTheme();
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -301,8 +302,9 @@ export function ThreadsView({
       closeCanvasSession,
       worktrees,
       createCanvasWorktree: createCanvasWorktree ? (name: string) => createCanvasWorktree(projectId, name) : undefined,
+      autoNameThread: autoNameThread ? (firstMessage: string) => autoNameThread(threadId, firstMessage) : undefined,
     }),
-    [projectId, projectPath, atlasIndexed, launchAgentNode, spawnCanvasSession, resumeCanvasSession, closeCanvasSession, worktrees, createCanvasWorktree],
+    [projectId, threadId, projectPath, atlasIndexed, launchAgentNode, spawnCanvasSession, resumeCanvasSession, closeCanvasSession, worktrees, createCanvasWorktree, autoNameThread],
   );
 
   // Wait for hydration so the saved viewport applies on ReactFlow mount

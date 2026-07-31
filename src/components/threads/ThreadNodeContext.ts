@@ -24,6 +24,9 @@ export interface ThreadNodeCtx {
   resumeCanvasSession?: (sessionId: string) => Promise<void>;
   // Tear down a canvas session (its node was deleted): kill PTY + delete the row.
   closeCanvasSession?: (sessionId: string) => void;
+  // Auto-name this canvas from a chat node's first message (plan §11.2). No-op
+  // unless the canvas still holds its default name. Bound to this thread's id.
+  autoNameThread?: (firstMessage: string) => void;
 }
 
 export const ThreadNodeContext = createContext<ThreadNodeCtx | null>(null);

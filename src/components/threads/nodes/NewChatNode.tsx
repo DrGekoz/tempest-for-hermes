@@ -240,6 +240,9 @@ export function NewChatNode({ id }: { id: string }) {
     const assistantId = crypto.randomUUID();
     const prior = messagesRef.current;
 
+    // First message on the canvas names it (plan §11.2); no-op once named.
+    if (prior.length === 0) ctx?.autoNameThread?.(rawText);
+
     setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", parts: [] }]);
     streamingIdRef.current = assistantId;
     setIsLoading(true);

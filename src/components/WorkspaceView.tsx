@@ -1184,6 +1184,15 @@ export function WorkspaceView({ zen, name, path }: Props) {
     bumpThreads();
   }
 
+  // Auto-name a canvas from the first chat message typed on it (plan §11.2).
+  // Only fires while the canvas still holds its default name — a manual rename
+  // (or a prior auto-name) wins. Reuses renameThread for store + tab-title sync.
+  function autoNameThread(threadId: string, firstMessage: string) {
+    if (getThread(threadId)?.name !== "New thread") return;
+    const name = firstMessage.trim().replace(/\s+/g, " ").slice(0, 48).trim();
+    if (name) renameThread(threadId, name.length === 48 ? name.replace(/\s\S*$/, "") + "…" : name);
+  }
+
   function removeThread(threadId: string) {
     deleteThreadFromStore(threadId);
     // Close the tab if open; drop its PersistedTab so it can't restore.
@@ -2797,6 +2806,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                       closeCanvasSession={closeCanvasSession}
                       worktrees={projects.find((p) => p.id === s.projectId)?.worktrees ?? []}
                       createCanvasWorktree={createCanvasWorktree}
+                      autoNameThread={autoNameThread}
                     />
                   ) : (
                     <TerminalPane
