@@ -21,7 +21,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { Tooltip } from "./Tooltip";
-import { portForWorkspace } from "../lib/servicePort";
+import { portForWorkspace, hostSlug, proxyUrl } from "../lib/servicePort";
 import type { DiffLine, FileStats } from "../types/git";
 import "./RightSidebar.css";
 
@@ -381,7 +381,11 @@ export function RightSidebar({ cwd, rootPath, open, gitRevision, noGit, onOpenDi
     if (!cwd || runningId) return;
     const id = crypto.randomUUID();
     const port = portForWorkspace(cwd);
-    setRunLog([`PORT=${port}`, `$ ${cmd}`]);
+    // Register the branch-named hostname so the dev server is reachable at a URL
+    // that says which branch it is; log whichever address actually resolves.
+    let addr = `http://localhost:${port}`;
+    try { if (await invoke<boolean>("register_service_route", { slug: hostSlug(cwd), port })) addr = proxyUrl(cwd); } catch { /* proxy dormant */ }
+    setRunLog([`PORT=${port}`, addr, `$ ${cmd}`]);
     setRunningId(id);
     setBottomTab("terminal");
     const unlistenLine = await listen<string>(`run:${id}`, (e) => {

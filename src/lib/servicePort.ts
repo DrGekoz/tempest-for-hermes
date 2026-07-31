@@ -29,3 +29,22 @@ function hash(s: string): number {
 export function portForWorkspace(path: string): number {
   return PORT_BASE + (hash(key(path)) % PORT_SPAN);
 }
+
+// The reverse proxy (src-tauri/src/service_proxy.rs) listens here and routes
+// `<slug>.localhost:PROXY_PORT` to a worktree's dev port. `*.localhost` resolves
+// to loopback in every modern browser with no OS config.
+export const PROXY_PORT = 7000;
+
+/// A DNS-safe hostname label for the workspace at `path` — its basename, so a
+/// branch is reachable at a URL that names it.
+/// ponytail: basename only, so two projects with a same-named worktree collide
+/// on one slug (last register wins). Prefix with the project if it bites.
+export function hostSlug(path: string): string {
+  const base = key(path).split("/").pop() || "app";
+  return base.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "app";
+}
+
+/// The stable, branch-named URL the proxy serves for this workspace.
+export function proxyUrl(path: string): string {
+  return `http://${hostSlug(path)}.localhost:${PROXY_PORT}`;
+}

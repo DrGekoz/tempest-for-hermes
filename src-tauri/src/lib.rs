@@ -8,6 +8,25 @@ use hephaestus::Isolate;
 
 mod agent_hooks;
 mod canvas_mcp;
+mod service_proxy;
+
+/// Managed slug → dev-server-port map, read by the reverse proxy in
+/// `service_proxy.rs` and written by `register_service_route`. The bool is
+/// whether the proxy bound its port — `false` means hostnames won't route and
+/// callers should keep the direct `localhost:<port>` URL.
+struct ServiceRoutes(service_proxy::Routes, bool);
+
+/// Map a per-branch hostname slug to the worktree's dev-server port so the proxy
+/// can route `<slug>.localhost` to it. Called by the frontend wherever it already
+/// computes a workspace port (Run tab, Live Preview). Returns whether the proxy
+/// is live.
+#[tauri::command]
+fn register_service_route(slug: String, port: u16, routes: tauri::State<'_, ServiceRoutes>) -> bool {
+    if let Ok(mut r) = routes.0.lock() {
+        r.insert(slug.to_ascii_lowercase(), port);
+    }
+    routes.1
+}
 
 /// Process-global isolation backend (Job Objects on Windows). Provisioned lazily
 /// the first time a sandboxed PTY session is created.
@@ -3856,6 +3875,11 @@ pub fn run() {
             // Loopback receiver for agent lifecycle hooks. Best-effort; a bind
             // failure leaves sessions on PTY-scraped status.
             agent_hooks::start(app.handle().clone());
+            // Per-branch dev-server hostname proxy. Best-effort; dormant on port
+            // conflict (direct localhost:<port> still works).
+            let routes: service_proxy::Routes = Default::default();
+            let proxy_up = service_proxy::start(routes.clone());
+            app.manage(ServiceRoutes(routes, proxy_up));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3921,6 +3945,7 @@ pub fn run() {
             start_atlas_daemon,
             stop_atlas_daemon,
             write_canvas_mcp_config,
+            register_service_route,
             atlas_mcp_tools,
             atlas_mcp_call,
             git_ls_files,

@@ -121,7 +121,7 @@ function sbRows(live: Session[], ghosts: WorktreeSession[]): SbRow[] {
 
 import { folderName, timeAgo } from "../lib/format";
 import { getHookCommands, runHook, type HookKind } from "../lib/worktreeHooks";
-import { portForWorkspace } from "../lib/servicePort";
+import { portForWorkspace, hostSlug, proxyUrl } from "../lib/servicePort";
 import { buildAgentArgs } from "../lib/agentArgs";
 import { getAgentConfig } from "../lib/runtimeState";
 import {
@@ -1105,7 +1105,15 @@ export function WorkspaceView({ zen, name, path }: Props) {
     // server actually binds instead of the port picker.
     const projectPath = getProjectPath(projectId) ?? "";
     const port = (await loadTempestConfig(projectPath)).preview?.port ?? portForWorkspace(cwd || projectPath);
-    const previewUrl = port ? `http://localhost:${port}` : undefined;
+    // Route the branch-named hostname to the real dev port, and preview through
+    // it — so the URL says which branch it is. Falls back to the direct port if
+    // the proxy isn't up (register throws / :7000 taken).
+    const slug = hostSlug(cwd || projectPath);
+    let previewUrl = port ? `http://localhost:${port}` : undefined;
+    try {
+      const up = await invoke<boolean>("register_service_route", { slug, port });
+      if (up && port) previewUrl = proxyUrl(cwd || projectPath);
+    } catch { /* proxy dormant — keep the direct URL */ }
     const tab: PersistedTab = { instanceId: sessionId, kind: "preview", projectId, cwd, name: "Live Preview", previewUrl };
     upsertTab(tab);
     setSessions((prev) => [...prev, {
