@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updatedAt": "2026-07-25",
+  "updatedAt": "2026-08-01",
   "agents": [
     {
       "id": "agy",
@@ -9,7 +9,7 @@
       "adapter": "cli",
       "icon": "agy",
       "mono": true,
-      "downloadUrl": "https://antigravity.dev",
+      "downloadUrl": "https://antigravity.google",
       "flags": {
         "resume": ["--continue"],
         "autoApprove": ["--dangerously-skip-permissions"]
@@ -21,7 +21,7 @@
       "command": "claude",
       "adapter": "cli",
       "icon": "claude",
-      "downloadUrl": "https://docs.anthropic.com/en/docs/claude-code",
+      "downloadUrl": "https://code.claude.com/docs",
       "flags": {
         "session": ["--session-id", "{UUID}"],
         "resume": ["--resume", "{UUID}"],
@@ -58,7 +58,7 @@
       "command": "gh copilot",
       "adapter": "cli",
       "icon": "copilot",
-      "downloadUrl": "https://cli.github.com"
+      "downloadUrl": "https://github.com/features/copilot/cli"
     },
     {
       "id": "cursor",
@@ -67,7 +67,7 @@
       "adapter": "cli",
       "icon": "cursor",
       "mono": true,
-      "downloadUrl": "https://cursor.sh"
+      "downloadUrl": "https://cursor.com/cli"
     },
     {
       "id": "gemini",

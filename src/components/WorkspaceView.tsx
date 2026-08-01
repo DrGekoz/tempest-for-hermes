@@ -5,7 +5,7 @@ import { sessionManager } from "../store/sessionManager";
 import { setActiveIslandSession, onIslandFocusRequest } from "../store/islandNotifs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { createWorktree, gitInit, NotAGitRepoError } from "../lib/worktree";
+import { createWorktree, gitInit } from "../lib/worktree";
 import { addRecent, getRecents, removeRecent } from "../store/recents";
 import { getOpenProjects, saveOpenProjects } from "../store/openProjects";
 import { getSession, getBranchSessions, getWorktreeAgentSession, getRootSessionsForProject, getAllSessions, getBranchPath, getProjectPath, saveSession, setSessionConversationId, markSessionClosed, markSessionOpen, removeBranchByPath, removeSession, pruneSessions, type WorktreeSession } from "../store/sessions";
@@ -19,7 +19,6 @@ import { DeleteWorkspaceDialog, type DeleteDialogState } from "./WorkspaceView/D
 import { UpdateConfirmDialog } from "./WorkspaceView/UpdateConfirmDialog";
 import { DiffPickerModal } from "./WorkspaceView/DiffPickerModal";
 import { PromptPickerPopover } from "./WorkspaceView/PromptPickerPopover";
-import { TerminalNamingModal } from "./WorkspaceView/TerminalNamingModal";
 import { ContextMenu, type CtxMenuState } from "./WorkspaceView/ContextMenu";
 import { TitleBar } from "./WorkspaceView/TitleBar";
 import {
@@ -66,7 +65,7 @@ import {
   saveThread, deleteThread as deleteThreadFromStore,
 } from "../store/threads";
 import { RightSidebar } from "./RightSidebar";
-import { NewSessionMenu, NewSessionPlacement, AgentConfig, AGENT_CONFIGS, AgentIcon } from "./NewSessionMenu";
+import { NewSessionMenu, NewSessionPlacement, AgentConfig, AGENT_CONFIGS, AgentIcon, type BranchLaunch } from "./NewSessionMenu";
 import { BranchSessionMenu } from "./BranchSessionMenu";
 import { SettingsPanel } from "./SettingsPanel";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
@@ -153,21 +152,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
   const [pendingWorktreePath, setPendingWorktreePath] = useState<string | null>(null);
   const [branchMenuLabel, setBranchMenuLabel] = useState<string>("");
   const [branchMenuIsRoot, setBranchMenuIsRoot] = useState(false);
-  const [showTerminalNaming, setShowTerminalNaming] = useState(false);
-  const [terminalName, setTerminalName] = useState("");
-  const [terminalPrompt, setTerminalPrompt] = useState("");
-  const [terminalLaunching, setTerminalLaunching] = useState(false);
-  const [terminalError, setTerminalError] = useState<string | null>(null);
-  const [gitNotFound, setGitNotFound] = useState(false);
-  const [gitNotFoundRoot, setGitNotFoundRoot] = useState(false);
-  const [rootRemoteUrl, setRootRemoteUrl] = useState("");
-  const [rootGitInitializing, setRootGitInitializing] = useState(false);
-  const [rootGitError, setRootGitError] = useState<string | null>(null);
-  const [useExistingBranch, setUseExistingBranch] = useState(false);
-  const [existingBranchName, setExistingBranchName] = useState("");
+  // Branch list + git status for the "+" menu's Branch tab, fetched when it opens.
   const [existingBranches, setExistingBranches] = useState<BranchInfo[]>([]);
-  const [existingDropOpen, setExistingDropOpen] = useState(false);
-  const existingDropRef = useRef<HTMLDivElement>(null);
+  const [menuIsGitRepo, setMenuIsGitRepo] = useState(true);
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -233,7 +220,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
   const projectsRef = useRef<Project[]>([]);
   projectsRef.current = projects;
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
-  const [pendingAgent, setPendingAgent] = useState<AgentConfig | null>(null);
   // Project IDs confirmed to be git repos (detected via get_git_branch on open/restore).
   const [gitProjectIds, setGitProjectIds] = useState<Set<string>>(new Set());
 
@@ -647,44 +633,19 @@ export function WorkspaceView({ zen, name, path }: Props) {
     };
   }, []);
 
-  function resetTerminalModal() {
-    setShowTerminalNaming(false);
-    setTerminalName("");
-    setTerminalPrompt("");
-    setTerminalError(null);
-    setGitNotFound(false);
-    setGitNotFoundRoot(false);
-    setRootRemoteUrl("");
-    setRootGitError(null);
-    setPendingProjectId(null);
-    setPendingAgent(null);
-    setUseExistingBranch(false);
-    setExistingBranchName("");
-    setExistingBranches([]);
-    setExistingDropOpen(false);
-  }
-
+  // When the "+" menu opens, detect git and fetch branches so the Branch tab is
+  // ready without a wait after the user clicks it.
   useEffect(() => {
-    if (!existingDropOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (existingDropRef.current && !existingDropRef.current.contains(e.target as Node)) {
-        setExistingDropOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [existingDropOpen]);
-
-  // Fetch branches when the naming modal opens so the "use existing branch" toggle
-  // has a list ready without the user having to wait after clicking it.
-  useEffect(() => {
-    if (!showTerminalNaming) return;
+    if (!sessionMenuOpen) return;
     const projectPath = projects.find((p) => p.id === pendingProjectId)?.path ?? (zen ? path ?? "" : "");
-    if (!projectPath) return;
+    if (!projectPath) { setMenuIsGitRepo(false); return; }
+    invoke<boolean>("check_git_initialized", { path: projectPath })
+      .then(setMenuIsGitRepo)
+      .catch(() => setMenuIsGitRepo(false));
     invoke<BranchInfo[]>("git_list_branches", { repoPath: projectPath })
-      .then((branches) => setExistingBranches(branches))
-      .catch(() => {});
-  }, [showTerminalNaming]); // eslint-disable-line react-hooks/exhaustive-deps
+      .then(setExistingBranches)
+      .catch(() => setExistingBranches([]));
+  }, [sessionMenuOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openCtxMenu(
     e: React.MouseEvent,
@@ -877,6 +838,47 @@ export function WorkspaceView({ zen, name, path }: Props) {
         });
       }
 
+      // The global "isolate agents" switch — a sync read, hoisted so the tab can
+      // render before the async config load + PTY spawn below.
+      const shouldIsolate = getSettings().isolateAgents;
+
+      // Instant tab: render the sidebar row + focus it NOW, synchronously, before
+      // the config load and create_pty_session (which, with DB isolation, can take
+      // seconds). The pane mounts and parks its listener in sessionManager.pending;
+      // register() below adopts it once the PTY is live. Canvas sessions have no
+      // tab (a Threads node is their home) so they skip this. On spawn failure the
+      // catch below rolls the tab back.
+      const newSession: Session = {
+        id: sessionId,
+        name: sessionName,
+        cwd,
+        projectId,
+        agent,
+        conversationId,
+        instanceId,
+        isRootSession,
+        noGit,
+        sandboxed: shouldIsolate ? true : false,
+        parentSessionId,
+        // The persisted stamp, not "now" — a restored or re-opened session must
+        // keep the creation order the sidebar lists it in. saveSession/the mirror
+        // already hold it by this point; the fallback covers unpersisted sessions.
+        createdAt: getSession(sessionId)?.createdAt ?? new Date().toISOString(),
+        metadata: { resumeCount: 0, hasBeenResumed: false },
+      };
+      const prevActiveId = activeSessionId;
+      if (placement !== "canvas") {
+        // Upsert by id: the Branch tab renders an optimistic placeholder row
+        // under this same id before awaiting the worktree, so here we replace it
+        // in place (keeping the already-mounted pane) rather than appending a dup.
+        setSessions((prev) =>
+          prev.some((s) => s.id === sessionId)
+            ? prev.map((s) => (s.id === sessionId ? newSession : s))
+            : [...prev, newSession],
+        );
+        setActiveSessionId(sessionId);
+      }
+
       // Build the optional capture callback for agents that mint their own session ID
       // from PTY output (e.g. opencode). The callback is registered with the Manager
       // and removed once the ID is found.
@@ -905,14 +907,19 @@ export function WorkspaceView({ zen, name, path }: Props) {
       // The project root — not `cwd`, which may be a worktree. tempest.yml lives
       // at the root and governs every worktree cut from it.
       const projectRoot = getProjectPath(projectId);
-      const projectSettings = await loadProjectSettings(projectId, projectRoot);
-      const tempestConfig = await loadTempestConfig(projectRoot ?? "");
+      // Load in parallel: loadProjectSettings already reads tempest.yml internally,
+      // so running the two sequentially doubled the disk round-trips (and a missing
+      // tempest.yml costs two failing read_file calls each). Overlapping them keeps
+      // the config load off the critical path before the tab renders.
+      const [projectSettings, tempestConfig] = await Promise.all([
+        loadProjectSettings(projectId, projectRoot),
+        loadTempestConfig(projectRoot ?? ""),
+      ]);
 
-      // The global "isolate agents" switch is the master off-switch. With it on,
-      // the per-project sandbox mode decides the posture. Terminals are no
-      // longer pinned to lifecycle-only: a shell can reach the network exactly
-      // as an agent can, so it is governed exactly as an agent is.
-      const shouldIsolate = getSettings().isolateAgents;
+      // The global "isolate agents" switch is the master off-switch (read above,
+      // before the tab rendered). With it on, the per-project sandbox mode decides
+      // the posture. Terminals are no longer pinned to lifecycle-only: a shell can
+      // reach the network exactly as an agent can, so it is governed exactly so.
       const sandboxParam = shouldIsolate ? {
         mode: projectSettings.sandbox.mode === "off" ? "lifecycle" : projectSettings.sandbox.mode,
         allowed_hosts: projectSettings.network.allowHosts,
@@ -959,8 +966,16 @@ export function WorkspaceView({ zen, name, path }: Props) {
           onEvent: channel,
         });
       } catch (e) {
-        // Surface the reason, then rethrow so the tab is never added and the
-        // existing caller-side cleanup still runs.
+        // Spawn failed. The tab was rendered optimistically before this await, so
+        // roll it back: drop the row, restore the previously-active tab, purge the
+        // persisted session, and clear any pane listener parked in pending.
+        if (placement !== "canvas") {
+          setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+          setActiveSessionId(prevActiveId);
+        }
+        removeSession(sessionId);
+        sessionManager.unregister(sessionId);
+        // Surface the reason, then rethrow so existing caller-side cleanup runs.
         setPolicyError(String(e));
         throw e;
       }
@@ -1008,35 +1023,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
         invoke("resize_pty", { sessionId, rows, cols }).catch(() => {});
       }
 
-      const newSession: Session = {
-        id: sessionId,
-        name: sessionName,
-        cwd,
-        projectId,
-        agent,
-        conversationId,
-        instanceId,
-        isRootSession,
-        noGit,
-        sandboxed: shouldIsolate ? true : false,
-        parentSessionId,
-        // The persisted stamp, not "now" — a restored or re-opened session must
-        // keep the creation order the sidebar lists it in. saveSession/the mirror
-        // already hold it by this point; the fallback covers unpersisted sessions.
-        createdAt: getSession(sessionId)?.createdAt ?? new Date().toISOString(),
-        metadata: { resumeCount: 0, hasBeenResumed: false },
-      };
-
-      // Canvas-placed sessions have no tab bar entry — a Threads agent/terminal
-      // node is their sole home. The PTY, sessionManager registration, and
-      // persistence above are identical; only the tab/focus is skipped.
-      if (placement === "canvas") return sessionId;
-
-      // Always append as a new tab. Never replace an existing active session at the
-      // same cwd — doing so would silently evict its tab while leaving the old PTY
-      // alive and orphaned in the Rust backend.
-      setSessions((prev) => [...prev, newSession]);
-      setActiveSessionId(sessionId);
+      // The tab was already rendered synchronously before the awaits above; the
+      // PTY, sessionManager registration, and persistence are now all in place.
+      // Canvas sessions never had a tab — a Threads node is their sole home.
       return sessionId;
     } finally {
       // Always release the guard — even if create_pty_session rejects — so a failed
@@ -1377,176 +1366,102 @@ export function WorkspaceView({ zen, name, path }: Props) {
     }
   }
 
-  async function launchTerminalWorktree() {
+  // Main tab: spawn immediately in the project root. No git required — a non-repo
+  // root opens as a no-git session; the menu footer offers to initialize.
+  async function launchMain(agent: AgentConfig | null, prompt?: string) {
     const activePath = getActivePath();
     const workingProjectId = pendingProjectId;
-    const agent = pendingAgent?.hint;
-    const prompt = terminalPrompt.trim() || undefined;
+    const hasGit = await invoke<boolean>("check_git_initialized", { path: activePath }).catch(() => false);
+    const sessionName = uniqueSessionName(agent ? agent.name : "Terminal", activePath, true);
+    await openSession(sessionName, activePath, workingProjectId ?? "", agent?.hint, prompt, undefined, undefined, true, !hasGit)
+      .catch((e) => setPolicyError(String(e)));
+  }
+
+  // Branch tab: create (or reuse) a worktree, then spawn the session in it. Only
+  // reachable when the project is a git repo, so no NotAGitRepo handling here.
+  async function launchBranch({ agent, prompt, name, existingBranch }: BranchLaunch) {
+    const activePath = getActivePath();
+    const workingProjectId = pendingProjectId;
 
     let branchName: string;
-    let existingBranch: string | undefined;
+    let existingBranchArg: string | undefined;
     let directWorktreePath: string | undefined;
 
-    if (useExistingBranch) {
-      if (!existingBranchName.trim()) return;
-      const selectedBranch = existingBranches.find((b) => b.name === existingBranchName);
-      branchName = existingBranchName.trim().replace(/\//g, "-");
-      if (selectedBranch?.is_worktree && selectedBranch.worktree_path) {
-        // Branch is already in a worktree — open a session there without calling createWorktree.
-        directWorktreePath = selectedBranch.worktree_path;
+    if (existingBranch) {
+      branchName = existingBranch.name.replace(/\//g, "-");
+      if (existingBranch.is_worktree && existingBranch.worktree_path) {
+        // Branch already lives in a worktree — open a session there directly.
+        directWorktreePath = existingBranch.worktree_path;
       } else {
-        existingBranch = existingBranchName.trim();
+        existingBranchArg = existingBranch.name;
       }
     } else {
-      if (!terminalName.trim()) return;
-      const fullName = branchPrefix ? `${branchPrefix}${terminalName}` : terminalName;
-      branchName = fullName;
-    }
-    // For sessions opened in an existing worktree, suffix the name so it stays
-    // distinct from the sessions already there ("Claude", "Claude #2", …).
-    let sessionName: string;
-    if (directWorktreePath) {
-      sessionName = uniqueSessionName(pendingAgent?.name ?? "Terminal", directWorktreePath);
-    } else {
-      sessionName = branchName || (pendingAgent ? pendingAgent.name : "Terminal");
+      branchName = branchPrefix ? `${branchPrefix}${name}` : name;
     }
 
-    setTerminalLaunching(true);
-    setTerminalError(null);
+    // Sessions opened into an existing worktree get a numbered suffix so they stay
+    // distinct from ones already there ("Claude", "Claude #2", …).
+    const sessionName = directWorktreePath
+      ? uniqueSessionName(agent?.name ?? "Terminal", directWorktreePath)
+      : (branchName || (agent ? agent.name : "Terminal"));
+
+    // Pre-mint the id so the placeholder row below and the real openSession row
+    // share it (openSession upserts by id, keeping the already-mounted pane).
+    const pendingId = crypto.randomUUID();
     try {
       let worktreePath: string;
       if (directWorktreePath) {
         worktreePath = directWorktreePath;
         addWorktreeToState({ name: branchName, path: worktreePath }, workingProjectId);
       } else {
-        const result = await createWorktree({ projectPath: activePath, name: branchName, existingBranch });
-        worktreePath = result.path;
+        // Instant tab: render the session NOW (pointing at the project root) and
+        // focus it, before the ~1-2s `git worktree add`. Without this the whole
+        // area sat blank until the worktree existed. openSession replaces this
+        // row with the real worktree cwd once creation returns. Mirrors the Main
+        // tab's instant-tab spawn.
+        setSessions((prev) => [...prev, {
+          id: pendingId, instanceId: pendingId, name: sessionName, cwd: activePath,
+          projectId: workingProjectId ?? "", agent: agent?.hint,
+          sandboxed: getSettings().isolateAgents,
+          createdAt: new Date().toISOString(),
+          metadata: { resumeCount: 0, hasBeenResumed: false },
+        }]);
+        setActiveSessionId(pendingId);
+        try {
+          const result = await createWorktree({ projectPath: activePath, name: branchName, existingBranch: existingBranchArg });
+          worktreePath = result.path;
+        } catch (e) {
+          // Worktree creation failed — roll back the optimistic tab.
+          setSessions((prev) => prev.filter((s) => s.id !== pendingId));
+          throw e;
+        }
         addWorktreeToState({ name: branchName, path: worktreePath }, workingProjectId);
-        // The worktree exists either way; a failed setup leaves it in the
-        // sidebar and keeps the modal open with the reason, rather than opening
-        // a session into a half-prepared checkout.
-        const failure = await runWorktreeHook("setup", activePath, workingProjectId ?? "", worktreePath);
-        if (failure) { setTerminalError(failure); return; }
+        // Run the setup hook in the BACKGROUND so the session appears the instant the
+        // worktree exists, instead of waiting out installs/build steps first (matches
+        // how termic launches). The agent can start working while setup finishes; a
+        // failure surfaces as a notice rather than blocking the launch.
+        runWorktreeHook("setup", activePath, workingProjectId ?? "", worktreePath)
+          .then((failure) => { if (failure) setPolicyError(failure); })
+          .catch((e) => setPolicyError(String(e)));
       }
-      await openSession(sessionName, worktreePath, workingProjectId ?? "", agent, prompt, undefined, undefined, undefined, undefined, false, undefined, undefined);
-      resetTerminalModal();
+      await openSession(sessionName, worktreePath, workingProjectId ?? "", agent?.hint, prompt, undefined, undefined, undefined, undefined, undefined, pendingId);
     } catch (e) {
-      if (e instanceof NotAGitRepoError) {
-        setGitNotFound(true);
-      } else {
-        setTerminalError(String(e));
-      }
-    } finally {
-      setTerminalLaunching(false);
+      setPolicyError(String(e));
     }
   }
 
-  async function initGitAndLaunch() {
-    setTerminalLaunching(true);
-    setTerminalError(null);
+  // Footer action: turn the project into a git repo in place so the Branch tab
+  // unlocks without closing the menu.
+  async function initGitInProject() {
     const activePath = getActivePath();
-    const workingProjectId = pendingProjectId;
-    const agent = pendingAgent?.hint;
-    const prompt = terminalPrompt.trim() || undefined;
-    const fullName = branchPrefix ? `${branchPrefix}${terminalName}` : terminalName;
-    const sessionName = fullName || (pendingAgent ? pendingAgent.name : "Terminal");
+    const projectId = pendingProjectId;
     try {
       await gitInit(activePath);
-      const result = await createWorktree({ projectPath: activePath, name: fullName });
-      addWorktreeToState({ name: fullName, path: result.path }, workingProjectId);
-      const failure = await runWorktreeHook("setup", activePath, workingProjectId ?? "", result.path);
-      if (failure) { setTerminalError(failure); return; }
-      await openSession(sessionName, result.path, workingProjectId ?? "", agent, prompt, undefined);
-      resetTerminalModal();
+      setMenuIsGitRepo(true);
+      if (projectId) setGitProjectIds((prev) => { const s = new Set(prev); s.add(projectId); return s; });
+      invoke<BranchInfo[]>("git_list_branches", { repoPath: activePath }).then(setExistingBranches).catch(() => {});
     } catch (e) {
-      setTerminalError(String(e));
-      setGitNotFound(false);
-    } finally {
-      setTerminalLaunching(false);
-    }
-  }
-
-  async function continueWithoutGit() {
-    setTerminalLaunching(true);
-    setTerminalError(null);
-    const activePath = getActivePath();
-    const workingProjectId = pendingProjectId;
-    const agent = pendingAgent?.hint;
-    const sessionName = terminalName.trim() || (pendingAgent ? pendingAgent.name : "Terminal");
-    const prompt = terminalPrompt.trim() || undefined;
-    try {
-      await openSession(sessionName, activePath, workingProjectId ?? "", agent, prompt, undefined, undefined, true);
-      resetTerminalModal();
-    } catch (e) {
-      setTerminalError(String(e));
-    } finally {
-      setTerminalLaunching(false);
-    }
-  }
-
-  // Launch directly in the project root without creating a worktree branch.
-  // Checks for a git repo first — if absent, shows the git-init dialog.
-  async function launchInRoot() {
-    setTerminalLaunching(true);
-    setTerminalError(null);
-    const activePath = getActivePath();
-    const workingProjectId = pendingProjectId;
-    const agent = pendingAgent?.hint;
-    const sessionName = terminalName.trim() || (pendingAgent ? pendingAgent.name : "Terminal");
-    const prompt = terminalPrompt.trim() || undefined;
-    try {
-      const hasGit = await invoke<boolean>("check_git_initialized", { path: activePath });
-      if (!hasGit) {
-        setGitNotFoundRoot(true);
-        return;
-      }
-      await openSession(sessionName, activePath, workingProjectId ?? "", agent, prompt, undefined, undefined, true);
-      resetTerminalModal();
-    } catch (e) {
-      setTerminalError(String(e));
-    } finally {
-      setTerminalLaunching(false);
-    }
-  }
-
-  async function initGitForRoot() {
-    setRootGitInitializing(true);
-    setRootGitError(null);
-    const activePath = getActivePath();
-    const workingProjectId = pendingProjectId;
-    const agent = pendingAgent?.hint;
-    const sessionName = terminalName.trim() || (pendingAgent ? pendingAgent.name : "Terminal");
-    const prompt = terminalPrompt.trim() || undefined;
-    try {
-      await invoke("git_init", { projectPath: activePath });
-      const trimmedUrl = rootRemoteUrl.trim();
-      if (trimmedUrl) {
-        await invoke("git_add_remote", { repoPath: activePath, remoteUrl: trimmedUrl });
-      }
-      await openSession(sessionName, activePath, workingProjectId ?? "", agent, prompt, undefined, undefined, true, false);
-      resetTerminalModal();
-    } catch (e) {
-      setRootGitError(String(e));
-    } finally {
-      setRootGitInitializing(false);
-    }
-  }
-
-  async function skipGitForRoot() {
-    setRootGitInitializing(true);
-    setRootGitError(null);
-    const activePath = getActivePath();
-    const workingProjectId = pendingProjectId;
-    const agent = pendingAgent?.hint;
-    const sessionName = terminalName.trim() || (pendingAgent ? pendingAgent.name : "Terminal");
-    const prompt = terminalPrompt.trim() || undefined;
-    try {
-      await openSession(sessionName, activePath, workingProjectId ?? "", agent, prompt, undefined, undefined, true, true);
-      resetTerminalModal();
-    } catch (e) {
-      setRootGitError(String(e));
-    } finally {
-      setRootGitInitializing(false);
+      setPolicyError(String(e));
     }
   }
 
@@ -2792,7 +2707,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                       hidden={hidden}
                       previewUrl={s.previewUrl}
                       onUrlChange={(url) => updateSessionPreviewUrl(s.id, url)}
-                      suppressPanel={sessionMenuOpen || showTerminalNaming}
+                      suppressPanel={sessionMenuOpen}
                     />
                   ) : s.kind === "editor" ? (
                     <CodeMirrorPane
@@ -3065,26 +2980,15 @@ export function WorkspaceView({ zen, name, path }: Props) {
         open={sessionMenuOpen}
         anchorRect={sessionMenuRect}
         placement={sessionMenuPlacement}
+        isGitRepo={menuIsGitRepo}
+        existingBranches={existingBranches}
+        branchPrefix={branchPrefix}
         onClose={() => setSessionMenuOpen(false)}
-        onNewTerminal={() => {
-          setTerminalName("");
-          setShowTerminalNaming(true);
-        }}
-        onAgentSession={(agent) => {
-          setSessionMenuOpen(false);
-          setPendingAgent(agent);
-          setTerminalName("");
-          setTerminalPrompt("");
-          setShowTerminalNaming(true);
-        }}
-        onThread={pendingProjectId ? () => {
-          setSessionMenuOpen(false);
-          createThread(pendingProjectId);
-        } : undefined}
-        onLivePreview={pendingProjectId ? () => {
-          setSessionMenuOpen(false);
-          openPreviewTab(pendingProjectId);
-        } : undefined}
+        onLaunchMain={launchMain}
+        onLaunchBranch={launchBranch}
+        onThread={pendingProjectId ? () => createThread(pendingProjectId) : undefined}
+        onLivePreview={pendingProjectId ? () => openPreviewTab(pendingProjectId) : undefined}
+        onInitGit={initGitInProject}
       />
 
       <BranchSessionMenu
@@ -3221,42 +3125,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
         </div>,
         document.body
       )}
-
-      {showTerminalNaming && (
-        <TerminalNamingModal
-          pendingAgent={pendingAgent}
-          gitNotFoundRoot={gitNotFoundRoot}
-          gitNotFound={gitNotFound}
-          rootRemoteUrl={rootRemoteUrl}
-          setRootRemoteUrl={setRootRemoteUrl}
-          rootGitInitializing={rootGitInitializing}
-          rootGitError={rootGitError}
-          onSkipGitForRoot={skipGitForRoot}
-          onInitGitForRoot={initGitForRoot}
-          onBackFromRoot={() => { setGitNotFoundRoot(false); setRootGitError(null); }}
-          terminalError={terminalError}
-          terminalLaunching={terminalLaunching}
-          onContinueWithoutGit={continueWithoutGit}
-          onInitGitAndLaunch={initGitAndLaunch}
-          onBackFromGitNotFound={() => setGitNotFound(false)}
-          useExistingBranch={useExistingBranch}
-          setUseExistingBranch={setUseExistingBranch}
-          existingBranches={existingBranches}
-          existingBranchName={existingBranchName}
-          setExistingBranchName={setExistingBranchName}
-          existingDropOpen={existingDropOpen}
-          setExistingDropOpen={setExistingDropOpen}
-          existingDropRef={existingDropRef}
-          terminalName={terminalName}
-          setTerminalName={setTerminalName}
-          terminalPrompt={terminalPrompt}
-          setTerminalPrompt={setTerminalPrompt}
-          onCancel={resetTerminalModal}
-          onLaunchInRoot={launchInRoot}
-          onLaunchTerminalWorktree={launchTerminalWorktree}
-        />
-      )}
-
 
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} initialSection={settingsInitialSection as any} />}
       {projectSettingsPanelId && (() => {

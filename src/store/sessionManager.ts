@@ -115,6 +115,10 @@ interface SessionRecord {
 
 class SessionManager {
   private sessions = new Map<string, SessionRecord>();
+  // Listeners from panes that mounted before their PTY registered (instant-tab
+  // path: the tab renders synchronously, the PTY spawns a beat later). register()
+  // adopts these into the real record; until then there's nothing to replay.
+  private pending = new Map<string, Set<(data: string) => void>>();
 
   register(
     sessionId: string,
@@ -145,6 +149,13 @@ class SessionManager {
       hookCoversWaiting: false,
       listeners: new Set(),
     };
+    // Adopt any listeners from panes that mounted before this PTY registered
+    // (instant-tab path). There's no buffered output yet, so nothing to replay.
+    const pending = this.pending.get(sessionId);
+    if (pending) {
+      for (const l of pending) record.listeners.add(l);
+      this.pending.delete(sessionId);
+    }
     this.sessions.set(sessionId, record);
     channel.onmessage = (payload) => this.processChunk(sessionId, payload.data);
   }
@@ -157,6 +168,7 @@ class SessionManager {
   }
 
   unregister(sessionId: string) {
+    this.pending.delete(sessionId);
     const record = this.sessions.get(sessionId);
     if (!record) return;
     if (record.quietTimer !== null) clearTimeout(record.quietTimer);
@@ -166,9 +178,17 @@ class SessionManager {
   }
 
   // Called by TerminalPane on mount. Returns buffered chunks for replay.
+  // A pane can mount before its PTY registers (instant-tab path: the tab renders
+  // synchronously, create_pty_session resolves a beat later). Park the listener
+  // in `pending` so register() adopts it; there's no buffer to replay yet.
   attach(sessionId: string, onData: (data: string) => void): string[] {
     const record = this.sessions.get(sessionId);
-    if (!record) return [];
+    if (!record) {
+      let pending = this.pending.get(sessionId);
+      if (!pending) { pending = new Set(); this.pending.set(sessionId, pending); }
+      pending.add(onData);
+      return [];
+    }
     record.listeners.add(onData);
     return [...record.buffer];
   }
@@ -176,6 +196,11 @@ class SessionManager {
   // Called by TerminalPane on unmount.
   detach(sessionId: string, onData: (data: string) => void) {
     this.sessions.get(sessionId)?.listeners.delete(onData);
+    const pending = this.pending.get(sessionId);
+    if (pending) {
+      pending.delete(onData);
+      if (pending.size === 0) this.pending.delete(sessionId);
+    }
   }
 
   // Called by TerminalPane when the user presses Enter — arms work-done detection.

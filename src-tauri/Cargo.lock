@@ -4446,7 +4446,7 @@ dependencies = [
 
 [[package]]
 name = "tempest"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "dashmap",
  "dbiso",

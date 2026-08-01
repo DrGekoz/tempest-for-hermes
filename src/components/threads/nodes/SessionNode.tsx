@@ -7,6 +7,7 @@ import { TerminalPane } from "../../TerminalPane";
 import { AGENT_CONFIGS, AgentIcon } from "../../NewSessionMenu";
 import { ThreadNodeContext } from "../ThreadNodeContext";
 import { NodeConnector } from "./NodeConnector";
+import { CollapsedNode } from "./CollapsedNode";
 import { getThreadNode, saveThreadNode } from "../../../store/threads";
 import { getSession, getBranch } from "../../../store/sessions";
 import { sessionManager } from "../../../store/sessionManager";
@@ -19,7 +20,7 @@ import "./TextNode.css";
 // resumed on the node when the app restarts (its previous PTY died). The PTY layer
 // (create_pty_session, sessionManager) is reused untouched — only the placement is
 // new.
-function SessionNode({ id, isAgent }: { id: string; isAgent: boolean }) {
+function SessionNode({ id, data, isAgent }: { id: string; data?: { collapsed?: boolean }; isAgent: boolean }) {
   const ctx = useContext(ThreadNodeContext);
   const { deleteElements } = useReactFlow();
   const [sessionId, setSessionId] = useState<string | null>(() => getThreadNode(id)?.sessionId ?? null);
@@ -120,6 +121,8 @@ function SessionNode({ id, isAgent }: { id: string; isAgent: boolean }) {
     borderBottom: "1px solid var(--tempest-border-subtle, #2a2a2a)",
     color: "var(--tempest-fg-muted, #aaa)", font: '11px "Geist", system-ui, sans-serif',
   };
+
+  if (data?.collapsed) return <CollapsedNode id={id} />;
 
   return (
     <div style={frame}>
@@ -222,5 +225,6 @@ function SessionNode({ id, isAgent }: { id: string; isAgent: boolean }) {
   );
 }
 
-export function AgentNode({ id }: { id: string }) { return <SessionNode id={id} isAgent />; }
-export function TerminalNode({ id }: { id: string }) { return <SessionNode id={id} isAgent={false} />; }
+type NodeShellProps = { id: string; data?: { collapsed?: boolean } };
+export function AgentNode(props: NodeShellProps) { return <SessionNode {...props} isAgent />; }
+export function TerminalNode(props: NodeShellProps) { return <SessionNode {...props} isAgent={false} />; }

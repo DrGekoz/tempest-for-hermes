@@ -1,17 +1,18 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { MessagesSquare, StickyNote, Bot, SquareTerminal } from "lucide-react";
+import { MessagesSquare, StickyNote, Bot, SquareTerminal, LayoutGrid, Minimize2, Maximize2, Trash2, Trash } from "lucide-react";
 import {
-  ReactFlow, Background, Controls, MiniMap,
+  ReactFlow, Background, Controls, MiniMap, Panel,
   applyNodeChanges, applyEdgeChanges, addEdge, ConnectionMode,
   useStore, useStoreApi,
   type Node, type NodeChange, type Edge, type EdgeChange, type Connection, type Viewport,
   type NodeTypes, type EdgeTypes, type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { forceSimulation, forceLink, forceManyBody, forceCollide, forceCenter, type SimulationNodeDatum } from "d3-force";
 import {
-  getThread, getThreadNodes, loadProjectThreads, loadThreadNodes, loadThreadEdges,
-  saveThread, saveThreadNode, deleteThreadNode, saveThreadEdge, deleteThreadEdge,
+  getThread, getThreadNode, getThreadNodes, loadProjectThreads, loadThreadNodes, loadThreadEdges,
+  saveThread, saveThreadNode, deleteThreadNode, saveThreadEdge, deleteThreadEdge, patchNodeData,
 } from "../store/threads";
 import type { DbThreadEdge } from "../lib/db";
 import { useTheme } from "../themes/ThemeContext";
@@ -21,6 +22,7 @@ import { ChatNode, buildAgentSeedContext } from "./threads/nodes/ChatNode";
 import { AgentNode, TerminalNode } from "./threads/nodes/SessionNode";
 import { ThreadEdge } from "./threads/ThreadEdge";
 import { ThreadNodeContext } from "./threads/ThreadNodeContext";
+import { Tooltip } from "./Tooltip";
 import { getSession } from "../store/sessions";
 import type { DbThreadNode } from "../lib/db";
 
@@ -33,6 +35,30 @@ const CUSTOM_KINDS = new Set(Object.keys(nodeTypes));
 // stack instead of scrolling. We apply width only and let React Flow measure height.
 const AUTO_HEIGHT_KINDS = new Set(["chat"]);
 const edgeTypes: EdgeTypes = { thread: ThreadEdge };
+
+// Right-click menu — shadcn dropdown idiom translated to Tempest's inline-style /
+// CSS-var system: p-1 content, muted text-xs labels, gap-1.5 rounded-md items.
+const menuStyle: React.CSSProperties = {
+  minWidth: 176, padding: 4, borderRadius: 8,
+  display: "flex", flexDirection: "column", gap: 1,
+  background: "var(--tempest-bg-elevated, #161616)",
+  border: "1px solid var(--tempest-border-subtle, #2a2a2a)",
+  boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
+  font: '13px "Geist", system-ui, sans-serif',
+};
+const menuLabelStyle: React.CSSProperties = {
+  padding: "6px 8px 4px", color: "var(--tempest-fg-muted, #888)",
+  font: '12px "Geist", system-ui, sans-serif', fontWeight: 500,
+};
+const menuItemStyle: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+  padding: "7px 8px", borderRadius: 6, border: "none",
+  background: "transparent", color: "var(--tempest-fg-default, #e6e6e6)",
+  cursor: "pointer", font: "inherit",
+};
+const menuSepStyle: React.CSSProperties = {
+  height: 1, margin: "5px -4px", background: "var(--tempest-border-subtle, #2a2a2a)",
+};
 
 // Default canvas footprint per kind at creation (persisted; user-resizable later).
 const KIND_SIZE: Record<string, { w: number; h: number }> = {
@@ -50,21 +76,31 @@ const KIND_SIZE: Record<string, { w: number; h: number }> = {
 
 // A persisted thread_node → a React Flow node. Label comes from data.title,
 // falling back to the kind. Node bodies are phase 3.
+// Compact width of a collapsed node — a single-row gist pill. Its height is left
+// to React Flow to measure (like auto-height kinds), so it hugs the one row.
+const COLLAPSED_W = 260;
+
 function toFlowNode(n: DbThreadNode): Node {
   let title = n.kind;
+  let collapsed = false;
   try {
     const d = n.data ? JSON.parse(n.data) : null;
     if (d && typeof d.title === "string" && d.title) title = d.title;
+    if (d) collapsed = !!d.collapsed;
   } catch { /* keep kind */ }
   return {
     id: n.id,
     ...(CUSTOM_KINDS.has(n.kind) ? { type: n.kind } : {}),
     position: { x: n.x, y: n.y },
-    data: { label: title },
-    // Auto-height kinds get width only so height measures to content.
-    ...(AUTO_HEIGHT_KINDS.has(n.kind)
-      ? (n.width ? { width: n.width } : {})
-      : (n.width && n.height ? { width: n.width, height: n.height } : {})),
+    data: { label: title, collapsed },
+    // Collapsed → fixed compact width, height measured. Otherwise: auto-height
+    // kinds get width only (height measures to content); the rest get both. The
+    // stored width/height are untouched by collapse, so expand restores exactly.
+    ...(collapsed
+      ? { width: COLLAPSED_W }
+      : AUTO_HEIGHT_KINDS.has(n.kind)
+        ? (n.width ? { width: n.width } : {})
+        : (n.width && n.height ? { width: n.width, height: n.height } : {})),
   };
 }
 
@@ -153,7 +189,20 @@ export function ThreadsView({
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rfRef = useRef<ReactFlowInstance<Node> | null>(null);
   // Right-click "add node" menu: screen coords for placement, flow coords for the node.
-  const [menu, setMenu] = useState<{ x: number; y: number; flow: { x: number; y: number } } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; flow: { x: number; y: number }; nodeId?: string } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Collision-aware placement (shadcn/Radix does this natively): after the menu
+  // mounts, nudge it back inside the viewport if the cursor was near an edge.
+  // Runs before paint, so no flash from the correction.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!menu || !el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 8;
+    if (r.right > window.innerWidth - pad) el.style.left = `${Math.max(pad, window.innerWidth - r.width - pad)}px`;
+    if (r.bottom > window.innerHeight - pad) el.style.top = `${Math.max(pad, window.innerHeight - r.height - pad)}px`;
+  }, [menu]);
 
   useEffect(() => {
     let alive = true;
@@ -217,6 +266,71 @@ export function ThreadsView({
     setEdges((prev) => addEdge({ ...c, id }, prev));
   }, [threadId]);
 
+  // Collapse/expand: only touches data.collapsed (never width/height), then
+  // rebuilds the flow node from the store so dimensions + the collapsed prop
+  // update together. Expand restores the stored size exactly.
+  const setNodeCollapsed = useCallback((nid: string, collapsed: boolean) => {
+    patchNodeData(nid, { collapsed });
+    const row = getThreadNode(nid);
+    if (row) setNodes((prev) => prev.map((n) => (n.id === nid ? toFlowNode(row) : n)));
+  }, []);
+
+  const setAllCollapsed = useCallback((collapsed: boolean) => {
+    for (const r of getThreadNodes(threadId)) patchNodeData(r.id, { collapsed });
+    setNodes((prev) => prev.map((n) => { const row = getThreadNode(n.id); return row ? toFlowNode(row) : n; }));
+  }, [threadId]);
+
+  // Tidy: untangle the wires with a force-directed layout (d3-force). Edges here
+  // are associative, not directional, so a layered/hierarchical layout would
+  // invent a flow that isn't in the data — a spring/charge simulation instead
+  // pulls connected nodes together and lets repulsion + collision relax crossed
+  // edges out. Only nodes that carry an edge are laid out; isolated nodes are
+  // left exactly where the user put them. ponytail: fixed force constants, no
+  // per-graph tuning knob — add one if dense canvases settle too tight/loose.
+  const tidy = useCallback(() => {
+    setNodes((prev) => {
+      const connected = new Set<string>();
+      for (const e of edges) { connected.add(e.source); connected.add(e.target); }
+      if (connected.size < 2) { setTimeout(() => rfRef.current?.fitView({ duration: 400, padding: 0.2 }), 50); return prev; }
+
+      // Circle radius per node from its real footprint (half the diagonal) so big
+      // nodes claim proportional space in the sim; point-particles would clip.
+      type SimNode = SimulationNodeDatum & { id: string; r: number };
+      const dimW = (n: Node) => n.width ?? n.measured?.width ?? COLLAPSED_W;
+      const dimH = (n: Node) => n.height ?? n.measured?.height ?? 160;
+      const sim: SimNode[] = prev
+        .filter((n) => connected.has(n.id))
+        .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, r: Math.hypot(dimW(n), dimH(n)) / 2 }));
+      const byId = new Map(sim.map((s) => [s.id, s]));
+      const links = edges
+        .filter((e) => byId.has(e.source) && byId.has(e.target))
+        .map((e) => ({ source: e.source, target: e.target }));
+
+      // Keep the cluster roughly where it already is (centre on its own centroid).
+      const cx = sim.reduce((s, n) => s + (n.x ?? 0), 0) / sim.length;
+      const cy = sim.reduce((s, n) => s + (n.y ?? 0), 0) / sim.length;
+
+      const simulation = forceSimulation<SimNode>(sim)
+        .force("link", forceLink<SimNode, { source: string; target: string }>(links)
+          .id((d) => d.id)
+          // d3 mutates source/target from ids to node objects once linked.
+          .distance((l) => (l.source as unknown as SimNode).r + (l.target as unknown as SimNode).r + 80))
+        .force("charge", forceManyBody<SimNode>().strength((d) => -(d.r * 12)))
+        .force("collide", forceCollide<SimNode>().radius((d) => d.r + 24))
+        .force("center", forceCenter(cx, cy))
+        .stop();
+      for (let i = 0; i < 300; i++) simulation.tick();
+
+      for (const s of sim) {
+        const row = getThreadNode(s.id);
+        if (row) saveThreadNode({ ...row, x: Math.round(s.x ?? row.x), y: Math.round(s.y ?? row.y) });
+      }
+      const pos = new Map(sim.map((s) => [s.id, { x: Math.round(s.x ?? 0), y: Math.round(s.y ?? 0) }]));
+      return prev.map((n) => ({ ...n, position: pos.get(n.id) ?? n.position }));
+    });
+    setTimeout(() => rfRef.current?.fitView({ duration: 400, padding: 0.2 }), 50);
+  }, [edges]);
+
   const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
     e.preventDefault();
     const rf = rfRef.current;
@@ -225,20 +339,39 @@ export function ThreadsView({
     setMenu({ x: clientX, y: clientY, flow: rf.screenToFlowPosition({ x: clientX, y: clientY }) });
   }, []);
 
+  // React Flow swallows right-clicks that land on a node, so the pane handler
+  // never fires there — wire the node handler too and record which node was hit
+  // (enables "Delete node").
+  const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
+    e.preventDefault();
+    const rf = rfRef.current;
+    if (!rf) return;
+    const { clientX, clientY } = e;
+    setMenu({ x: clientX, y: clientY, flow: rf.screenToFlowPosition({ x: clientX, y: clientY }), nodeId: node.id });
+  }, []);
+
+  // Route through deleteElements so removals reuse onNodesChange's teardown
+  // (kills any owned canvas session + drops the row).
+  const deleteNodes = useCallback((ids: string[]) => {
+    rfRef.current?.deleteElements({ nodes: ids.map((id) => ({ id })) });
+    setMenu(null);
+  }, []);
+
   const createNode = useCallback((kind: string) => {
-    setMenu((m) => {
-      if (!m) return null;
-      const size = KIND_SIZE[kind] ?? { w: 240, h: 140 };
-      const node: DbThreadNode = {
-        id: crypto.randomUUID(), threadId, kind,
-        x: m.flow.x, y: m.flow.y, width: size.w, height: size.h,
-        branchId: null, sessionId: null, data: null,
-      };
-      saveThreadNode(node);
-      setNodes((prev) => [...prev, toFlowNode(node)]);
-      return null;
-    });
-  }, [threadId]);
+    const size = KIND_SIZE[kind] ?? { w: 240, h: 140 };
+    // Right-click menu gives an anchor; toolbar has none → drop at viewport centre.
+    const flow = menu?.flow
+      ?? rfRef.current?.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+      ?? { x: 0, y: 0 };
+    const node: DbThreadNode = {
+      id: crypto.randomUUID(), threadId, kind,
+      x: flow.x, y: flow.y, width: size.w, height: size.h,
+      branchId: null, sessionId: null, data: null,
+    };
+    saveThreadNode(node);
+    setNodes((prev) => [...prev, toFlowNode(node)]);
+    setMenu(null);
+  }, [threadId, menu]);
 
   // A chat node's launch proposal → spawn an `agent` node on this canvas (plan
   // §6.4). The session is spawned first (canvas-placed, no tab), then the node is
@@ -303,8 +436,9 @@ export function ThreadsView({
       worktrees,
       createCanvasWorktree: createCanvasWorktree ? (name: string) => createCanvasWorktree(projectId, name) : undefined,
       autoNameThread: autoNameThread ? (firstMessage: string) => autoNameThread(threadId, firstMessage) : undefined,
+      setNodeCollapsed,
     }),
-    [projectId, threadId, projectPath, atlasIndexed, launchAgentNode, spawnCanvasSession, resumeCanvasSession, closeCanvasSession, worktrees, createCanvasWorktree, autoNameThread],
+    [projectId, threadId, projectPath, atlasIndexed, launchAgentNode, spawnCanvasSession, resumeCanvasSession, closeCanvasSession, worktrees, createCanvasWorktree, autoNameThread, setNodeCollapsed],
   );
 
   // Wait for hydration so the saved viewport applies on ReactFlow mount
@@ -330,46 +464,123 @@ export function ThreadsView({
         onMove={onMove}
         onPaneClick={() => setMenu(null)}
         onPaneContextMenu={onPaneContextMenu}
+        onNodeContextMenu={onNodeContextMenu}
         defaultViewport={defaultViewport}
         fitView={!defaultViewport}
         proOptions={{ hideAttribution: true }}
         colorMode={theme.type}
       >
-        <Background bgColor="var(--tempest-bg-base)" color="var(--tempest-border-subtle)" />
+        <Background bgColor="var(--tempest-bg-editor)" color="var(--tempest-border-subtle)" gap={28} size={2.5} />
         <Controls />
         <MiniMap pannable zoomable />
+        <Panel position="top-center">
+          <div
+            style={{
+              display: "flex", gap: 2, padding: 3, borderRadius: 999,
+              background: "var(--tempest-bg-elevated, #161616)",
+              border: "1px solid var(--tempest-border-subtle, #2a2a2a)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+            }}
+          >
+            {([
+              { title: "Tidy canvas", Icon: LayoutGrid, onClick: tidy },
+              { title: "Minimize all nodes", Icon: Minimize2, onClick: () => setAllCollapsed(true) },
+              { title: "Maximize all nodes", Icon: Maximize2, onClick: () => setAllCollapsed(false) },
+              "sep",
+              { title: "Add chat node", Icon: MessagesSquare, onClick: () => createNode("chat") },
+              { title: "Add text note", Icon: StickyNote, onClick: () => createNode("text") },
+              { title: "Add agent node", Icon: Bot, onClick: () => createNode("agent") },
+              { title: "Add terminal node", Icon: SquareTerminal, onClick: () => createNode("terminal") },
+            ] as const).map((b, i, arr) =>
+              b === "sep" ? (
+                <div key={i} style={{ width: 1, alignSelf: "stretch", margin: "2px 3px", background: "var(--tempest-border-subtle, #2a2a2a)" }} />
+              ) : (
+                <Tooltip key={b.title} content={b.title} placement="bottom">
+                  <button
+                    onClick={b.onClick}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 28, height: 28, border: "none",
+                      borderRadius: [
+                        i === 0 ? 999 : 5,
+                        i === arr.length - 1 ? 999 : 5,
+                        i === arr.length - 1 ? 999 : 5,
+                        i === 0 ? 999 : 5,
+                      ].map((r) => `${r}px`).join(" "),
+                      background: "transparent", color: "var(--tempest-fg-default, #e6e6e6)", cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--tempest-bg-hover, #232323)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <b.Icon size={15} />
+                  </button>
+                </Tooltip>
+              )
+            )}
+          </div>
+        </Panel>
         <ClickConnectLine />
       </ReactFlow>
 
       {menu && (
         <div
+          ref={menuRef}
           className="thread-node-menu"
-          style={{
-            position: "fixed", top: menu.y, left: menu.x, zIndex: 10,
-            minWidth: 140, padding: 4, borderRadius: 8,
-            background: "var(--tempest-bg-elevated, #161616)",
-            border: "1px solid var(--tempest-border-subtle, #2a2a2a)",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-            font: '13px "Geist", system-ui, sans-serif',
-          }}
+          style={{ position: "fixed", top: menu.y, left: menu.x, zIndex: 10, ...menuStyle }}
           onContextMenu={(e) => e.preventDefault()}
         >
+          <div style={menuLabelStyle}>Canvas</div>
           {[
-            { kind: "chat", label: "Add Chat node", Icon: MessagesSquare },
-            { kind: "text", label: "Add Text note", Icon: StickyNote },
-            { kind: "agent", label: "Add Agent node", Icon: Bot },
-            { kind: "terminal", label: "Add Terminal node", Icon: SquareTerminal },
+            { label: "Tidy canvas", Icon: LayoutGrid, run: tidy },
+            { label: "Minimize all", Icon: Minimize2, run: () => setAllCollapsed(true) },
+            { label: "Maximize all", Icon: Maximize2, run: () => setAllCollapsed(false) },
+          ].map((item) => (
+            <button
+              key={item.label}
+              onClick={() => { item.run(); setMenu(null); }}
+              style={menuItemStyle}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--tempest-bg-hover, #232323)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              <item.Icon size={15} style={{ flexShrink: 0, opacity: 0.8 }} />
+              {item.label}
+            </button>
+          ))}
+
+          <div style={menuSepStyle} />
+
+          <div style={menuLabelStyle}>Add node</div>
+          {[
+            { kind: "chat", label: "Chat node", Icon: MessagesSquare },
+            { kind: "text", label: "Text note", Icon: StickyNote },
+            { kind: "agent", label: "Agent node", Icon: Bot },
+            { kind: "terminal", label: "Terminal node", Icon: SquareTerminal },
           ].map((item) => (
             <button
               key={item.kind}
               onClick={() => createNode(item.kind)}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
-                padding: "6px 10px", borderRadius: 5, border: "none",
-                background: "transparent", color: "var(--tempest-fg-default, #e6e6e6)",
-                cursor: "pointer", font: "inherit",
-              }}
+              style={menuItemStyle}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--tempest-bg-hover, #232323)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              <item.Icon size={15} style={{ flexShrink: 0, opacity: 0.8 }} />
+              {item.label}
+            </button>
+          ))}
+
+          <div style={menuSepStyle} />
+
+          <div style={menuLabelStyle}>Danger</div>
+          {[
+            { key: "one", label: "Delete node", Icon: Trash2, disabled: !menu.nodeId, run: () => menu.nodeId && deleteNodes([menu.nodeId]) },
+            { key: "all", label: "Delete all nodes", Icon: Trash, disabled: nodes.length === 0, run: () => deleteNodes(nodes.map((n) => n.id)) },
+          ].map((item) => (
+            <button
+              key={item.key}
+              disabled={item.disabled}
+              onClick={item.run}
+              style={{ ...menuItemStyle, color: "var(--tempest-accent-red, #e5484d)", opacity: item.disabled ? 0.4 : 1, cursor: item.disabled ? "not-allowed" : "pointer" }}
+              onMouseEnter={(e) => { if (!item.disabled) e.currentTarget.style.background = "var(--tempest-bg-hover, #232323)"; }}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
               <item.Icon size={15} style={{ flexShrink: 0, opacity: 0.8 }} />

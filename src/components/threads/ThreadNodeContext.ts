@@ -27,6 +27,9 @@ export interface ThreadNodeCtx {
   // Auto-name this canvas from a chat node's first message (plan §11.2). No-op
   // unless the canvas still holds its default name. Bound to this thread's id.
   autoNameThread?: (firstMessage: string) => void;
+  // Collapse/expand a node to its compact gist pill (data.collapsed). Owned by
+  // ThreadsView so it rebuilds the flow node (dimensions + data) in one place.
+  setNodeCollapsed?: (id: string, collapsed: boolean) => void;
 }
 
 export const ThreadNodeContext = createContext<ThreadNodeCtx | null>(null);

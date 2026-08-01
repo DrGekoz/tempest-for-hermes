@@ -11,6 +11,7 @@ import {
   Code, List, ListOrdered, Quote,
 } from "lucide-react";
 import { NodeConnector } from "./NodeConnector";
+import { CollapsedNode } from "./CollapsedNode";
 import { markdownLivePreview, livePreviewTheme } from "./markdownLivePreview";
 import { applyWrap, applyLineOp, type LineOp } from "./markdownEdit";
 import { getNodeData, patchNodeData, patchNodeDataLocal } from "../../../store/threads";
@@ -91,7 +92,8 @@ const TOOLS: (Tool | null)[] = [
   { title: "Quote", Icon: Quote, run: (v) => lineOp(v, "quote") },
 ];
 
-export function TextNode({ id }: { id: string }) {
+export function TextNode({ id, data }: { id: string; data?: { collapsed?: boolean } }) {
+  const collapsed = data?.collapsed ?? false;
   const { deleteElements } = useReactFlow();
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -123,6 +125,11 @@ export function TextNode({ id }: { id: string }) {
     patchNodeData(id, { title: t });
   }
 
+  // Recreate the editor whenever the container mounts — including on expand from
+  // collapsed, where the old body DOM was unmounted (containerRef went null) and
+  // this effect must re-attach a fresh EditorView. `collapsed` in the deps forces
+  // that teardown/rebuild; the doc is seeded from bodyRef (latest, committed on
+  // collapse), so no content is lost across minimize/maximize.
   useEffect(() => {
     if (!containerRef.current) return;
     const commit = () => patchNodeData(id, { body: bodyRef.current });
@@ -168,7 +175,7 @@ export function TextNode({ id }: { id: string }) {
     });
     viewRef.current = view;
     return () => { commit(); view.destroy(); viewRef.current = null; };
-  }, [id]);
+  }, [id, collapsed]);
 
   // Double-click enters edit mode: the editor becomes editable + focused;
   // blur (handled above) drops back to read-only so the node drags again.
@@ -207,6 +214,8 @@ export function TextNode({ id }: { id: string }) {
       </button>
     ),
   );
+
+  if (collapsed) return <CollapsedNode id={id} />;
 
   return (
     <div

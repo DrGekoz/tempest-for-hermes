@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { NodeResizeControl, ResizeControlVariant, useReactFlow, useNodeConnections } from "@xyflow/react";
 import { Trash2, Pencil, Plus, ArrowUp, ChevronDown, Search } from "lucide-react";
 import { NodeConnector } from "./NodeConnector";
+import { CollapsedNode } from "./CollapsedNode";
 import { getNodeData, patchNodeData, getThreadNode, getThreadNodes, getThreadEdges } from "../../../store/threads";
 import { getBranch } from "../../../store/sessions";
 import { sessionManager } from "../../../store/sessionManager";
@@ -138,7 +139,7 @@ export function buildAgentSeedContext(threadId: string, sourceNodeId?: string): 
 // the footer holds the composer. Streaming, tools, and project-context injection
 // are wired against the same libs as the old ChatNode; history is node-scoped via
 // threadMessages. Slash/@ affordances and the system-prompt popover are omitted.
-export function ChatNode({ id }: { id: string }) {
+export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolean } }) {
   const { deleteElements } = useReactFlow();
   const ctx = useContext(ThreadNodeContext);
   const projectPath = ctx?.projectPath;
@@ -419,6 +420,8 @@ export function ChatNode({ id }: { id: string }) {
   const ctxUsedK  = (contextTokens / 1000).toFixed(1);
   const ctxTotalK = Math.round(ctxSize / 1000);
   const ctxLeftK  = ((ctxSize - contextTokens) / 1000).toFixed(1);
+
+  if (data?.collapsed) return <CollapsedNode id={id} />;
 
   return (
     <div

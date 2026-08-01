@@ -7,177 +7,428 @@
 .nsm {
   position: fixed;
   z-index: 301;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   background: var(--tempest-bg-sidebar);
   border: 1px solid var(--tempest-border-default);
   border-radius: 8px;
-  padding: 4px;
-  min-width: 248px;
+  padding: 6px;
+  width: 264px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
-.nsm-item {
+/* ── Tabs (pill style, matching the right sidebar) ────────────────────────── */
+.nsm-tabs {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
+  align-items: center;
+  gap: 2px;
+  /* Bleed into the parent's top + side padding so the strip is flush with the
+     box edges and reads as its header. Bottom keeps the normal 6px flex gap. */
+  margin: -6px -6px 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--tempest-ui-tab-pill-bg);
+  border: none;
+  border-bottom: 1px solid var(--tempest-border-default);
+  /* Match the parent's 8px rounding at the top; square where it meets content. */
+  border-radius: 8px 8px 0 0;
+}
+
+.nsm-tab {
+  flex: 1;
   padding: 9px 10px;
   background: transparent;
   border: none;
+  border-radius: 0;
+  color: var(--tempest-ui-tab-inactive-fg);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 450;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.nsm-tab:hover:not(.nsm-tab--active):not(.nsm-tab--disabled) {
+  color: var(--tempest-ui-tab-hover-fg);
+}
+
+.nsm-tab--active {
+  background: var(--tempest-ui-tab-active);
+  color: var(--tempest-fg-default);
+  font-weight: 500;
+}
+
+.nsm-tab--disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* ── Branch controls ──────────────────────────────────────────────────────── */
+.nsm-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nsm-branch-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--tempest-ui-tab-pill-bg);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 999px;
+}
+
+.nsm-branch-opt {
+  flex: 1;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--tempest-ui-tab-inactive-fg);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.nsm-branch-opt:hover:not(.nsm-branch-opt--active):not(.nsm-branch-opt--disabled) {
+  color: var(--tempest-ui-tab-hover-fg);
+}
+
+.nsm-branch-opt--active {
+  background: var(--tempest-ui-tab-active);
+  color: var(--tempest-fg-default);
+  font-weight: 500;
+  box-shadow: 0 1px 3px var(--tempest-ui-shadow-sm);
+}
+
+.nsm-branch-opt--disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.nsm-input {
+  width: 100%;
+  padding: 7px 9px;
+  background: var(--tempest-bg-default);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 5px;
   color: var(--tempest-fg-default);
   font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s;
-  position: relative;
-  user-select: none;
+  font-size: 12.5px;
+  outline: none;
 }
 
-.nsm-item:hover:not(.nsm-item--disabled) {
+.nsm-input:focus {
+  border-color: var(--tempest-border-subtle);
+}
+
+.nsm-name-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--tempest-bg-default);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 5px;
+}
+
+.nsm-name-wrap:focus-within {
+  border-color: var(--tempest-border-subtle);
+}
+
+.nsm-name-prefix {
+  padding-left: 9px;
+  font-family: "Geist Mono", monospace;
+  font-size: 12px;
+  color: var(--tempest-fg-subtle);
+  white-space: nowrap;
+}
+
+.nsm-name {
+  border: none;
+  background: transparent;
+}
+
+.nsm-name:focus {
+  border: none;
+}
+
+/* Existing-branch dropdown */
+.nsm-drop {
+  position: relative;
+}
+
+.nsm-drop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nsm-drop-placeholder {
+  color: var(--tempest-fg-subtle);
+}
+
+.nsm-drop-chevron {
+  flex-shrink: 0;
+  color: var(--tempest-fg-subtle);
+  transition: transform 0.12s;
+}
+
+.nsm-drop-chevron--open {
+  transform: rotate(180deg);
+}
+
+.nsm-drop-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 302;
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--tempest-bg-sidebar);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.nsm-drop-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--tempest-fg-default);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nsm-drop-item:hover,
+.nsm-drop-item--active {
   background: var(--tempest-bg-hover);
 }
 
-.nsm-item--sub {
-  cursor: default;
+.nsm-drop-item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.nsm-item--disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
-
-.nsm-item-icon {
+.nsm-drop-badge {
   flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--tempest-fg-muted);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--tempest-bg-inset, rgba(0, 0, 0, 0.2));
+  color: var(--tempest-fg-subtle);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.nsm-item-text {
+/* ── Shared prompt box ────────────────────────────────────────────────────── */
+.nsm-prompt {
+  width: 100%;
+  resize: none;
+  padding: 7px 9px;
+  background: var(--tempest-bg-default);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 5px;
+  color: var(--tempest-fg-default);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  outline: none;
+}
+
+.nsm-prompt::placeholder {
+  color: var(--tempest-fg-subtle);
+}
+
+.nsm-prompt:focus {
+  border-color: var(--tempest-border-subtle);
+}
+
+/* ── Launch list (Terminal + agents) ──────────────────────────────────────── */
+.nsm-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  flex: 1;
-}
-
-.nsm-item-label {
-  font-size: 13px;
-  color: var(--tempest-fg-default);
-}
-
-.nsm-item-desc {
-  font-size: 11px;
-  color: var(--tempest-fg-subtle);
-}
-
-.nsm-item-chevron {
-  flex-shrink: 0;
-  color: var(--tempest-fg-subtle);
-  margin-top: 3px;
-}
-
-.nsm-submenu {
-  position: absolute;
-  left: calc(100% + 4px);
-  top: -4px;
-  background: var(--tempest-bg-sidebar);
-  border: 1px solid var(--tempest-border-default);
-  border-radius: 8px;
-  padding: 4px;
-  min-width: 228px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  z-index: 302;
+  gap: 1px;
+  max-height: 260px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.nsm-submenu::-webkit-scrollbar {
+.nsm-list--dim {
+  opacity: 0.5;
+}
+
+.nsm-list::-webkit-scrollbar {
   width: 4px;
 }
 
-.nsm-submenu::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.nsm-submenu::-webkit-scrollbar-thumb {
+.nsm-list::-webkit-scrollbar-thumb {
   background: var(--tempest-border-subtle);
   border-radius: 2px;
 }
 
-.nsm-subitem {
-  display: flex;
-  align-items: center;
-  border-radius: 5px;
-  transition: background 0.1s;
-}
-
-.nsm-subitem:hover:not(.nsm-subitem--unavailable) {
-  background: var(--tempest-bg-hover);
-}
-
-.nsm-subitem--unavailable {
-  opacity: 0.42;
-}
-
-.nsm-subitem-main {
+.nsm-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
-  padding: 8px 10px;
+  width: 100%;
+  padding: 7px 9px;
   background: transparent;
   border: none;
   border-radius: 5px;
+  color: var(--tempest-fg-default);
   font-family: inherit;
   cursor: pointer;
   text-align: left;
 }
 
-.nsm-subitem--unavailable .nsm-subitem-main {
+.nsm-row--agent {
+  padding: 0;
+}
+
+.nsm-row--active,
+.nsm-row:hover:not(.nsm-row--unavailable) {
+  background: var(--tempest-bg-hover);
+}
+
+.nsm-row--unavailable,
+.nsm-row:disabled {
+  opacity: 0.42;
+}
+
+.nsm-row:disabled {
   cursor: not-allowed;
 }
 
-.nsm-subitem-dl {
-  flex-shrink: 0;
+.nsm-row:disabled:hover {
+  background: transparent;
+}
+
+.nsm-row-main {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  margin-right: 4px;
+  gap: 8px;
+  flex: 1;
+  padding: 7px 9px;
   background: transparent;
-  border: 1px solid var(--tempest-border-default);
-  border-radius: 4px;
-  color: var(--tempest-fg-muted);
+  border: none;
+  border-radius: 5px;
+  color: inherit;
+  font-family: inherit;
   cursor: pointer;
+  text-align: left;
 }
 
-.nsm-subitem-dl:hover {
-  background: var(--tempest-bg-hover);
-  color: var(--tempest-fg-default);
-  opacity: 1;
+.nsm-row--unavailable .nsm-row-main {
+  cursor: not-allowed;
 }
 
-.nsm-subitem-icon {
+.nsm-row-icon {
   flex-shrink: 0;
+  color: var(--tempest-fg-muted);
 }
 
 [data-theme="dark"] .agent-icon--mono {
   filter: invert(1);
 }
 
-.nsm-subitem-name {
+.nsm-row-label {
   flex: 1;
   font-size: 13px;
-  color: var(--tempest-fg-default);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.nsm-subitem-hint {
+.nsm-row-dl {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  margin-right: 5px;
+  background: transparent;
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 4px;
+  color: var(--tempest-fg-muted);
+  font-family: inherit;
   font-size: 11px;
+  cursor: pointer;
+}
+
+.nsm-row-dl:hover {
+  background: var(--tempest-bg-hover);
+  color: var(--tempest-fg-default);
+  opacity: 1;
+}
+
+/* ── Workspace-level strip ────────────────────────────────────────────────── */
+.nsm-sep {
+  height: 1px;
+  background: var(--tempest-border-subtle);
+  margin: 1px 0;
+}
+
+/* ── Git footer ───────────────────────────────────────────────────────────── */
+.nsm-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  background: var(--tempest-bg-inset, rgba(0, 0, 0, 0.12));
+  border-radius: 5px;
+}
+
+.nsm-footer-icon {
+  flex-shrink: 0;
   color: var(--tempest-fg-subtle);
-  font-family: "Geist Mono", monospace;
-  white-space: nowrap;
+}
+
+.nsm-footer-text {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--tempest-fg-subtle);
+}
+
+.nsm-footer-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 4px;
+  color: var(--tempest-fg-default);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.nsm-footer-btn:hover:not(:disabled) {
+  background: var(--tempest-bg-hover);
+}
+
+.nsm-footer-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }

@@ -34,8 +34,12 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. Ignore `src-tauri` (Rust) and `.tempest/` — the latter holds Tempest's
+      //    own worktrees, logs, atlas index, and session pid files. When Tempest is
+      //    run on its own repo (dogfooding), creating a worktree checks a full source
+      //    tree into `.tempest/<branch>/`; without this, Vite sees those files and
+      //    triggers a full page reload mid-action.
+      ignored: ["**/src-tauri/**", "**/.tempest/**"],
     },
   },
 }));
