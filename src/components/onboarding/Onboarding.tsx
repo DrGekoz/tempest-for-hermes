@@ -39,6 +39,9 @@ export default function Onboarding({ onComplete }: Props) {
   return (
     <div className="ob-root">
 
+      {/* Ambient glow — shared across all onboarding pages */}
+      <div aria-hidden className="ob-glow" />
+
       {/* Drag region + window controls */}
       <div className="ob-drag">
         <button className="ob-win-btn" onClick={() => win.minimize()}>
@@ -52,12 +55,9 @@ export default function Onboarding({ onComplete }: Props) {
         </button>
       </div>
 
-      {/* ── Page 0 — Welcome ── */}
+      {/* ── Page 0 — Welcome (new UI) ── */}
       {page === 0 && (
-        <WelcomePage
-          onStart={() => setPage(1)}
-          onSkip={onComplete}
-        />
+        <WelcomePage onComplete={() => setPage(1)} />
       )}
 
       {/* ── Page 1 — BYOK ── */}

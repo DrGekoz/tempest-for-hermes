@@ -232,7 +232,7 @@ export default function BYOKPage({ onBack, onComplete }: Props) {
               Bring your own key
             </div>
             <div style={{ fontSize: '13px', color: 'var(--tempest-fg-muted)', lineHeight: 1.6 }}>
-              This powers the <strong style={{ color: 'var(--tempest-fg-default)', fontWeight: 600 }}>Chat tab</strong> — a direct conversation interface with the model of your choice, separate from your CLI agents. Your key stays on your machine and is never sent to Tempest's servers. You can add or change it later in Settings.
+              This powers the <strong style={{ color: 'var(--tempest-fg-default)', fontWeight: 600 }}>Threads tab</strong> — a direct conversation interface with the model of your choice, separate from your CLI agents. Your key stays on your machine and is never sent to Tempest's servers. You can add or change it later in Settings.
             </div>
           </div>
 

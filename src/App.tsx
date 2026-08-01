@@ -8,11 +8,15 @@ import { checkAgentAvailability } from "./store/agentAvailability";
 import { startRemoteAgentsFetch } from "./lib/remoteAgents";
 import "./App.css";
 
+// Dev-only: set VITE_FORCE_ONBOARDING=true in .env.local to always land on onboarding. Prod builds ignore it (DEV-gated).
+const FORCE_ONBOARDING =
+  import.meta.env.DEV && import.meta.env.VITE_FORCE_ONBOARDING === "true";
+
 export default function App() {
   const [zenProject, setZenProject] = useState<{ name: string; path: string } | null>(null);
   const [ready, setReady] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(
-    () => getRuntimeState().onboardingComplete
+    () => !FORCE_ONBOARDING && getRuntimeState().onboardingComplete
   );
 
   useEffect(() => {

@@ -1,82 +1,54 @@
-import { ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { CircleArrowRight } from 'lucide-react';
+import { getVersion } from '@tauri-apps/api/app';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { MetalFx } from 'metal-fx';
 import { useTheme } from '../../themes/ThemeContext';
 import { TempestLogo } from '../../assets/TempestLogo';
-import screenshotDark from '../../assets/onboarding/screenshot-dark.png';
-import screenshotLight from '../../assets/onboarding/screenshot-light.png';
 
-// Preload both at module load time so they're decoded before the page renders
-const _preloadDark = new Image(); _preloadDark.src = screenshotDark;
-const _preloadLight = new Image(); _preloadLight.src = screenshotLight;
-
-interface Props {
-  onStart: () => void;
-  onSkip: () => void;
-}
+interface Props { onComplete: () => void; }
 
 // ── Page 0 — Welcome ────────────────────────────────────────────
-export default function WelcomePage({ onStart, onSkip }: Props) {
+export default function WelcomePage({ onComplete }: Props) {
   const { theme } = useTheme();
-  const screenshot = theme.type === 'dark' ? screenshotDark : screenshotLight;
+  const isDark = theme.type === 'dark';
+
+  const [version, setVersion] = useState('');
+  useEffect(() => { getVersion().then(setVersion); }, []);
 
   return (
-    <div className="ob-page" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 48px 28px', gap: 0 }}>
-
-      {/* Hero heading */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginBottom: '22px' }}>
-
-        {/* Wordmark */}
-        <TempestLogo style={{ height: '36px', width: 'auto', color: 'var(--tempest-fg-default)' }} />
-
+    <div className="ob-blank">
+      <div className="ob-blank-license">
+        <span>Apache 2.0 License</span>
+        <span className="ob-license-sep">·</span>
+        <button className="ob-license-link" onClick={() => openUrl('https://tempestai.dev/privacy-policy').catch(() => {})}>Privacy Policy</button>
+        <span className="ob-license-sep">·</span>
+        <button className="ob-license-link" onClick={() => openUrl('https://tempestai.dev/terms').catch(() => {})}>Terms &amp; Conditions</button>
+      </div>
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '18px', transform: 'translateY(3px)' }}>
+        <TempestLogo style={{ height: '36px', width: 'auto', alignSelf: 'flex-start', transform: 'translateY(-6px)', color: 'var(--tempest-fg-default)' }} />
         <p style={{
-          fontSize: '20px',
-          fontWeight: 600,
-          color: 'var(--tempest-fg-default)',
-          letterSpacing: '-0.3px',
-          textAlign: 'center',
-          lineHeight: 1.3,
-          marginTop: '6px',
+          fontSize: '16px',
+          fontWeight: 400,
+          color: 'var(--tempest-fg-muted)',
+          letterSpacing: '-0.2px',
+          lineHeight: 1.4,
+          maxWidth: '452px',
+          margin: '-8px 0 0',
         }}>
-          The Agentic IDE
+          Run your AI coding agents in parallel with 64% fewer tokens and deeper codebase understanding
         </p>
-
-        <p style={{
-          fontSize: '15px',
-          fontWeight: 600,
-          color: 'var(--tempest-fg-default)',
-          textAlign: 'center',
-          lineHeight: 1.5,
-          maxWidth: '340px',
-        }}>
-          Run parallel AI agents with 64% fewer tokens and deeper codebase understanding.
-        </p>
+        <MetalFx className="ob-metal" preset="chromatic" strength={0.78} theme={isDark ? 'light' : 'dark'} borderRadius={8} ringCssPx={3}>
+          <button className="ob-blank-btn" onClick={onComplete}>
+            Get Started
+            <CircleArrowRight size={21} />
+          </button>
+        </MetalFx>
       </div>
 
-      {/* Hero screenshot */}
-      <div style={{ width: '100%', maxWidth: '1020px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <img
-          src={screenshot}
-          alt="Tempest — parallel AI agent sessions"
-          style={{
-            maxWidth: '100%',
-            maxHeight: '480px',
-            objectFit: 'contain',
-            borderRadius: '6px',
-            display: 'block',
-            boxShadow: '0 4px 32px var(--tempest-ui-shadow-md)',
-          }}
-        />
+      <div className="ob-box">
+        {version && <span className="ob-blank-version">v{version}</span>}
       </div>
-
-      {/* CTA */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginTop: '22px' }}>
-        <button className="ob-btn-cta" onClick={onStart}>
-          Get Started <ArrowRight size={17} />
-        </button>
-        <button className="ob-btn-skip" onClick={onSkip}>
-          Skip setup
-        </button>
-      </div>
-
     </div>
   );
 }
