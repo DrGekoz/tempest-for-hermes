@@ -2140,6 +2140,45 @@
   flex-shrink: 0;
 }
 
+/* Threads dropdown — dedicated copy so it can be styled independently */
+.sidebar-thread-session {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px 5px 8px;
+  background: transparent;
+  border: none;
+  color: var(--tempest-fg-muted);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-thread-session:hover {
+  background: var(--tempest-bg-hover);
+  color: var(--tempest-fg-default);
+}
+
+.sidebar-thread-session--active {
+  background: var(--tempest-bg-active);
+  color: var(--tempest-fg-default);
+}
+
+.sidebar-thread-session svg {
+  flex-shrink: 0;
+}
+
+.sidebar-thread-session .sidebar-project-add-btn {
+  margin-left: auto;
+}
+
 
 /* Add Workspace button */
 

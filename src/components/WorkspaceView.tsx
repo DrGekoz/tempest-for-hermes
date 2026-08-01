@@ -2420,7 +2420,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                             return (
                               <div className="sidebar-session-group">
                                 <div
-                                  className="sidebar-project-session"
+                                  className="sidebar-thread-session"
                                   style={{ cursor: "pointer" }}
                                   onClick={() => { ensureThreadsLoaded(project.id); toggleWorktree(threadsKey); }}
                                 >
@@ -2431,7 +2431,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                     onClick={(e) => { e.stopPropagation(); ensureThreadsLoaded(project.id); createThread(project.id); }}
                                     aria-label="New thread"
                                   >
-                                    <Plus size={12} />
+                                    <Plus size={10} />
                                   </button>
                                 </div>
                                 {threadsExpanded && canvases.map((c) => (
@@ -2451,7 +2451,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                                   ) : (
                                     <div key={c.id} style={{ display: "flex", alignItems: "center" }}>
                                       <button
-                                        className={`sidebar-project-session${c.id === activeSessionId ? " sidebar-project-session--active" : ""}`}
+                                        className={`sidebar-thread-session${c.id === activeSessionId ? " sidebar-thread-session--active" : ""}`}
                                         style={{ flex: 1 }}
                                         onClick={() => openThreadTab(project.id, c.id)}
                                         onDoubleClick={() => { setThreadRenameValue(c.name); setRenamingThreadId(c.id); }}
