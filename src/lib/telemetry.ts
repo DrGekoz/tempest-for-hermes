@@ -11,7 +11,7 @@
 // Every state transition and every event is logged to the console so there is a
 // visible, auditable trail of exactly when anything wakes up or fires.
 import { getSettings, updateSetting } from "../store/appSettings";
-import { getRuntimeState, setRuntimeState } from "./runtimeState";
+import { dbLoadAppState, dbSetAppState } from "./db";
 
 // Sourced from build-time env so the key is never hardcoded. If absent,
 // telemetry stays fully dormant regardless of consent — a fourth safety gate.
@@ -20,6 +20,20 @@ const POSTHOG_HOST =
   (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ?? "https://us.i.posthog.com";
 
 const LOG = "[telemetry]";
+// Dedicated row in the SQLite `app_state` table — independent of the runtime
+// blob, so it survives any settings/runtime reset. One install = one id.
+const ANON_KEY = "telemetry_anon_id";
+
+/** Read the durable anonymous id from SQLite, minting + persisting on first use. */
+async function anonId(): Promise<string> {
+  const rows = await dbLoadAppState();
+  const existing = new Map(rows).get(ANON_KEY);
+  if (existing) return existing;
+  const id = crypto.randomUUID();
+  await dbSetAppState(ANON_KEY, id);
+  console.info(`${LOG} minted anonymous id (first opt-in)`);
+  return id;
+}
 
 type PostHog = typeof import("posthog-js")["default"];
 let ph: PostHog | null = null; // set only after a real, consented init
@@ -39,15 +53,10 @@ async function ensureInit(): Promise<PostHog | null> {
   }
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    // Durable anonymous id, minted once at first opt-in and kept on disk. Pinning
-    // distinct_id here means the identity is ours, stable across restarts and
-    // localStorage clears — and we never call identify(), so it stays anonymous.
-    let anonId = getRuntimeState().telemetryAnonId;
-    if (!anonId) {
-      anonId = crypto.randomUUID();
-      setRuntimeState({ telemetryAnonId: anonId });
-      console.info(`${LOG} minted anonymous id (first opt-in)`);
-    }
+    // Durable anonymous id from SQLite. Pinning distinct_id to it means the
+    // identity is ours, stable across restarts and localStorage clears — and we
+    // never call identify(), so it stays anonymous.
+    const id = await anonId();
     console.info(`${LOG} consent present — loading PostHog for the first time`);
     const posthog = (await import("posthog-js")).default;
     posthog.init(POSTHOG_KEY, {
@@ -56,8 +65,8 @@ async function ensureInit(): Promise<PostHog | null> {
       capture_pageview: false,
       disable_session_recording: true,
       persistence: "localStorage",
-      bootstrap: { distinctID: anonId },
-      loaded: () => console.info(`${LOG} PostHog initialized as ${anonId} — events will now be sent`),
+      bootstrap: { distinctID: id },
+      loaded: () => console.info(`${LOG} PostHog initialized as ${id} — events will now be sent`),
     });
     ph = posthog;
     return posthog;
