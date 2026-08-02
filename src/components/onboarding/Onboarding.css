@@ -46,20 +46,25 @@
     transparent 70%);
 }
 
-.ob-blank-version {
+/* Bottom row — license on the left, version on the right, same baseline */
+.ob-footer {
+  z-index: 1;
   position: absolute;
-  bottom: 16px;
-  right: 16px;
+  bottom: calc(5% + 16px);
+  left: 81px;
+  right: 81px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ob-blank-version {
   font-size: 12px;
   color: var(--tempest-fg-subtle);
   letter-spacing: 0.2px;
 }
 
 .ob-blank-license {
-  z-index: 1;
-  position: absolute;
-  bottom: calc(5% + 16px);
-  left: 81px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -83,7 +88,6 @@
 }
 .ob-license-link:hover {
   color: var(--tempest-fg-default);
-  text-decoration: underline;
 }
 
 .ob-metal {

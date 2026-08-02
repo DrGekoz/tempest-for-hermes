@@ -18,13 +18,6 @@ export default function WelcomePage({ onComplete }: Props) {
 
   return (
     <div className="ob-blank">
-      <div className="ob-blank-license">
-        <span>Apache 2.0 License</span>
-        <span className="ob-license-sep">·</span>
-        <button className="ob-license-link" onClick={() => openUrl('https://tempestai.dev/privacy-policy').catch(() => {})}>Privacy Policy</button>
-        <span className="ob-license-sep">·</span>
-        <button className="ob-license-link" onClick={() => openUrl('https://tempestai.dev/terms').catch(() => {})}>Terms &amp; Conditions</button>
-      </div>
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '18px', transform: 'translateY(3px)' }}>
         <TempestLogo style={{ height: '36px', width: 'auto', alignSelf: 'flex-start', transform: 'translateY(-6px)', color: 'var(--tempest-fg-default)' }} />
         <p style={{
@@ -46,7 +39,16 @@ export default function WelcomePage({ onComplete }: Props) {
         </MetalFx>
       </div>
 
-      <div className="ob-box">
+      <div className="ob-box" />
+
+      <div className="ob-footer">
+        <div className="ob-blank-license">
+          <button className="ob-license-link" onClick={() => openUrl('https://github.com/tempestai-dev/tempest/blob/main/LICENSE').catch(() => {})}>Apache 2.0 License</button>
+          <span className="ob-license-sep">·</span>
+          <button className="ob-license-link" onClick={() => openUrl('https://tempestai.dev/privacy-policy').catch(() => {})}>Privacy Policy</button>
+          <span className="ob-license-sep">·</span>
+          <button className="ob-license-link" onClick={() => openUrl('https://tempestai.dev/terms').catch(() => {})}>Terms &amp; Conditions</button>
+        </div>
         {version && <span className="ob-blank-version">v{version}</span>}
       </div>
     </div>
