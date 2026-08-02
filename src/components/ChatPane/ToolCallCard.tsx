@@ -8,7 +8,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
   const [expanded, setExpanded] = useState(false);
   const preview = argsPreview(part.toolName, part.args);
   const Icon = getToolIcon(part.toolName);
-  const label = getToolLabel(part.toolName);
+  const label = getToolLabel(part.toolName, part.status === "running");
   const canExpand = part.status === "complete" && part.result != null;
   const dotState = part.status === "running" ? "running" : "complete";
 

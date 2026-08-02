@@ -57,14 +57,17 @@
 }
 
 /* Transparent full-screen catcher so an outside click closes the menu. */
+/* Above any popover this can live inside (e.g. the model picker at 9999) — a
+   floating select menu must always be topmost, else it opens behind and is
+   unclickable. */
 .sp-drop-overlay {
   position: fixed;
   inset: 0;
-  z-index: 590;
+  z-index: 10000;
 }
 
 .sp-drop-menu {
-  z-index: 600;
+  z-index: 10001;
   background: var(--tempest-bg-panel);
   border: 1px solid var(--tempest-border-default);
   border-radius: 6px;

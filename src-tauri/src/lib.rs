@@ -8,6 +8,7 @@ use hephaestus::Isolate;
 
 mod agent_hooks;
 mod canvas_mcp;
+mod claude_bridge;
 mod service_proxy;
 
 /// Managed slug → dev-server-port map, read by the reverse proxy in
@@ -3863,6 +3864,7 @@ pub fn run() {
         .manage(DaemonState(Mutex::new(std::collections::HashMap::new())))
         .manage(RunState(Mutex::new(std::collections::HashMap::new())))
         .manage(AtlasMcpState(Mutex::new(std::collections::HashMap::new())))
+        .manage(claude_bridge::ClaudeState(Arc::new(DashMap::new())))
         .setup(|app| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
@@ -3981,6 +3983,9 @@ pub fn run() {
             db_list_thread_edges,
             db_upsert_thread_edge,
             db_delete_thread_edge,
+            claude_bridge::claude_stream_start,
+            claude_bridge::claude_permission_decision,
+            claude_bridge::claude_stream_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -4005,6 +4010,9 @@ pub fn run() {
                     let _ = proc.child.wait();
                 }
                 drop(mcp_map);
+
+                // Kill any in-flight Claude Code chat-backend turns.
+                claude_bridge::kill_all(app_handle);
 
                 // Tear down every live PTY session so agent subprocesses (e.g.
                 // Notepad spawned via `Start-Process`) never outlive the app.

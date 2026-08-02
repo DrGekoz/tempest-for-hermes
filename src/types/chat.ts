@@ -20,7 +20,20 @@ export type ProposalPart = {
   dismissed: boolean;
 };
 
-export type MessagePart = TextPart | ToolCallPart | ProposalPart;
+// Claude Code (CLI backend) permission prompt. Emitted when the agent wants to
+// use a tool; the user approves/denies inline and the decision travels back to
+// the sidecar over stdin. `decision` set once resolved (freezes the card).
+export type PermissionPart = {
+  type: "permission";
+  id: string;
+  toolName: string;
+  title?: string;
+  description?: string;
+  input: unknown;
+  decision?: "allow" | "deny";
+};
+
+export type MessagePart = TextPart | ToolCallPart | ProposalPart | PermissionPart;
 
 export interface ChatMessage {
   id: string;

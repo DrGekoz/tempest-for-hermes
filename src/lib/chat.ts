@@ -29,7 +29,11 @@ export type ChatStreamEvent =
   | { type: "token";        delta: string }
   | { type: "tool-call";    id: string; toolName: string; args: unknown }
   | { type: "tool-result";  id: string; toolName: string; result: unknown }
-  | { type: "finish";       inputTokens: number; outputTokens: number }
+  | { type: "finish";       inputTokens: number; outputTokens: number; sessionId?: string }
+  // CLI-backend only: the harness wants to use a tool; UI shows an approve/deny card.
+  | { type: "permission-request"; id: string; toolName: string; title?: string; description?: string; input: unknown }
+  // CLI-backend only: the Claude session id, persisted on the node for `resume`.
+  | { type: "session";      sessionId: string }
   | { type: "error";        message: string };
 
 export interface StreamChatOptions {

@@ -1,4 +1,4 @@
-import { FileText, Folder, GitCommit, GitBranch, Bot, Database, Terminal } from "lucide-react";
+import { FileText, Folder, GitCommit, GitBranch, Bot, Database, Terminal, Search, Globe, Pencil, FilePlus2, ListChecks } from "lucide-react";
 import type React from "react";
 
 export interface ChatProvider {
@@ -25,6 +25,17 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
   { id: "groq",       label: "Groq",       icon: "groq.svg",            invert: true  },
   { id: "openrouter", label: "OpenRouter", icon: "openrouter.svg",      invert: true  },
   { id: "ollama",     label: "Ollama",     icon: "ollama.svg",          invert: true  },
+];
+
+// Claude Code (CLI backend) is its own category — NOT a BYOK provider. Its
+// picker id is CLAUDE_CODE; models are the CLI's real `--model` aliases. Selecting
+// one flips the chat node to backend "cli". First entry is the default (Haiku).
+export const CLAUDE_CODE = "claude-code";
+
+export const CLAUDE_CODE_MODELS: ChatModel[] = [
+  { id: "haiku",   label: "Haiku"   },
+  { id: "sonnet",  label: "Sonnet"  },
+  { id: "opus",    label: "Opus"    },
 ];
 
 export const PROVIDER_MODELS: Record<string, ChatModel[]> = {
@@ -197,12 +208,44 @@ export const TOOL_LABEL_MAP: Record<string, string> = {
   propose_agent_task: "Propose agent",
 };
 
+// Claude Code's native tool names (CLI backend). Paseo-style: an icon, a static
+// noun label, and a present-tense verb shown while the step is still running so
+// the user sees the live action ("Reading src/foo.ts"). argsPreview supplies the
+// target (basename / command / query).
+const CLI_TOOL_META: Record<string, { icon: LucideIcon; label: string; running: string }> = {
+  Read:         { icon: FileText,  label: "Read",       running: "Reading" },
+  Write:        { icon: FilePlus2, label: "Write",      running: "Writing" },
+  Edit:         { icon: Pencil,    label: "Edit",       running: "Editing" },
+  MultiEdit:    { icon: Pencil,    label: "Edit",       running: "Editing" },
+  NotebookEdit: { icon: Pencil,    label: "Edit",       running: "Editing" },
+  Bash:         { icon: Terminal,  label: "Shell",      running: "Running" },
+  BashOutput:   { icon: Terminal,  label: "Shell output", running: "Reading output" },
+  Grep:         { icon: Search,    label: "Search",     running: "Searching" },
+  Glob:         { icon: Search,    label: "Find",       running: "Finding" },
+  LS:           { icon: Folder,    label: "List",       running: "Listing" },
+  WebFetch:     { icon: Globe,     label: "Fetch",      running: "Fetching" },
+  WebSearch:    { icon: Globe,     label: "Web search", running: "Searching" },
+  Task:         { icon: Bot,       label: "Task",       running: "Working" },
+  TodoWrite:    { icon: ListChecks, label: "Plan",      running: "Planning" },
+};
+
+// mcp__<server>__<tool> → the leaf tool name, spaced (canvas MCP etc.).
+function mcpLeaf(toolName: string): string | null {
+  const m = toolName.match(/^mcp__[^_]+(?:_[^_]+)*__(.+)$/);
+  return m ? m[1].replace(/_/g, " ") : null;
+}
+
 export function getToolIcon(toolName: string): LucideIcon {
-  if (toolName.startsWith("atlas_")) return Database;
+  if (CLI_TOOL_META[toolName]) return CLI_TOOL_META[toolName].icon;
+  if (toolName.startsWith("atlas_") || toolName.startsWith("mcp__")) return Database;
   return TOOL_ICON_MAP[toolName] ?? Terminal;
 }
 
-export function getToolLabel(toolName: string): string {
+export function getToolLabel(toolName: string, running = false): string {
+  const cli = CLI_TOOL_META[toolName];
+  if (cli) return running ? cli.running : cli.label;
   if (toolName.startsWith("atlas_")) return toolName.slice(6).replace(/_/g, " ");
+  const leaf = mcpLeaf(toolName);
+  if (leaf) return leaf;
   return TOOL_LABEL_MAP[toolName] ?? toolName.replace(/_/g, " ");
 }

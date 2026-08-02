@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useContext } from "react";
 import { createPortal } from "react-dom";
 import { NodeResizeControl, ResizeControlVariant, useReactFlow, useNodeConnections } from "@xyflow/react";
-import { Trash2, Pencil, Plus, ArrowUp, ChevronDown, Search } from "lucide-react";
+import { Trash2, Pencil, Plus, ArrowUp, ChevronDown, Search, Terminal } from "lucide-react";
 import { NodeConnector } from "./NodeConnector";
 import { CollapsedNode } from "./CollapsedNode";
 import { getNodeData, patchNodeData, getThreadNode, getThreadNodes, getThreadEdges } from "../../../store/threads";
@@ -10,9 +10,10 @@ import { sessionManager } from "../../../store/sessionManager";
 import { getNodeMessages, loadNodeMessages, saveNodeMessages } from "../../../store/threadMessages";
 import { chatGist, firstLine, formatCanvasGraph, type CanvasNodeMeta } from "../canvasContext";
 import { getRuntimeState, setRuntimeState } from "../../../lib/runtimeState";
-import { CDN, CHAT_PROVIDERS, type ChatProvider, type ChatModel } from "../../../lib/chatModels";
+import { CDN, CHAT_PROVIDERS, CLAUDE_CODE, CLAUDE_CODE_MODELS, type ChatProvider, type ChatModel } from "../../../lib/chatModels";
 import { useModelManifest, contextSizeFor } from "../../../lib/remoteConfig";
-import { streamChat } from "../../../lib/chat";
+import { streamChat, type ChatStreamEvent } from "../../../lib/chat";
+import { streamClaudeCode, type ClaudeCodeStream } from "../../../lib/claudeCode";
 import { createChatTools } from "../../../lib/chatTools";
 import { ThreadNodeContext } from "../ThreadNodeContext";
 import { Markdown } from "../../Markdown";
@@ -23,7 +24,7 @@ import tempestChat from "../../../assets/tempest-chat.png";
 import "../../ChatPane.css";
 import "./TextNode.css";
 
-import type { TextPart, MessagePart, ChatMessage } from "../../../types/chat";
+import type { TextPart, MessagePart, ChatMessage, PermissionPart } from "../../../types/chat";
 
 // System prompt. No auto-injected project/git context — the model only sees what
 // the user types, the canvas nodes wired into this chat, and tool results it
@@ -143,6 +144,7 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
   const { deleteElements } = useReactFlow();
   const ctx = useContext(ThreadNodeContext);
   const projectPath = ctx?.projectPath;
+  const projectId = ctx?.projectId;
   const atlasIndexed = ctx?.atlasIndexed;
   const onLaunchAgent = ctx?.onLaunchAgent;
   const worktrees = ctx?.worktrees;
@@ -162,18 +164,27 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
   ];
 
   const manifest = useModelManifest();
+  // "api" = BYOK (Vercel AI SDK); "cli" = Claude Code harness (sidecar). Persisted per node.
+  const [backend, setBackend] = useState<"api" | "cli">(
+    () => getNodeData<{ backend?: "api" | "cli" }>(id).backend ?? "api",
+  );
   const [provider, setProvider] = useState<ChatProvider>(() => {
     const saved = getRuntimeState().chatProvider;
     return CHAT_PROVIDERS.find((p) => p.id === saved) ?? CHAT_PROVIDERS[0];
   });
   const [model, setModel] = useState<ChatModel>(() => {
+    const data = getNodeData<{ backend?: "api" | "cli"; cliModel?: string }>(id);
+    if (data.backend === "cli") return CLAUDE_CODE_MODELS.find((m) => m.id === data.cliModel) ?? CLAUDE_CODE_MODELS[0];
     const { chatProvider, chatModel } = getRuntimeState();
     const models = manifest.providers[chatProvider ?? "anthropic"] ?? [];
     return models.find((m) => m.id === chatModel) ?? manifest.providers["anthropic"][0];
   });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPos, setPickerPos] = useState({ bottom: 0, left: 0 });
-  const [pickerProvider, setPickerProvider] = useState(CHAT_PROVIDERS[0].id);
+  // Selected picker category: a BYOK provider id, or the special CLAUDE_CODE.
+  const [pickerProvider, setPickerProvider] = useState(
+    () => (getNodeData<{ backend?: "api" | "cli" }>(id).backend === "cli" ? CLAUDE_CODE : CHAT_PROVIDERS[0].id),
+  );
   const [search, setSearch] = useState("");
   const [isEmpty, setIsEmpty] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -185,9 +196,13 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
   const editableRef = useRef<HTMLDivElement>(null);
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const cancelRef = useRef<{ cancel: () => void } | null>(null);
+  const cancelRef = useRef<{ cancel: () => void; decide?: ClaudeCodeStream["decide"] } | null>(null);
   const streamingIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  // Live streaming buffer for the in-flight assistant turn. A ref (not a local in
+  // send) so the permission card's approve/deny can mutate the same parts the token
+  // events keep snapshotting — otherwise the next token would revert a resolved card.
+  const assistantPartsRef = useRef<MessagePart[]>([]);
 
   // Nodes wired INTO this chat (incoming edges) — their content is injected as
   // context on send. Kept in a ref so send() (a useCallback) reads the latest.
@@ -271,89 +286,133 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
     const canvasMap = buildCanvasGraph(threadId, id);
     // Inherited lineage first (the thread this chat continues), then the ambient map (reference).
     const system = [BASE_SYSTEM, lineage, canvasMap].filter(Boolean).join("\n\n");
-    const tools = projectPath
+    // BYOK chat wires our own tools. The CLI harness brings Claude Code's native
+    // tools (and reaches the canvas via the tempest-canvas MCP), so no double set.
+    const tools = backend === "api" && projectPath
       ? await createChatTools({ projectPath, atlasIndexed: atlasIndexed ?? false, threadId, selfNodeId: id })
       : undefined;
 
-    let assistantParts: MessagePart[] = [];
+    assistantPartsRef.current = [];
+    const setParts = (parts: MessagePart[]) => {
+      assistantPartsRef.current = parts;
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, parts } : m)));
+    };
 
-    const stream = streamChat({
-      providerId: provider.id,
-      modelId: model.id,
-      messages: [...history, { role: "user", content: rawText }],
-      system,
-      tools: tools as Parameters<typeof streamChat>[0]["tools"],
-      onEvent: (event) => {
-        if (streamingIdRef.current !== assistantId) return;
+    // One handler for both backends. Api never emits session/permission; cli does.
+    const onEvent = (event: ChatStreamEvent) => {
+      if (streamingIdRef.current !== assistantId) return;
+      const parts = assistantPartsRef.current;
 
-        switch (event.type) {
-          case "token": {
-            const last = assistantParts[assistantParts.length - 1];
-            if (last?.type === "text") {
-              assistantParts = [...assistantParts.slice(0, -1), { type: "text", content: last.content + event.delta }];
-            } else {
-              assistantParts = [...assistantParts, { type: "text", content: event.delta }];
-            }
-            const snap = assistantParts;
-            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, parts: snap } : m)));
-            break;
-          }
-
-          case "tool-call": {
-            const newPart: MessagePart = event.toolName === "propose_agent_task"
-              ? {
-                  type: "proposal",
-                  id: event.id,
-                  agent: ((event.args ?? {}) as { agent?: string }).agent ?? "",
-                  model: ((event.args ?? {}) as { model?: string }).model,
-                  task: ((event.args ?? {}) as { task?: string }).task ?? "",
-                  reason: ((event.args ?? {}) as { reason?: string }).reason ?? "",
-                  launched: false,
-                  dismissed: false,
-                }
-              : { type: "tool-call", id: event.id, toolName: event.toolName, args: event.args, status: "running" };
-            assistantParts = [...assistantParts, newPart];
-            const snap = assistantParts;
-            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, parts: snap } : m)));
-            break;
-          }
-
-          case "tool-result": {
-            assistantParts = assistantParts.map((p) =>
-              p.type === "tool-call" && p.id === event.id
-                ? { ...p, result: event.result, status: "complete" as const }
-                : p,
-            );
-            const snap = assistantParts;
-            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, parts: snap } : m)));
-            break;
-          }
-
-          case "finish": {
-            const used = event.inputTokens + event.outputTokens;
-            setContextTokens(used);
-            patchNodeData(id, { contextTokens: used });
-            setIsLoading(false);
-            streamingIdRef.current = null;
-            persistChat([...prior, userMsg, { id: assistantId, role: "assistant", parts: assistantParts }]);
-            break;
-          }
-
-          case "error": {
-            const errParts: MessagePart[] = [{ type: "text", content: event.message }];
-            assistantParts = errParts;
-            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, parts: errParts } : m)));
-            setIsLoading(false);
-            streamingIdRef.current = null;
-            persistChat([...prior, userMsg, { id: assistantId, role: "assistant", parts: errParts }]);
-            break;
-          }
+      switch (event.type) {
+        case "token": {
+          const last = parts[parts.length - 1];
+          setParts(last?.type === "text"
+            ? [...parts.slice(0, -1), { type: "text", content: last.content + event.delta }]
+            : [...parts, { type: "text", content: event.delta }]);
+          break;
         }
-      },
-    });
 
-    cancelRef.current = stream;
-  }, [isLoading, provider, model, projectPath, atlasIndexed, id, threadId, persistChat]);
+        case "tool-call": {
+          const newPart: MessagePart = event.toolName === "propose_agent_task"
+            ? {
+                type: "proposal",
+                id: event.id,
+                agent: ((event.args ?? {}) as { agent?: string }).agent ?? "",
+                model: ((event.args ?? {}) as { model?: string }).model,
+                task: ((event.args ?? {}) as { task?: string }).task ?? "",
+                reason: ((event.args ?? {}) as { reason?: string }).reason ?? "",
+                launched: false,
+                dismissed: false,
+              }
+            : { type: "tool-call", id: event.id, toolName: event.toolName, args: event.args, status: "running" };
+          setParts([...parts, newPart]);
+          break;
+        }
+
+        case "tool-result": {
+          setParts(parts.map((p) =>
+            p.type === "tool-call" && p.id === event.id
+              ? { ...p, result: event.result, status: "complete" as const }
+              : p,
+          ));
+          break;
+        }
+
+        case "permission-request": {
+          setParts([...parts, {
+            type: "permission",
+            id: event.id,
+            toolName: event.toolName,
+            title: event.title,
+            description: event.description,
+            input: event.input,
+          }]);
+          break;
+        }
+
+        case "session": {
+          patchNodeData(id, { claudeSessionId: event.sessionId });
+          break;
+        }
+
+        case "finish": {
+          const used = event.inputTokens + event.outputTokens;
+          setContextTokens(used);
+          patchNodeData(id, { contextTokens: used, ...(event.sessionId ? { claudeSessionId: event.sessionId } : {}) });
+          setIsLoading(false);
+          streamingIdRef.current = null;
+          persistChat([...prior, userMsg, { id: assistantId, role: "assistant", parts: assistantPartsRef.current }]);
+          break;
+        }
+
+        case "error": {
+          const errParts: MessagePart[] = [...parts, { type: "text", content: event.message }];
+          setParts(errParts);
+          setIsLoading(false);
+          streamingIdRef.current = null;
+          persistChat([...prior, userMsg, { id: assistantId, role: "assistant", parts: errParts }]);
+          break;
+        }
+      }
+    };
+
+    if (backend === "cli") {
+      const data = getNodeData<{ claudeSessionId?: string }>(id);
+      // Chat nodes have no branch binding in v1 → Claude Code runs in the project root.
+      // model.id is the resolved CLI alias (legacy "default" already collapsed to Haiku).
+      cancelRef.current = streamClaudeCode({
+        prompt: rawText,
+        cwd: projectPath ?? ".",
+        resume: data.claudeSessionId,
+        model: model.id,
+        projectId,
+        onEvent,
+      });
+    } else {
+      cancelRef.current = streamChat({
+        providerId: provider.id,
+        modelId: model.id,
+        messages: [...history, { role: "user", content: rawText }],
+        system,
+        tools: tools as Parameters<typeof streamChat>[0]["tools"],
+        onEvent,
+      });
+    }
+  }, [isLoading, backend, provider, model, projectPath, projectId, atlasIndexed, id, threadId, persistChat]);
+
+  // Resolve a Claude Code permission prompt: tell the sidecar, freeze the card.
+  // Update the streaming buffer too so the next token snapshot keeps the decision.
+  function decidePermission(assistantMsgId: string, permId: string, behavior: "allow" | "deny") {
+    cancelRef.current?.decide?.(permId, behavior);
+    const freeze = (parts: MessagePart[]) =>
+      parts.map((p) => (p.type === "permission" && p.id === permId ? { ...p, decision: behavior } : p));
+    assistantPartsRef.current = freeze(assistantPartsRef.current);
+    setMessages((prev) => {
+      const updated = prev.map((m) => (m.id !== assistantMsgId ? m : { ...m, parts: freeze(m.parts) }));
+      persistChat(updated);
+      return updated;
+    });
+  }
 
   async function launchProposal(assistantMsgId: string, proposalId: string, agentHint: string, prompt: string, model?: string) {
     // Resolve the "Run in:" target: root ("") → undefined; "__new__" cuts a worktree first.
@@ -390,21 +449,44 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
     if (!pickerBtnRef.current) return;
     const r = pickerBtnRef.current.getBoundingClientRect();
     setPickerPos({ bottom: window.innerHeight - r.top + 6, left: r.left });
-    setPickerProvider(provider.id);
+    setPickerProvider(backend === "cli" ? CLAUDE_CODE : provider.id);
     setSearch("");
     setPickerOpen(true);
     setTimeout(() => searchRef.current?.focus(), 50);
   }
 
   function selectModel(m: ChatModel) {
-    const p = CHAT_PROVIDERS.find((cp) => cp.id === pickerProvider);
-    if (p) { setProvider(p); setRuntimeState({ chatProvider: p.id }); }
-    setModel(m);
-    setRuntimeState({ chatModel: m.id });
+    if (pickerProvider === CLAUDE_CODE) {
+      setBackend("cli");
+      setModel(m);
+      patchNodeData(id, { backend: "cli", cliModel: m.id });
+    } else {
+      const p = CHAT_PROVIDERS.find((cp) => cp.id === pickerProvider);
+      if (p) { setProvider(p); setRuntimeState({ chatProvider: p.id }); }
+      setBackend("api");
+      setModel(m);
+      setRuntimeState({ chatModel: m.id });
+      patchNodeData(id, { backend: "api" });
+    }
     setPickerOpen(false);
   }
 
-  const activePickerProvider = CHAT_PROVIDERS.find((p) => p.id === pickerProvider)!;
+  // Pick a model for a CLI agent (Claude Code) from its inline dropdown → activate
+  // the cli backend on this node.
+  function selectCliModel(modelId: string) {
+    const m = CLAUDE_CODE_MODELS.find((x) => x.id === modelId) ?? CLAUDE_CODE_MODELS[0];
+    setBackend("cli");
+    setModel(m);
+    patchNodeData(id, { backend: "cli", cliModel: m.id });
+    setPickerOpen(false);
+  }
+
+  const isCliCat = pickerProvider === CLAUDE_CODE;
+  // BYOK-provider category vars (the cli category renders its own agents list).
+  const activePickerProvider = CHAT_PROVIDERS.find((p) => p.id === pickerProvider);
+  const catLabel  = activePickerProvider?.label ?? "";
+  const catIcon   = activePickerProvider?.icon ?? "";
+  const catInvert = activePickerProvider?.invert ?? false;
   const rawPickerModels = manifest.providers[pickerProvider] ?? [];
   const filteredModels = search.trim()
     ? rawPickerModels.filter((m) => m.label.toLowerCase().includes(search.toLowerCase()))
@@ -556,6 +638,16 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
                         />
                       );
                     }
+                    if (part.type === "permission") {
+                      return (
+                        <PermissionCard
+                          key={part.id}
+                          part={part}
+                          onAllow={() => decidePermission(msg.id, part.id, "allow")}
+                          onDeny={() => decidePermission(msg.id, part.id, "deny")}
+                        />
+                      );
+                    }
                     return null;
                   })
                 )}
@@ -597,16 +689,20 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
           className="chat-bar-mode"
           onClick={(e) => { e.stopPropagation(); openPicker(); }}
         >
-          <img
-            src={CDN + provider.icon}
-            alt={provider.label}
-            width={14}
-            height={14}
-            className={provider.invert ? "chat-logo-invert" : ""}
-            style={{ objectFit: "contain", flexShrink: 0 }}
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-          />
-          {model.label}
+          {backend === "cli" ? (
+            <Terminal size={13} style={{ flexShrink: 0 }} />
+          ) : (
+            <img
+              src={CDN + provider.icon}
+              alt={provider.label}
+              width={14}
+              height={14}
+              className={provider.invert ? "chat-logo-invert" : ""}
+              style={{ objectFit: "contain", flexShrink: 0 }}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          )}
+          {backend === "cli" ? `Claude Code · ${model.label}` : model.label}
           <ChevronDown size={11} style={{ transform: pickerOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
         </button>
 
@@ -661,6 +757,16 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
           <div className="chat-drop-overlay" onClick={() => setPickerOpen(false)} />
           <div className="chat-picker" style={{ bottom: pickerPos.bottom, left: pickerPos.left }}>
             <div className="chat-picker-sidebar">
+              {/* Claude Code — its own category (CLI harness), set apart from the
+                  BYOK providers below by a divider. Not part of the providers list. */}
+              <button
+                className={`chat-picker-prov${isCliCat ? " chat-picker-prov--active" : ""}`}
+                onClick={() => { setPickerProvider(CLAUDE_CODE); setSearch(""); }}
+                title="Agents (CLI)"
+              >
+                <Terminal size={16} />
+              </button>
+              <div style={{ height: 1, margin: "4px 6px", background: "var(--tempest-border-subtle, #2a2a2a)" }} />
               {CHAT_PROVIDERS.map((p) => (
                 <button
                   key={p.id}
@@ -681,51 +787,129 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
               ))}
             </div>
             <div className="chat-picker-panel">
-              <div className="chat-picker-prov-name">{activePickerProvider.label}</div>
-              <div className="chat-picker-search-wrap">
-                <div className="chat-picker-search-box">
-                  <Search size={11} className="chat-picker-search-ico" />
-                  <input
-                    ref={searchRef}
-                    className="chat-picker-search-inp"
-                    placeholder="Search models…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="chat-picker-list">
-                {filteredModels.length === 0 ? (
-                  <div className="chat-picker-empty">No models found</div>
-                ) : filteredModels.map((m) => (
-                  <button
-                    key={m.id}
-                    className={`chat-picker-item${model.id === m.id ? " chat-picker-item--active" : ""}`}
-                    onClick={() => selectModel(m)}
+              <div className="chat-picker-prov-name">{isCliCat ? "Agents" : catLabel}</div>
+              {isCliCat ? (
+                // Agents list: one row per connected CLI agent (v1 = Claude Code),
+                // each with its own model dropdown on the right. Picking a model
+                // activates the cli backend on this node.
+                <div className="chat-picker-list">
+                  <div
+                    className="chat-agent-row"
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
+                      borderRadius: 8, background: "var(--tempest-bg-hover, #0f0f0f)",
+                    }}
                   >
-                    <div className="chat-picker-item-logo">
-                      <img
-                        src={CDN + activePickerProvider.icon}
-                        alt={activePickerProvider.label}
-                        width={18}
-                        height={18}
-                        className={activePickerProvider.invert ? "chat-logo-invert" : ""}
-                        style={{ objectFit: "contain" }}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    <Terminal size={16} style={{ flexShrink: 0, opacity: 0.85 }} />
+                    <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>Claude Code</span>
+                    <SpSelect
+                      className="sp-drop--full"
+                      value={backend === "cli" ? model.id : CLAUDE_CODE_MODELS[0].id}
+                      options={CLAUDE_CODE_MODELS.map((m) => ({ value: m.id, label: m.label }))}
+                      onChange={selectCliModel}
+                    />
+                    {backend === "cli" && <div className="chat-picker-item-dot" />}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="chat-picker-search-wrap">
+                    <div className="chat-picker-search-box">
+                      <Search size={11} className="chat-picker-search-ico" />
+                      <input
+                        ref={searchRef}
+                        className="chat-picker-search-inp"
+                        placeholder="Search models…"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
                       />
                     </div>
-                    <div className="chat-picker-item-text">
-                      <span className="chat-picker-item-name">{m.label}</span>
-                      <span className="chat-picker-item-desc">{m.id}</span>
-                    </div>
-                    {model.id === m.id && <div className="chat-picker-item-dot" />}
-                  </button>
-                ))}
-              </div>
+                  </div>
+                  <div className="chat-picker-list">
+                    {filteredModels.length === 0 ? (
+                      <div className="chat-picker-empty">No models found</div>
+                    ) : filteredModels.map((m) => (
+                      <button
+                        key={m.id}
+                        className={`chat-picker-item${backend === "api" && model.id === m.id ? " chat-picker-item--active" : ""}`}
+                        onClick={() => selectModel(m)}
+                      >
+                        <div className="chat-picker-item-logo">
+                          <img
+                            src={CDN + catIcon}
+                            alt={catLabel}
+                            width={18}
+                            height={18}
+                            className={catInvert ? "chat-logo-invert" : ""}
+                            style={{ objectFit: "contain" }}
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                          />
+                        </div>
+                        <div className="chat-picker-item-text">
+                          <span className="chat-picker-item-name">{m.label}</span>
+                          <span className="chat-picker-item-desc">{m.id}</span>
+                        </div>
+                        {backend === "api" && model.id === m.id && <div className="chat-picker-item-dot" />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </>,
         document.body,
+      )}
+    </div>
+  );
+}
+
+// Claude Code permission prompt (CLI backend). Shows the SDK's own prompt text
+// and blocks the agent until the user allows or denies; once resolved the card
+// freezes to the decision.
+function PermissionCard({ part, onAllow, onDeny }: { part: PermissionPart; onAllow: () => void; onDeny: () => void }) {
+  const heading = part.title ?? `Claude wants to use ${part.toolName}`;
+  return (
+    <div
+      className="nodrag"
+      style={{
+        margin: "6px 0", padding: "8px 10px", borderRadius: 8,
+        border: "1px solid var(--tempest-border-default, #2a2a2a)",
+        background: "var(--tempest-bg-hover, #0f0f0f)",
+        fontSize: 12, display: "flex", flexDirection: "column", gap: 6,
+      }}
+    >
+      <div style={{ fontWeight: 600, color: "var(--tempest-fg-default, #e6e6e6)" }}>{heading}</div>
+      {part.description && (
+        <div style={{ opacity: 0.65, lineHeight: 1.4 }}>{part.description}</div>
+      )}
+      {part.decision ? (
+        <div style={{ opacity: 0.6, fontStyle: "italic" }}>
+          {part.decision === "allow" ? "Allowed" : "Denied"}
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onAllow(); }}
+            style={{
+              padding: "4px 12px", borderRadius: 6, cursor: "pointer", fontWeight: 600,
+              border: "1px solid var(--tempest-accent, #4a9eff)",
+              background: "var(--tempest-accent, #4a9eff)", color: "#fff",
+            }}
+          >
+            Allow
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDeny(); }}
+            style={{
+              padding: "4px 12px", borderRadius: 6, cursor: "pointer",
+              border: "1px solid var(--tempest-border-default, #2a2a2a)",
+              background: "transparent", color: "var(--tempest-fg-default, #e6e6e6)",
+            }}
+          >
+            Deny
+          </button>
+        </div>
       )}
     </div>
   );

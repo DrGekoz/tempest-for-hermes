@@ -234,7 +234,28 @@ export type ChatTools = Awaited<ReturnType<typeof createChatTools>>;
 export function argsPreview(toolName: string, args: unknown): string {
   if (!args || typeof args !== "object") return "";
   const a = args as Record<string, unknown>;
+  const base = (p: unknown) => String(p ?? "").split(/[/\\]/).filter(Boolean).pop() ?? "";
   switch (toolName) {
+    // Claude Code native tools (CLI backend): show the target, not the raw args.
+    case "Read": case "Write": case "Edit": case "MultiEdit":
+      return base(a.file_path);
+    case "NotebookEdit":
+      return base(a.notebook_path);
+    case "Bash":
+      return String(a.command ?? "").replace(/\s+/g, " ").slice(0, 60);
+    case "Grep": case "Glob":
+      return String(a.pattern ?? "").slice(0, 50);
+    case "LS":
+      return base(a.path) || "root";
+    case "WebFetch":
+      try { return new URL(String(a.url)).hostname; } catch { return String(a.url ?? ""); }
+    case "WebSearch":
+      return String(a.query ?? "").slice(0, 50);
+    case "Task":
+      return String(a.description ?? a.subagent_type ?? "").slice(0, 50);
+    case "TodoWrite":
+      return Array.isArray(a.todos) ? `${a.todos.length} steps` : "";
+
     case "read_file":
       return String(a.path ?? "").split(/[/\\]/).pop() ?? "";
     case "list_files":
