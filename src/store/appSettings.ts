@@ -18,6 +18,10 @@ export interface AppSettings {
   // working/waiting/done status. Off uninstalls them and falls back to the
   // PTY-scraping heuristic. See src/lib/agentHooks.
   preciseAgentStatus: boolean;
+  // Anonymous usage telemetry (PostHog). Default false — nothing is loaded or
+  // sent until the user explicitly opts in. Flip only via setTelemetryEnabled
+  // in src/lib/telemetry.ts, never updateSetting directly.
+  telemetryEnabled: boolean;
 }
 
 export const SETTINGS_DEFAULTS: AppSettings = {
@@ -34,6 +38,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   isolateAgents: true,
   autoApprove: true,
   preciseAgentStatus: true,
+  telemetryEnabled: false,
 };
 
 export const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [

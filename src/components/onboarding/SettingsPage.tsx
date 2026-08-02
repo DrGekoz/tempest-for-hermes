@@ -1,5 +1,6 @@
-import { ArrowLeft, ArrowRight, Cpu, GitBranch, ShieldCheck, GitCommitHorizontal } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Cpu, GitBranch, ShieldCheck, GitCommitHorizontal, BarChart3 } from 'lucide-react';
 import { useSettings, updateSetting } from '../../store/appSettings';
+import { setTelemetryEnabled } from '../../lib/telemetry';
 import { useAttribution, setAttribution } from '../../store/attribution';
 import type { ReactNode } from 'react';
 
@@ -55,7 +56,7 @@ function SettingRow({ icon, title, description, enabled, onToggle, className }: 
 }
 
 export default function SettingsPage({ onBack, onComplete }: Props) {
-  const { atlasEnabled, isolateAgents, autoApprove } = useSettings();
+  const { atlasEnabled, isolateAgents, autoApprove, telemetryEnabled } = useSettings();
   const attribution = useAttribution();
 
   return (
@@ -101,6 +102,13 @@ export default function SettingsPage({ onBack, onComplete }: Props) {
               description="Appends a Co-authored-by: Tempest trailer to commits made inside your workspaces. On GitHub, that means every commit shows Tempest next to your name — a quiet signal to other developers that this project was built with the help of Tempest. No data is collected and nothing is sent anywhere."
               enabled={attribution}
               onToggle={() => setAttribution(!attribution)}
+            />
+            <SettingRow
+              icon={<BarChart3 size={18} />}
+              title="Share anonymous usage data"
+              description="Helps improve Tempest. No code, prompts, file contents, or repo names — ever. Only anonymous usage counts and error signals. Off by default; change it anytime in Settings."
+              enabled={telemetryEnabled}
+              onToggle={() => setTelemetryEnabled(!telemetryEnabled)}
             />
           </div>
 

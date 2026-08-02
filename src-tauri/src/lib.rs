@@ -3845,6 +3845,16 @@ async fn get_ide_panel_url(
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
+/// Open the webview devtools. Compiled in for release builds via the tauri
+/// `devtools` feature, so this works in shipped installers, not just dev.
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Sidecar MCP mode: an external CLI agent spawned us as its canvas MCP server
@@ -3986,6 +3996,7 @@ pub fn run() {
             claude_bridge::claude_stream_start,
             claude_bridge::claude_permission_decision,
             claude_bridge::claude_stream_cancel,
+            open_devtools,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

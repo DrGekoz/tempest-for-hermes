@@ -80,6 +80,9 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Public PostHog project key (write-only ingestion) — Vite inlines it at
+          # build time. Telemetry still only fires after explicit user opt-in.
+          VITE_POSTHOG_KEY: phc_meJDnwWJ6c5uFsecABnA8ydF4HBL7sykn4GUTWvMV6qL
 
       - name: Upload Windows artifacts
         if: matrix.os == 'windows-latest'

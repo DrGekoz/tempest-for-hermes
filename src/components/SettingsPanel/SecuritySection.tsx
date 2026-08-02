@@ -1,5 +1,6 @@
 import { useSettings, updateSetting } from "../../store/appSettings";
 import { setPreciseAgentStatus } from "../../store/agentHooks";
+import { setTelemetryEnabled } from "../../lib/telemetry";
 
 export function SecuritySection() {
   const s = useSettings();
@@ -69,6 +70,25 @@ export function SecuritySection() {
             onClick={(e) => { e.stopPropagation(); togglePreciseStatus(); }}
             role="switch"
             aria-checked={s.preciseAgentStatus}
+          >
+            <span className="sp-toggle-thumb" />
+          </button>
+        </div>
+
+        <div className="sp-toggle-row" onClick={() => setTelemetryEnabled(!s.telemetryEnabled)}>
+          <div className="sp-toggle-text">
+            <span className="sp-toggle-label">Share anonymous usage data</span>
+            <span className="sp-toggle-desc">
+              Sends anonymous usage counts and error signals to help improve Tempest.
+              No code, prompts, file contents, or repo names are ever collected. Off by
+              default; nothing is loaded or sent until you turn this on.
+            </span>
+          </div>
+          <button
+            className={`sp-toggle${s.telemetryEnabled ? " sp-toggle--on" : ""}`}
+            onClick={(e) => { e.stopPropagation(); setTelemetryEnabled(!s.telemetryEnabled); }}
+            role="switch"
+            aria-checked={s.telemetryEnabled}
           >
             <span className="sp-toggle-thumb" />
           </button>

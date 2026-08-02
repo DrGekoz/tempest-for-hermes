@@ -420,6 +420,24 @@
   color: var(--tempest-fg-muted);
 }
 
+.sp-btn {
+  align-self: flex-start;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--tempest-bg-hover);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  color: var(--tempest-fg-default);
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.sp-btn:hover {
+  background: var(--tempest-bg-active, var(--tempest-bg-hover));
+  border-color: var(--tempest-border-subtle);
+}
+
 /* ── Attribution / toggle ────────────────────────────────────────────────── */
 
 .sp-toggle-row {

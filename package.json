@@ -1,7 +1,7 @@
 {
   "name": "tempest",
   "private": true,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "workspaces": [
     "web",
@@ -64,6 +64,7 @@
     "lucide-react": "^1.21.0",
     "metal-fx": "^1.0.4",
     "motion": "^12.42.2",
+    "posthog-js": "^1.409.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",

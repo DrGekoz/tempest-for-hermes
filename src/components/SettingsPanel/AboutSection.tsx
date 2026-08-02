@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
 import { Mark } from "../../assets/Mark";
 
 export function AboutSection() {
@@ -26,6 +27,13 @@ export function AboutSection() {
           <span className="sp-about-val">Tauri · React · TypeScript</span>
         </div>
       </div>
+      <button
+        className="sp-btn"
+        style={{ marginTop: "16px" }}
+        onClick={() => void invoke("open_devtools")}
+      >
+        Open developer tools
+      </button>
     </div>
   );
 }
