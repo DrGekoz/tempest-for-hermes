@@ -11,6 +11,7 @@
 // Every state transition and every event is logged to the console so there is a
 // visible, auditable trail of exactly when anything wakes up or fires.
 import { getSettings, updateSetting } from "../store/appSettings";
+import { getRuntimeState, setRuntimeState } from "./runtimeState";
 
 // Sourced from build-time env so the key is never hardcoded. If absent,
 // telemetry stays fully dormant regardless of consent — a fourth safety gate.
@@ -38,6 +39,15 @@ async function ensureInit(): Promise<PostHog | null> {
   }
   if (initPromise) return initPromise;
   initPromise = (async () => {
+    // Durable anonymous id, minted once at first opt-in and kept on disk. Pinning
+    // distinct_id here means the identity is ours, stable across restarts and
+    // localStorage clears — and we never call identify(), so it stays anonymous.
+    let anonId = getRuntimeState().telemetryAnonId;
+    if (!anonId) {
+      anonId = crypto.randomUUID();
+      setRuntimeState({ telemetryAnonId: anonId });
+      console.info(`${LOG} minted anonymous id (first opt-in)`);
+    }
     console.info(`${LOG} consent present — loading PostHog for the first time`);
     const posthog = (await import("posthog-js")).default;
     posthog.init(POSTHOG_KEY, {
@@ -46,7 +56,8 @@ async function ensureInit(): Promise<PostHog | null> {
       capture_pageview: false,
       disable_session_recording: true,
       persistence: "localStorage",
-      loaded: () => console.info(`${LOG} PostHog initialized — events will now be sent`),
+      bootstrap: { distinctID: anonId },
+      loaded: () => console.info(`${LOG} PostHog initialized as ${anonId} — events will now be sent`),
     });
     ph = posthog;
     return posthog;
@@ -64,6 +75,24 @@ export async function track(event: string, props?: Record<string, unknown>): Pro
   if (!posthog) return;
   console.info(`${LOG} fire → ${event}`, props ?? {});
   posthog.capture(event, props);
+}
+
+/** Snapshot of config on the anonymous person, for segmentation. Gated. */
+export async function setPersonProperties(props: Record<string, unknown>): Promise<void> {
+  if (getSettings().telemetryEnabled !== true) return;
+  const posthog = await ensureInit();
+  if (!posthog) return;
+  console.info(`${LOG} person properties`, props);
+  posthog.setPersonProperties(props);
+}
+
+/** Coarse OS bucket from the webview UA — no fingerprinting detail. */
+export function osName(): "windows" | "macos" | "linux" | "other" {
+  const ua = navigator.userAgent;
+  if (ua.includes("Windows")) return "windows";
+  if (ua.includes("Mac")) return "macos";
+  if (ua.includes("Linux")) return "linux";
+  return "other";
 }
 
 /** Flip consent and act on it. The single writer for `telemetryEnabled`. */

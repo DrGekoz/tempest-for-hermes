@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { track } from '../lib/telemetry';
 
 /// One check at startup, then once a day for as long as the app stays open.
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -60,8 +61,13 @@ export function startUpdateChecks(): void {
 /// installer runs in quiet mode and takes the app down with it, so everything
 /// still running dies here.
 export async function installUpdate(update: Update): Promise<void> {
-  await update.downloadAndInstall();
-  await relaunch();
+  try {
+    await update.downloadAndInstall();
+    await relaunch();
+  } catch (e) {
+    void track("update_failed", { reason_kind: "install_error" });
+    throw e;
+  }
 }
 
 /// The release page. `latest.json` carries it in `notes`, which the plugin

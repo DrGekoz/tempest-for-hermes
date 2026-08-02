@@ -8,6 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { createWorktree, gitInit } from "../lib/worktree";
 import { addRecent, getRecents, removeRecent } from "../store/recents";
 import { getOpenProjects, saveOpenProjects } from "../store/openProjects";
+import { track } from "../lib/telemetry";
 import { getSession, getBranchSessions, getWorktreeAgentSession, getRootSessionsForProject, getAllSessions, getBranchPath, getProjectPath, saveSession, setSessionConversationId, markSessionClosed, markSessionOpen, removeBranchByPath, removeSession, pruneSessions, type WorktreeSession } from "../store/sessions";
 import { getRuntimeState, setRuntimeState } from "../lib/runtimeState";
 import { loadProjectSettings } from "./ProjectSettingsPanel/useProjectSettings";
@@ -542,7 +543,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
       if ((tag === "INPUT" || tag === "TEXTAREA") && !isTerminalInput) return;
 
       if (matchesEvent(keybinds.commandPalette, e)) {
-        e.preventDefault(); setCommandPaletteOpen((o) => !o);
+        e.preventDefault(); setCommandPaletteOpen((o) => { if (!o) void track("feature_used", { feature: "command_palette" }); return !o; });
       } else if (matchesEvent(keybinds.toggleTheme, e)) {
         e.preventDefault(); toggleTheme();
       } else if (matchesEvent(keybinds.toggleLeftSidebar, e)) {
@@ -977,8 +978,17 @@ export function WorkspaceView({ zen, name, path }: Props) {
         sessionManager.unregister(sessionId);
         // Surface the reason, then rethrow so existing caller-side cleanup runs.
         setPolicyError(String(e));
+        void track("agent_launch_failed", {
+          agent: agent ?? "terminal",
+          reason_kind: /not permitted|policy|skip.?perm/i.test(String(e)) ? "policy" : "spawn_error",
+        });
         throw e;
       }
+
+      void track("session_created", {
+        agent: agent ?? "terminal",
+        scope: isRootSession ? "root" : "branch",
+      });
 
       // Hand the channel to the Session Manager. It owns the subscription, runs
       // work-done detection on raw bytes, and maintains the replay buffer.
@@ -1038,6 +1048,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
     // If a diff tab for this cwd is already open, just focus it.
     const existing = sessionsRef.current.find((s) => s.kind === "diff" && s.cwd === cwd);
     if (existing) { setActiveSessionId(existing.id); return; }
+    void track("feature_used", { feature: "diff_review" });
     const sessionId = crypto.randomUUID();
     const tab: PersistedTab = { instanceId: sessionId, kind: "diff", projectId, cwd, name: "Diff" };
     for (const t of getTabs().filter((t) => t.kind === "diff" && t.cwd === cwd)) removeTab(t.instanceId);
@@ -1087,6 +1098,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
   async function openPreviewTab(projectId: string, cwd = "") {
     const existing = sessionsRef.current.find((s) => s.kind === "preview" && s.projectId === projectId && s.cwd === cwd);
     if (existing) { setActiveSessionId(existing.id); return; }
+    void track("feature_used", { feature: "preview" });
     const sessionId = crypto.randomUUID();
     // A project that declares its dev-server port in tempest.yml opens straight
     // at the app; otherwise fall back to this workspace's allocated service port
@@ -1136,6 +1148,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
   function openThreadTab(projectId: string, threadId: string) {
     const existing = sessionsRef.current.find((s) => s.kind === "thread" && s.id === threadId);
     if (existing) { setActiveSessionId(existing.id); return; }
+    void track("feature_used", { feature: "canvas" });
     const name = getThread(threadId)?.name ?? "Thread";
     if (!getTabs().some((t) => t.instanceId === threadId)) {
       upsertTab({ instanceId: threadId, kind: "thread", projectId, cwd: "", name });
@@ -1838,8 +1851,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
       })
       .catch(() => {});
     invoke<string>("get_git_branch", { path: selected })
-      .then(() => setGitProjectIds((prev) => { if (prev.has(newProject.id)) return prev; const s = new Set(prev); s.add(newProject.id); return s; }))
-      .catch(() => {});
+      .then(() => { setGitProjectIds((prev) => { if (prev.has(newProject.id)) return prev; const s = new Set(prev); s.add(newProject.id); return s; }); void track("project_added", { is_git_repo: true }); })
+      .catch(() => { void track("project_added", { is_git_repo: false }); });
     if (getAttribution()) {
       invoke("write_coauthor_hook", { repoPath: selected, coauthorLine: COAUTHOR_LINE }).catch(() => {});
     }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { X, GitPullRequest, ExternalLink } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { track } from "../lib/telemetry";
 import "./PrDialog.css";
 
 const TOKEN_KEY = "tempest-github-token";
@@ -83,11 +84,14 @@ export function PrDialog({ open, remoteUrl, branch, onClose }: Props) {
       const data = await res.json();
       if (!res.ok) {
         setError(data.message ?? `GitHub API error ${res.status}`);
+        void track("feature_failed", { feature: "pr", reason_kind: "github_api_error" });
       } else {
         setPrUrl(data.html_url);
+        void track("feature_used", { feature: "pr" });
       }
     } catch (e) {
       setError(String(e));
+      void track("feature_failed", { feature: "pr", reason_kind: "network_error" });
     } finally {
       setCreating(false);
     }

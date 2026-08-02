@@ -10,6 +10,7 @@ import { sessionManager } from "../../../store/sessionManager";
 import { getNodeMessages, loadNodeMessages, saveNodeMessages } from "../../../store/threadMessages";
 import { chatGist, firstLine, formatCanvasGraph, type CanvasNodeMeta } from "../canvasContext";
 import { getRuntimeState, setRuntimeState } from "../../../lib/runtimeState";
+import { track } from "../../../lib/telemetry";
 import { CDN, CHAT_PROVIDERS, CLAUDE_CODE, CLAUDE_CODE_MODELS, type ChatProvider, type ChatModel } from "../../../lib/chatModels";
 import { useModelManifest, contextSizeFor } from "../../../lib/remoteConfig";
 import { streamChat, type ChatStreamEvent } from "../../../lib/chat";
@@ -244,6 +245,7 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
   const send = useCallback(async () => {
     const rawText = (editableRef.current?.innerText ?? "").trim();
     if (!rawText || isLoading) return;
+    void track("feature_used", { feature: "chat" });
 
     if (editableRef.current) editableRef.current.innerHTML = "";
     setIsEmpty(true);

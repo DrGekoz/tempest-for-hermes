@@ -4,6 +4,7 @@ import { getSettings } from "../../store/appSettings";
 import { getRuntimeState, setRuntimeState } from "../../lib/runtimeState";
 import { removeSession } from "../../store/sessions";
 import { invoke } from "@tauri-apps/api/core";
+import { track } from "../../lib/telemetry";
 import type { Session, Worktree } from "../../types/workspace";
 
 export type CtxMenuState = {
@@ -49,9 +50,10 @@ export function ContextMenu({
   const indexProject = () => {
     const decided = getRuntimeState().atlasProjects ?? {};
     setRuntimeState({ atlasProjects: { ...decided, [m.projectPath]: true } });
+    void track("feature_used", { feature: "atlas" });
     invoke("start_atlas_index", { projectPath: m.projectPath })
       .then(() => invoke("start_atlas_daemon", { projectPath: m.projectPath }).catch(() => {}))
-      .catch((e) => console.error("[Atlas] start_atlas_index failed:", e));
+      .catch((e) => { console.error("[Atlas] start_atlas_index failed:", e); void track("atlas_index_failed", { reason_kind: "index_error" }); });
     onAtlasIndexingStart(m.projectPath);
     onClose();
   };

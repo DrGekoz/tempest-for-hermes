@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { track } from "../../lib/telemetry";
 
 interface Props {
   workspacePath: string;
@@ -39,8 +40,12 @@ export function DatabaseSection({ workspacePath, projectName, value, onChange }:
       await invoke("db_build", { connStr: connStr.trim(), method, workspacePath, projectName });
       setBaseReady(true);
       setShowSetup(false);
+      void track("feature_used", { feature: "db_isolation" });
     } catch (err) {
       setLog((prev) => [...prev, `Error: ${err}`]);
+      void track("db_isolation_setup_failed", {
+        reason_kind: /docker/i.test(String(err)) ? "docker_missing" : "build_error",
+      });
     } finally {
       setBuilding(false);
       unlisten();

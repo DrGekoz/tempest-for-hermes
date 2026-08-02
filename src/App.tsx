@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { WorkspaceView } from "./components/WorkspaceView";
 import Onboarding from "./components/onboarding/Onboarding";
 import { getRuntimeState, setRuntimeState } from "./lib/runtimeState";
+import { getSettings } from "./store/appSettings";
+import { track, setPersonProperties, osName } from "./lib/telemetry";
 import { checkAgentAvailability } from "./store/agentAvailability";
 import { startRemoteAgentsFetch } from "./lib/remoteAgents";
 import "./App.css";
@@ -20,9 +23,27 @@ export default function App() {
   );
 
   useEffect(() => {
+    // Renderer crash/error signal — no message text, only the error name (an
+    // enum-safe value like "TypeError"). track() is a no-op without consent.
+    const onErr = (e: ErrorEvent) =>
+      void track("crash_or_error", { surface: "renderer", error_kind: e.error?.name ?? "error" });
+    const onRej = () =>
+      void track("crash_or_error", { surface: "renderer", error_kind: "unhandled_rejection" });
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+
     checkAgentAvailability();
     void startRemoteAgentsFetch(); // verified remote agents manifest, else bundled
     const label = getCurrentWindow().label;
+    // Fire once per main-window launch (zen sub-windows don't re-count).
+    if (!label.startsWith("zen-")) {
+      void (async () => {
+        const app_version = await getVersion().catch(() => "unknown");
+        const os = osName();
+        void track("app_opened", { app_version, os, is_first_launch: !getRuntimeState().onboardingComplete });
+        void setPersonProperties({ app_version, os, atlas_enabled: getSettings().atlasEnabled });
+      })();
+    }
     if (label.startsWith("zen-")) {
       invoke<[string, string] | null>("get_zen_config", { label })
         .then((result) => {
@@ -33,9 +54,14 @@ export default function App() {
     } else {
       setReady(true);
     }
+    return () => {
+      window.removeEventListener("error", onErr);
+      window.removeEventListener("unhandledrejection", onRej);
+    };
   }, []);
 
   function completeOnboarding() {
+    void track("onboarding_finished", { at_step: 3 });
     setRuntimeState({ onboardingComplete: true });
     setOnboardingDone(true);
   }

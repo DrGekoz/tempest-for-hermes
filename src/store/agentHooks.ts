@@ -12,6 +12,7 @@ import { sessionManager } from "./sessionManager";
 import { getSettings } from "./appSettings";
 import { getAdapter, installAll, uninstallAll } from "../lib/agentHooks";
 import { pushIslandNotif } from "./islandNotifs";
+import { track } from "../lib/telemetry";
 
 interface AgentHookEvent {
   agent: string;
@@ -69,9 +70,11 @@ export async function startAgentHooks(): Promise<void> {
       const failed = results.filter((r) => !r.ok);
       if (failed.length > 0) {
         console.error("[agent-hooks] not wired:", failed.map((r) => `${r.id} (${r.detail})`).join(", "));
+        for (const r of failed) void track("agent_hooks_install_failed", { agent: r.id, reason_kind: "wire_failed" });
       }
     } catch (e) {
       console.error("[agent-hooks] install failed", e);
+      void track("agent_hooks_install_failed", { agent: "all", reason_kind: "exception" });
     }
   }
 }

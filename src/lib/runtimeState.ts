@@ -19,6 +19,11 @@ export interface RuntimeState {
   theme?: string;         // active theme name
   chatProvider?: string;  // last selected chat provider id
   chatModel?: string;     // last selected chat model id
+  // Durable anonymous telemetry id. Generated once, only after the user opts in
+  // (see src/lib/telemetry.ts). Lives on disk here rather than posthog-js's
+  // localStorage so it survives a webview-storage clear — one install = one id,
+  // never tied to any real identity.
+  telemetryAnonId?: string;
 }
 
 const DEFAULT_STATE: RuntimeState = {
