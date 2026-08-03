@@ -425,3 +425,63 @@
 .ob-toggle--on .ob-toggle-thumb {
   transform: translateX(16px);
 }
+
+/* ─── Setup check page ────────────────────────────────────────── */
+
+.ob-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ob-check-icon-wrap {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ob-check-spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--tempest-border-default);
+  border-top-color: var(--tempest-fg-muted);
+  border-radius: 50%;
+  animation: ob-spin 0.7s linear infinite;
+}
+
+.ob-check-spinner--idle {
+  border-top-color: var(--tempest-border-default);
+  animation: none;
+}
+
+@keyframes ob-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ob-check-tick {
+  width: 16px;
+  height: 16px;
+  color: #22c55e;
+}
+
+.ob-check-cross {
+  width: 16px;
+  height: 16px;
+  color: #ef4444;
+}
+
+.ob-check-label {
+  font-size: 13px;
+  color: var(--tempest-fg-default);
+  flex: 1;
+}
+
+.ob-check-detail {
+  font-size: 12px;
+  color: var(--tempest-fg-subtle);
+  font-family: monospace;
+  letter-spacing: 0;
+}

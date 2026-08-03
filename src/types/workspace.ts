@@ -33,4 +33,4 @@ export interface Project {
   worktrees: Worktree[];
 }
 
-export type NavSection = "overview" | "knowledge-base";
+export type NavSection = "overview" | "knowledge-base" | "automations";

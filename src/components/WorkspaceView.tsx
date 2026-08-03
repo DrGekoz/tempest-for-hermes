@@ -51,6 +51,7 @@ import {
   Loader,
   Waypoints,
   Trash2,
+  Workflow,
 } from "lucide-react";
 import { setWorkState, clearWorkState, getWorkState, setAttention, getAttention } from "../store/workState";
 import { useKeybindings, matchesEvent, formatShortcut } from "../store/keybindings";
@@ -1955,6 +1956,10 @@ export function WorkspaceView({ zen, name, path }: Props) {
               <Brain size={16} />
               <span>Knowledge Base</span>
             </button>
+            <button className={navBtn("automations")} onClick={() => goTo("automations")}>
+              <Workflow size={16} />
+              <span>Automations</span>
+            </button>
           </div>
 
           {/* Scrollable middle */}
@@ -2803,6 +2808,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
             </div>
             {!activeSessionId && activeSection === "knowledge-base" && (
               <KnowledgeBasePage />
+            )}
+            {!activeSessionId && activeSection === "automations" && (
+              <div className="overview-page" />
             )}
             {!activeSessionId && activeSection === "overview" && (
               <div className="overview-page">

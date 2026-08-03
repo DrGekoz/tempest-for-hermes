@@ -8,6 +8,7 @@ import WelcomePage from './WelcomePage';
 import AgentsPage from './AgentsPage';
 import BYOKPage from './BYOKPage';
 import SettingsPage from './SettingsPage';
+import SetupCheckPage from './SetupCheckPage';
 import './Onboarding.css';
 
 interface Props { onComplete: () => void; }
@@ -80,8 +81,13 @@ export default function Onboarding({ onComplete }: Props) {
       {page === 3 && (
         <SettingsPage
           onBack={() => setPage(2)}
-          onComplete={onComplete}
+          onComplete={() => setPage(4)}
         />
+      )}
+
+      {/* ── Page 4 — Environment check ── */}
+      {page === 4 && (
+        <SetupCheckPage onComplete={onComplete} />
       )}
 
       {/* Theme toggle — bottom-right corner */}

@@ -2175,6 +2175,17 @@ fn check_program_available(program: String) -> bool {
         .unwrap_or(false)
 }
 
+#[tauri::command(async)]
+fn get_node_version() -> Option<String> {
+    new_command("node")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+}
+
 #[derive(serde::Serialize)]
 struct BranchInfo {
     name: String,
@@ -3962,6 +3973,7 @@ pub fn run() {
             atlas_mcp_call,
             git_ls_files,
             check_program_available,
+            get_node_version,
             verify_minisign,
             git_numstat,
             db_load,
