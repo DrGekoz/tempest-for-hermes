@@ -62,10 +62,15 @@ export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = fal
   const { theme } = useTheme();
   const settings = useSettings();
 
+  // Single fit path: reflow xterm to the container AND tell the PTY the new size.
+  // Fitting the frontend without resizing the backend desyncs cols/rows and makes
+  // the shell wrap at the wrong column — the source of terminal "glitching".
   const fitIfVisible = () => {
     const c = containerRef.current;
-    if (!c || c.offsetWidth === 0 || c.offsetHeight === 0) return;
+    const term = termRef.current;
+    if (!term || !c || c.offsetWidth === 0 || c.offsetHeight === 0) return;
     fitAddonRef.current?.fit();
+    invoke("resize_pty", { sessionId, rows: term.rows, cols: term.cols }).catch(() => {});
   };
 
   // Hot-swap theme on existing terminal without touching the PTY session.
@@ -126,14 +131,14 @@ export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = fal
     const buffered = sessionManager.attach(sessionId, onData);
     for (const chunk of buffered) term.write(chunk);
 
-    const fitAndResize = () => {
-      if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
-      fitAddon.fit();
-      invoke("resize_pty", { sessionId, rows: term.rows, cols: term.cols }).catch(() => {});
-    };
-
+    // Wait for the terminal font to load before the first fit. If we fit while the
+    // fallback font is still active, xterm measures the wrong cell width → too few
+    // columns (gap on the right, jagged glyphs) until a later refit. fonts.ready
+    // resolves immediately once loaded, so this is free on subsequent opens.
     // Two rAFs: first yields to layout, second reads committed dimensions.
-    requestAnimationFrame(() => requestAnimationFrame(fitAndResize));
+    document.fonts.ready.then(() =>
+      requestAnimationFrame(() => requestAnimationFrame(fitIfVisible)),
+    );
 
     term.onData((data) => {
       const bytes = Array.from(new TextEncoder().encode(data));
@@ -152,7 +157,7 @@ export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = fal
     const observer = new ResizeObserver(() => {
       if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
       if (resizeTimerRef.current !== null) clearTimeout(resizeTimerRef.current);
-      resizeTimerRef.current = setTimeout(fitAndResize, 16);
+      resizeTimerRef.current = setTimeout(fitIfVisible, 16);
     });
     observer.observe(el);
 
