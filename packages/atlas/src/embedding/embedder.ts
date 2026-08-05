@@ -24,22 +24,46 @@ export const EMBEDDABLE_KINDS = [
   'type_alias', 'component', 'route',
 ] as const;
 
+/** Model-download progress event, as reported by @xenova/transformers. */
+export interface ModelProgress {
+  status: string;      // 'initiate' | 'download' | 'progress' | 'done' | 'ready' | ...
+  file?: string;
+  progress?: number;   // 0–100 for the current file
+  loaded?: number;
+  total?: number;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let extractorPromise: Promise<any> | null = null;
 
-async function getExtractor(): Promise<unknown> {
+async function getExtractor(onProgress?: (p: ModelProgress) => void): Promise<unknown> {
   if (!extractorPromise) {
     extractorPromise = (async () => {
       // Dynamic import keeps onnxruntime-node off the cold-start path.
       const mod = await import('@xenova/transformers');
-      // Cap threads — a large batch across every core spiked RAM into swap and
-      // froze the machine during the spike (see IMPLEMENTATION.md §7). Belt-and-
-      // suspenders alongside the small batch sizes callers use.
       try {
-        (mod as { env?: { backends?: { onnx?: { wasm?: { numThreads?: number } } } } })
-          .env?.backends?.onnx?.wasm && ((mod as any).env.backends.onnx.wasm.numThreads = 1);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const env = (mod as any).env;
+        if (env) {
+          // Route the one-time ~25 MB model download to Tempest's stable,
+          // app-owned cache dir (passed via `server-entry --model-cache`, set
+          // into ATLAS_MODEL_CACHE). Without this the model caches relative to
+          // the process CWD — i.e. into whatever project is indexed first, and
+          // re-downloads per project. Fetch once, share across every project.
+          const cacheDir = process.env.ATLAS_MODEL_CACHE;
+          if (cacheDir) env.cacheDir = cacheDir;
+          env.allowRemoteModels = true; // permit the initial fetch; served from cache after
+          // Cap threads — a large batch across every core spiked RAM into swap
+          // and froze the machine during the spike (see IMPLEMENTATION.md §7).
+          // Belt-and-suspenders alongside the small batch sizes callers use.
+          env.backends?.onnx?.wasm && (env.backends.onnx.wasm.numThreads = 1);
+        }
       } catch { /* env shape is best-effort */ }
-      return mod.pipeline('feature-extraction', EMBEDDING_MODEL, { quantized: true });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (mod as any).pipeline('feature-extraction', EMBEDDING_MODEL, {
+        quantized: true,
+        ...(onProgress ? { progress_callback: onProgress } : {}),
+      });
     })().catch((err) => {
       // Reset so a later call (e.g. after the model finishes downloading) can retry.
       extractorPromise = null;
@@ -47,6 +71,17 @@ async function getExtractor(): Promise<unknown> {
     });
   }
   return extractorPromise;
+}
+
+/**
+ * Pre-download and warm the embedding model, reporting hub download progress.
+ * Tempest calls this (via `server-entry --download-model`) the moment the user
+ * consents during onboarding, so the one-time fetch happens up front behind a
+ * progress bar rather than lazily stalling the first index. Resolves when the
+ * model is ready; throws if the download fails (offline / disk full).
+ */
+export async function prefetchModel(onProgress?: (p: ModelProgress) => void): Promise<void> {
+  await getExtractor(onProgress);
 }
 
 /**

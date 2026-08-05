@@ -6,11 +6,21 @@
  *     Runs once when the user first accepts Token Intelligence for a project.
  *     Exits 0 when done (or if the project was already indexed).
  *
- *   node server-entry.js --path <project>
+ *   node server-entry.js --path <project> [--semantic --model-cache <dir>]
  *     Start an MCP server session (proxy or daemon). Used at agent spawn time
  *     to inject the atlas tools into the agent's context.
  *     The daemon re-invokes this script with ATLAS_DAEMON_INTERNAL=1 set,
  *     so it also handles the "I am the shared daemon" path transparently.
+ *
+ *   node server-entry.js --download-model --model-cache <dir>
+ *     Pre-fetch the semantic embedding model into <dir>, streaming JSON progress
+ *     lines to stdout. Invoked by Tempest when the user consents to semantic
+ *     search during onboarding, so the one-time download has a progress bar.
+ *
+ * Semantic search is a Tempest-owned, opt-in setting passed here as ARGS (never
+ * an env block in the written MCP config). `--semantic` / `--model-cache` are
+ * normalized into ATLAS_SEMANTIC / ATLAS_MODEL_CACHE below so they propagate to
+ * the detached daemon and query worker threads, which inherit process.env.
  */
 
 import * as path from 'path';
@@ -21,6 +31,9 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   let projectPath: string | undefined;
   let initMode = false;
+  let semantic = false;
+  let modelCache: string | undefined;
+  let downloadModel = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -32,9 +45,39 @@ async function main(): Promise<void> {
       }
     } else if (arg === '--init') {
       initMode = true;
+    } else if (arg === '--semantic') {
+      semantic = true;
+    } else if (arg === '--download-model') {
+      downloadModel = true;
+    } else if (arg === '--model-cache') {
+      const next = args[i + 1];
+      if (next !== undefined) {
+        modelCache = next;
+        i++;
+      }
     }
     // Ignore 'serve', '--mcp', and other flags the daemon spawner may pass
     // when re-invoking this script with ATLAS_DAEMON_INTERNAL=1.
+  }
+
+  // Normalize the Tempest-supplied args into env so Atlas's own detached daemon
+  // (spawned with {...process.env}) and query worker threads (inherit env) all
+  // see the same config without extra plumbing. See semanticDisabled().
+  if (modelCache) process.env.ATLAS_MODEL_CACHE = modelCache;
+  if (semantic) process.env.ATLAS_SEMANTIC = '1';
+
+  // Download-model mode: fetch + warm the model, stream progress, exit.
+  if (downloadModel) {
+    const { prefetchModel } = require('../embedding') as typeof import('../embedding');
+    try {
+      await prefetchModel((p) => process.stdout.write(JSON.stringify(p) + '\n'));
+      process.stdout.write(JSON.stringify({ status: 'done' }) + '\n');
+      process.exitCode = 0;
+    } catch (err) {
+      process.stderr.write(`[Atlas] model download failed: ${err}\n`);
+      process.exitCode = 1;
+    }
+    return;
   }
 
   if (!projectPath) {

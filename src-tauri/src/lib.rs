@@ -146,12 +146,23 @@ fn atlas_resource_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Stri
     }
 }
 
+/// Stable, Tempest-owned directory for the semantic embedding model. Lives in the
+/// app-data dir (survives app updates, shared across every project) so the ~25 MB
+/// model is downloaded once and never re-fetched. Passed to Atlas via
+/// `--model-cache`; created on demand.
+fn atlas_model_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("atlas-models");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
 /// Spawn `node .../atlas/dist/mcp/server-entry.js --init --path <project>` in the
 /// background. The Node process initialises the .atlas/ directory and builds the
 /// first full code-graph index, then exits. Fire-and-forget — any errors are
 /// written to stderr by the Node process itself.
 #[tauri::command(async)]
-fn start_atlas_index(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
+fn start_atlas_index(app: tauri::AppHandle, project_path: String, semantic: bool) -> Result<(), String> {
     let entry = atlas_resource_dir(&app)?
         .join("dist")
         .join("mcp")
@@ -161,12 +172,20 @@ fn start_atlas_index(app: tauri::AppHandle, project_path: String) -> Result<(), 
         return Err(format!("Atlas not bundled — entry not found at: {}", entry.display()));
     }
 
-    let mut child = new_command("node")
-        .arg("--liftoff-only") // prevents V8 turboshaft Zone OOM on tree-sitter WASM grammars (Node >=22)
+    // Semantic search is a user-consented, Tempest-owned setting. Pass it (and
+    // the stable model cache dir) to Atlas as CLI args — never an env block.
+    let model_dir = if semantic { Some(atlas_model_dir(&app)?) } else { None };
+
+    let mut cmd = new_command("node");
+    cmd.arg("--liftoff-only") // prevents V8 turboshaft Zone OOM on tree-sitter WASM grammars (Node >=22)
         .arg(&entry)
         .arg("--init")
         .arg("--path")
-        .arg(&project_path)
+        .arg(&project_path);
+    if let Some(dir) = &model_dir {
+        cmd.arg("--semantic").arg("--model-cache").arg(dir);
+    }
+    let mut child = cmd
         .current_dir(&project_path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -205,15 +224,88 @@ fn start_atlas_index(app: tauri::AppHandle, project_path: String) -> Result<(), 
     });
 
     // Write agent MCP config files now that we know the entry path.
-    write_atlas_mcp_config(&project_path, &entry)?;
+    write_atlas_mcp_config(&project_path, &entry, model_dir.as_deref())?;
 
     Ok(())
 }
 
-fn write_atlas_mcp_config(project_path: &str, entry: &std::path::Path) -> Result<(), String> {
+/// Pre-download the semantic embedding model into Tempest's stable cache dir,
+/// streaming hub progress to the frontend as `atlas:model-download` events.
+/// Invoked when the user consents to semantic search during onboarding. Resolves
+/// when the model is ready (or rejects on failure) so the UI can await it.
+#[tauri::command(async)]
+fn download_atlas_model(app: tauri::AppHandle) -> Result<(), String> {
+    let entry = atlas_resource_dir(&app)?.join("dist").join("mcp").join("server-entry.js");
+    if !entry.exists() {
+        return Err(format!("Atlas not bundled — entry not found at: {}", entry.display()));
+    }
+    let model_dir = atlas_model_dir(&app)?;
+
+    let mut child = new_command("node")
+        .arg("--liftoff-only")
+        .arg(&entry)
+        .arg("--download-model")
+        .arg("--model-cache")
+        .arg(&model_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn model download: {e}"))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // Diagnostics: forward stderr to the atlas log channel.
+    let app_err = app.clone();
+    let err_thread = std::thread::spawn(move || {
+        use std::io::BufRead;
+        if let Some(h) = stderr {
+            for line in std::io::BufReader::new(h).lines().map_while(Result::ok) {
+                let _ = app_err.emit("atlas:log", serde_json::json!({ "line": line }));
+            }
+        }
+    });
+
+    // Stream JSON progress lines → `atlas:model-download` events on this thread
+    // (the command runs async, so blocking here is fine).
+    if let Some(h) = stdout {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(h).lines().map_while(Result::ok) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                let _ = app.emit("atlas:model-download", v);
+            }
+        }
+    }
+
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let _ = err_thread.join();
+    if status.success() { Ok(()) } else { Err("Model download failed — see logs.".to_string()) }
+}
+
+/// Build the `args` array agents use to spawn the atlas MCP server. When the user
+/// has consented to semantic search, `model_dir` is Some and `--semantic` +
+/// `--model-cache` are appended — as ARGS, so no env block is written anywhere.
+fn atlas_mcp_args(entry_str: &str, proj_str: &str, model_dir: Option<&std::path::Path>) -> Vec<String> {
+    let mut args = vec![
+        "--liftoff-only".to_string(),
+        entry_str.to_string(),
+        "--path".to_string(),
+        proj_str.to_string(),
+    ];
+    if let Some(dir) = model_dir {
+        args.push("--semantic".to_string());
+        args.push("--model-cache".to_string());
+        args.push(dir.to_string_lossy().replace('\\', "/"));
+    }
+    args
+}
+
+fn write_atlas_mcp_config(project_path: &str, entry: &std::path::Path, model_dir: Option<&std::path::Path>) -> Result<(), String> {
     let entry_str = entry.to_string_lossy().replace('\\', "/");
     let proj_str  = project_path.replace('\\', "/");
     let root = std::path::Path::new(project_path);
+    let args = atlas_mcp_args(&entry_str, &proj_str, model_dir);
 
     // Shared helper: read existing JSON, merge `mcpServers.atlas`, write back.
     // Used by Claude Code, Gemini CLI, Cursor, and Kiro — all use the same shape.
@@ -224,7 +316,7 @@ fn write_atlas_mcp_config(project_path: &str, entry: &std::path::Path) -> Result
         v["mcpServers"]["atlas"] = serde_json::json!({
             "type": "stdio",
             "command": "node",
-            "args": ["--liftoff-only", &entry_str, "--path", &proj_str]
+            "args": args
         });
         let out = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
         if let Some(parent) = file.parent() {
@@ -255,9 +347,11 @@ fn write_atlas_mcp_config(project_path: &str, entry: &std::path::Path) -> Result
         let existing = std::fs::read_to_string(&oc_path).unwrap_or_default();
         let mut v: serde_json::Value = serde_json::from_str(&existing)
             .unwrap_or_else(|_| serde_json::json!({}));
+        let mut oc_cmd = vec!["node".to_string()];
+        oc_cmd.extend(args.iter().cloned());
         v["mcp"]["atlas"] = serde_json::json!({
             "type": "local",
-            "command": ["node", "--liftoff-only", &entry_str, "--path", &proj_str],
+            "command": oc_cmd,
             "enabled": true
         });
         let out = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
@@ -546,14 +640,18 @@ fn check_goose_atlas_config() -> bool {
 }
 
 #[tauri::command(async)]
-fn write_goose_atlas_config(app: tauri::AppHandle) -> Result<(), String> {
+fn write_goose_atlas_config(app: tauri::AppHandle, semantic: bool) -> Result<(), String> {
     let entry = atlas_resource_dir(&app)?.join("dist").join("mcp").join("server-entry.js");
     let entry_str = entry.to_string_lossy().replace('\\', "/");
     let path = global_home().join(".config").join("goose").join("profiles.yaml");
     if let Some(p) = path.parent() { std::fs::create_dir_all(p).map_err(|e| e.to_string())?; }
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
     if existing.contains("atlas:") { return Ok(()); }
-    let atlas_block = format!("  atlas:\n    name: Atlas\n    type: stdio\n    cmd: node\n    args:\n      - --liftoff-only\n      - {entry_str}\n    enabled: true\n");
+    let semantic_args = if semantic {
+        let dir = atlas_model_dir(&app)?.to_string_lossy().replace('\\', "/");
+        format!("      - --semantic\n      - --model-cache\n      - {dir}\n")
+    } else { String::new() };
+    let atlas_block = format!("  atlas:\n    name: Atlas\n    type: stdio\n    cmd: node\n    args:\n      - --liftoff-only\n      - {entry_str}\n{semantic_args}    enabled: true\n");
     let content = if existing.is_empty() {
         format!("extensions:\n{atlas_block}")
     } else if let Some(pos) = existing.find("extensions:") {
@@ -572,14 +670,18 @@ fn check_codex_atlas_config() -> bool {
 }
 
 #[tauri::command(async)]
-fn write_codex_atlas_config(app: tauri::AppHandle) -> Result<(), String> {
+fn write_codex_atlas_config(app: tauri::AppHandle, semantic: bool) -> Result<(), String> {
     let entry = atlas_resource_dir(&app)?.join("dist").join("mcp").join("server-entry.js");
     let entry_str = entry.to_string_lossy().replace('\\', "/");
     let path = global_home().join(".codex").join("config.toml");
     if let Some(p) = path.parent() { std::fs::create_dir_all(p).map_err(|e| e.to_string())?; }
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
     if existing.contains("[mcp_servers.atlas]") { return Ok(()); }
-    let atlas_block = format!("\n[mcp_servers.atlas]\ncommand = \"node\"\nargs = [\"--liftoff-only\", \"{entry_str}\"]\n");
+    let semantic_args = if semantic {
+        let dir = atlas_model_dir(&app)?.to_string_lossy().replace('\\', "/");
+        format!(", \"--semantic\", \"--model-cache\", \"{dir}\"")
+    } else { String::new() };
+    let atlas_block = format!("\n[mcp_servers.atlas]\ncommand = \"node\"\nargs = [\"--liftoff-only\", \"{entry_str}\"{semantic_args}]\n");
     std::fs::write(&path, format!("{}{}", existing.trim_end(), atlas_block)).map_err(|e| e.to_string())
 }
 
@@ -3949,6 +4051,7 @@ pub fn run() {
             hooks_write_atomic,
             hooks_paths,
             start_atlas_index,
+            download_atlas_model,
             get_atlas_graph,
             atlas_query,
             check_atlas_db,

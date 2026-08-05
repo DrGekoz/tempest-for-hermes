@@ -12,6 +12,10 @@ export interface AppSettings {
   commitMessageTemplate: string;
   atlasEnabled: boolean;
   atlasAutoIndex: boolean;
+  // Semantic (vector) code search. Opt-in: requires downloading a ~25 MB
+  // embedding model. When on, Tempest passes --semantic to Atlas so it embeds
+  // symbols and serves hybrid retrieval; off keeps Atlas FTS-only, no download.
+  atlasSemantic: boolean;
   isolateAgents: boolean;
   autoApprove: boolean;
   // Install lifecycle hooks into supported agents' configs for precise
@@ -35,6 +39,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   commitMessageTemplate: "Agent work",
   atlasEnabled: false,
   atlasAutoIndex: false,
+  atlasSemantic: false,
   isolateAgents: true,
   autoApprove: true,
   preciseAgentStatus: true,

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check } from "lucide-react";
 import { useSettings, updateSetting } from "../../store/appSettings";
+import { downloadAtlasModel } from "../../lib/atlasModel";
 import gooseSrc from "../../assets/agent-icons/goose.svg";
 import codexSrc from "../../assets/agent-icons/codex.svg";
 
@@ -36,7 +37,7 @@ const GLOBAL_AGENTS: GlobalAgent[] = [
   },
 ];
 
-function GlobalAgentRow({ agent }: { agent: GlobalAgent }) {
+function GlobalAgentRow({ agent, semantic }: { agent: GlobalAgent; semantic: boolean }) {
   const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -47,7 +48,7 @@ function GlobalAgentRow({ agent }: { agent: GlobalAgent }) {
   async function install() {
     setLoading(true);
     try {
-      await invoke(agent.writeCmd);
+      await invoke(agent.writeCmd, { semantic });
       setConfigured(true);
     } finally {
       setLoading(false);
@@ -78,6 +79,56 @@ function GlobalAgentRow({ agent }: { agent: GlobalAgent }) {
         >
           {loading ? "Writing…" : "Install"}
         </button>
+      )}
+    </div>
+  );
+}
+
+// Semantic search toggle: enabling triggers the one-time model download with an
+// inline progress bar; disabling is instant (the cached model stays on disk).
+function SemanticToggle({ enabled }: { enabled: boolean }) {
+  const [phase, setPhase] = useState<"idle" | "downloading" | "error">("idle");
+  const [pct, setPct] = useState(0);
+
+  async function toggle() {
+    if (phase === "downloading") return;
+    if (enabled) { updateSetting("atlasSemantic", false); return; }
+    setPhase("downloading"); setPct(0);
+    try {
+      await downloadAtlasModel((p) => { if (typeof p.progress === "number") setPct(Math.round(p.progress)); });
+      updateSetting("atlasSemantic", true);
+      setPhase("idle");
+    } catch {
+      setPhase("error");
+      updateSetting("atlasSemantic", false);
+    }
+  }
+
+  return (
+    <div className="sp-toggle-row sp-toggle-row--indent" onClick={toggle} style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div className="sp-toggle-text">
+          <span className="sp-toggle-label">Semantic code search</span>
+          <span className="sp-toggle-desc">
+            {phase === "error"
+              ? "Download failed — click to retry."
+              : "Downloads a ~25 MB model (once) for retrieval by meaning. Runs offline after."}
+          </span>
+        </div>
+        <button
+          className={`sp-toggle${enabled ? " sp-toggle--on" : ""}`}
+          onClick={(e) => { e.stopPropagation(); toggle(); }}
+          role="switch"
+          aria-checked={enabled}
+          disabled={phase === "downloading"}
+        >
+          <span className="sp-toggle-thumb" />
+        </button>
+      </div>
+      {phase === "downloading" && (
+        <div style={{ height: "4px", borderRadius: "2px", background: "var(--tempest-border-default)", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: "var(--tempest-accent, #6366f1)", transition: "width 0.2s" }} />
+        </div>
       )}
     </div>
   );
@@ -126,6 +177,8 @@ export function TokenIntelligenceSection() {
             </button>
           </div>
         )}
+
+        {s.atlasEnabled && <SemanticToggle enabled={s.atlasSemantic} />}
       </div>
 
       {s.atlasEnabled && (
@@ -136,7 +189,7 @@ export function TokenIntelligenceSection() {
           </p>
           <div className="sp-rows">
             {GLOBAL_AGENTS.map((agent) => (
-              <GlobalAgentRow key={agent.id} agent={agent} />
+              <GlobalAgentRow key={agent.id} agent={agent} semantic={s.atlasSemantic} />
             ))}
           </div>
         </>

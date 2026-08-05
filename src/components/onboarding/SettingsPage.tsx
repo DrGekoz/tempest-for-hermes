@@ -1,7 +1,9 @@
-import { ArrowLeft, ArrowRight, Cpu, GitBranch, ShieldCheck, GitCommitHorizontal, BarChart3 } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, ArrowRight, Cpu, GitBranch, ShieldCheck, GitCommitHorizontal, BarChart3, Sparkles } from 'lucide-react';
 import { useSettings, updateSetting } from '../../store/appSettings';
 import { setTelemetryEnabled } from '../../lib/telemetry';
 import { useAttribution, setAttribution } from '../../store/attribution';
+import { downloadAtlasModel } from '../../lib/atlasModel';
 import type { ReactNode } from 'react';
 
 interface Props {
@@ -55,8 +57,82 @@ function SettingRow({ icon, title, description, enabled, onToggle, className }: 
   );
 }
 
+// Semantic search sub-option: consent + one-time model download with progress.
+// Rendered only when Token Intelligence is on (semantic builds on the index).
+function SemanticRow({ enabled }: { enabled: boolean }) {
+  const [phase, setPhase] = useState<'idle' | 'downloading' | 'error'>('idle');
+  const [pct, setPct] = useState(0);
+  const [err, setErr] = useState('');
+
+  async function enable() {
+    setPhase('downloading'); setPct(0); setErr('');
+    try {
+      await downloadAtlasModel((p) => {
+        if (typeof p.progress === 'number') setPct(Math.round(p.progress));
+      });
+      updateSetting('atlasSemantic', true);
+      setPhase('idle');
+    } catch (e) {
+      setErr(String(e)); setPhase('error');
+      updateSetting('atlasSemantic', false);
+    }
+  }
+
+  function toggle() {
+    if (phase === 'downloading') return;
+    if (enabled) { updateSetting('atlasSemantic', false); return; }
+    void enable();
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex', flexDirection: 'column', gap: '10px',
+        margin: '-4px 0 0 24px', padding: '16px 18px',
+        borderRadius: '10px', border: '1px solid var(--tempest-border-default)',
+        cursor: phase === 'downloading' ? 'default' : 'pointer', transition: 'border-color 0.15s',
+      }}
+      onClick={toggle}
+      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--tempest-border-subtle)')}
+      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--tempest-border-default)')}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ color: 'var(--tempest-fg-subtle)', flexShrink: 0 }}><Sparkles size={18} /></div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--tempest-fg-default)' }}>Semantic code search</span>
+          <span style={{ fontSize: '12px', color: 'var(--tempest-fg-muted)', lineHeight: 1.5 }}>
+            Downloads a ~25&nbsp;MB embedding model (once) so agents can retrieve code by meaning, not just keywords. Runs fully offline afterward — nothing leaves your machine.
+          </span>
+        </div>
+        <button
+          className={`ob-toggle${enabled ? ' ob-toggle--on' : ''}`}
+          onClick={e => { e.stopPropagation(); toggle(); }}
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Semantic code search"
+          disabled={phase === 'downloading'}
+        >
+          <span className="ob-toggle-thumb" />
+        </button>
+      </div>
+
+      {phase === 'downloading' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <div style={{ height: '4px', borderRadius: '2px', background: 'var(--tempest-border-default)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--tempest-accent, #6366f1)', transition: 'width 0.2s' }} />
+          </div>
+          <span style={{ fontSize: '11px', color: 'var(--tempest-fg-muted)' }}>Downloading model… {pct}%</span>
+        </div>
+      )}
+      {phase === 'error' && (
+        <span style={{ fontSize: '11px', color: '#ef4444' }}>Download failed: {err}. Click to retry.</span>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage({ onBack, onComplete }: Props) {
-  const { atlasEnabled, isolateAgents, autoApprove, telemetryEnabled } = useSettings();
+  const { atlasEnabled, atlasSemantic, isolateAgents, autoApprove, telemetryEnabled } = useSettings();
   const attribution = useAttribution();
 
   return (
@@ -81,6 +157,7 @@ export default function SettingsPage({ onBack, onComplete }: Props) {
               enabled={atlasEnabled}
               onToggle={() => updateSetting('atlasEnabled', !atlasEnabled)}
             />
+            {atlasEnabled && <SemanticRow enabled={atlasSemantic} />}
             <SettingRow
               icon={<GitBranch size={18} />}
               title="Agent Isolation"

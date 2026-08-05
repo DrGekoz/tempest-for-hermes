@@ -1866,7 +1866,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
       } else if (atlasSettings.atlasAutoIndex) {
         if (decided[selected] === undefined) {
           setRuntimeState({ atlasProjects: { ...decided, [selected]: true } });
-          invoke("start_atlas_index", { projectPath: selected })
+          invoke("start_atlas_index", { projectPath: selected, semantic: getSettings().atlasSemantic })
             .then(() => invoke("start_atlas_daemon", { projectPath: selected }).catch(() => {}))
             .catch((e) => console.error("[Atlas] start_atlas_index failed:", e));
           setAtlasIndexingPaths((prev) => prev.includes(selected) ? prev : [...prev, selected]);
@@ -2971,7 +2971,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                   onSyncAtlas={atlasEnabled && isAtlasIndexed && !isAtlasIndexing && activeProjectPath ? () => {
                     const decided = getRuntimeState().atlasProjects ?? {};
                     setRuntimeState({ atlasProjects: { ...decided, [activeProjectPath]: true } });
-                    invoke("start_atlas_index", { projectPath: activeProjectPath })
+                    invoke("start_atlas_index", { projectPath: activeProjectPath, semantic: getSettings().atlasSemantic })
                       .then(() => invoke("start_atlas_daemon", { projectPath: activeProjectPath }).catch(() => {}))
                       .catch((e) => console.error("[Atlas] sync failed:", e));
                     setAtlasIndexingPaths((prev) =>
@@ -3192,7 +3192,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
                   if (atlasAutoIndexLocal) {
                     updateSetting("atlasAutoIndex", true);
                   }
-                  invoke("start_atlas_index", { projectPath: atlasPromptPath })
+                  invoke("start_atlas_index", { projectPath: atlasPromptPath, semantic: getSettings().atlasSemantic })
                     .then(() => invoke("start_atlas_daemon", { projectPath: atlasPromptPath }).catch(() => {}))
                     .catch((e) => console.error("[Atlas] start_atlas_index failed:", e));
                   setAtlasIndexingPaths((prev) => prev.includes(atlasPromptPath) ? prev : [...prev, atlasPromptPath]);

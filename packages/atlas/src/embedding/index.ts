@@ -117,11 +117,15 @@ export async function syncEmbeddings(
 }
 
 /**
- * Whether semantic retrieval is disabled by env. Default: attempt (on-by-default
- * per the plan). Set `ATLAS_SEMANTIC=0`/`off`/`false` to force FTS-only and skip
- * any model load/download.
+ * Whether semantic retrieval is disabled. Opt-in: OFF unless Tempest explicitly
+ * turns it on. Tempest passes `--semantic` to `server-entry`, which sets
+ * `ATLAS_SEMANTIC=1` (inherited by the detached daemon and query workers). With
+ * no consent the model is never loaded or downloaded and Atlas stays FTS-only.
  */
 export function semanticDisabled(): boolean {
   const v = (process.env.ATLAS_SEMANTIC ?? '').trim().toLowerCase();
-  return v === '0' || v === 'off' || v === 'false' || v === 'no';
+  return !(v === '1' || v === 'on' || v === 'true' || v === 'yes' || v === 'enabled');
 }
+
+export { prefetchModel } from './embedder';
+export type { ModelProgress } from './embedder';
