@@ -7,6 +7,7 @@ use tauri::Emitter;
 use hephaestus::Isolate;
 
 mod agent_hooks;
+mod automations;
 mod canvas_mcp;
 mod claude_bridge;
 mod service_proxy;
@@ -1250,6 +1251,31 @@ CREATE TABLE IF NOT EXISTS thread_edges (
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_thread_edges_thread ON thread_edges(thread_id);
+
+-- ── Automations (Eve agent projects) ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS automations (
+  id           TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  slug         TEXT NOT NULL,
+  path         TEXT NOT NULL,
+  graph        TEXT NOT NULL,
+  sandbox_mode TEXT NOT NULL DEFAULT 'auto',
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  built_at     TEXT,
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE(workspace_id, slug)
+);
+CREATE INDEX IF NOT EXISTS idx_automations_workspace ON automations(workspace_id);
+
+CREATE TABLE IF NOT EXISTS automation_processes (
+  id             TEXT PRIMARY KEY,
+  automation_id  TEXT NOT NULL UNIQUE REFERENCES automations(id) ON DELETE CASCADE,
+  port           INTEGER NOT NULL,
+  pid            INTEGER NOT NULL,
+  started_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
 ";
 
 fn init_db(handle: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
@@ -4108,6 +4134,15 @@ pub fn run() {
             db_list_thread_edges,
             db_upsert_thread_edge,
             db_delete_thread_edge,
+            automations::list_automations,
+            automations::get_automation,
+            automations::create_automation,
+            automations::update_automation,
+            automations::delete_automation,
+            automations::build_automation,
+            automations::start_automation,
+            automations::stop_automation,
+            automations::get_automation_process,
             claude_bridge::claude_stream_start,
             claude_bridge::claude_permission_decision,
             claude_bridge::claude_stream_cancel,

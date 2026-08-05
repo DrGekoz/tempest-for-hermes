@@ -470,7 +470,7 @@ export function ThreadsView({
         proOptions={{ hideAttribution: true }}
         colorMode={theme.type}
       >
-        <Background bgColor="var(--tempest-bg-editor)" color="var(--tempest-border-subtle)" gap={28} size={2.5} />
+        <Background id="threads-bg" bgColor="var(--tempest-bg-editor)" color="var(--tempest-border-subtle)" gap={28} size={2.5} />
         <Controls />
         <MiniMap pannable zoomable />
         <Panel position="top-center">

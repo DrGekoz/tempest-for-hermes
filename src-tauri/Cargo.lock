@@ -4468,6 +4468,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tiny_http",
  "url",
+ "uuid",
 ]
 
 [[package]]
