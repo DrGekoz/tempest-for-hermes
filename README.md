@@ -92,7 +92,7 @@ npm run build      # production build -> dist-installers/
 
 ## Star History
 
-![Star Trail](https://star-trail.fun/api/chart/tempestai-dev/tempest)
+[![Star Trail](https://star-trail.fun/api/chart/tempestai-dev/tempest)](https://star-trail.fun/tempestai-dev/tempest)
 
 ## Community
 
