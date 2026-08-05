@@ -27,6 +27,7 @@ import { logDebug } from '../errors';
 import { validatePathWithinRoot, isConfigLeafNode } from '../utils';
 import { isTestFile, extractSearchTerms, scorePathRelevance, getStemVariants, isDistinctiveIdentifier } from '../search/query-utils';
 import { LOW_CONFIDENCE_MARKER } from './markers';
+import { computeVectorSeeds, semanticDisabled } from '../embedding';
 
 /**
  * Extract likely symbol names from a natural language query
@@ -171,6 +172,8 @@ const DEFAULT_FIND_OPTIONS: Required<FindRelevantContextOptions> = {
   minScore: 0.3,
   edgeKinds: [],
   nodeKinds: HIGH_VALUE_NODE_KINDS, // Filter out imports/exports by default
+  seedResults: [],       // vector entry points (computed internally by default)
+  seedMode: 'merge',     // hybrid RRF when seeds are present
 };
 
 // Re-export the low-confidence sentinel (defined in a dependency-free leaf so
@@ -445,10 +448,25 @@ export class ContextBuilder {
       return { nodes, edges, roots };
     }
 
+    // === SEMANTIC ENTRY POINTS (vector fork) ===
+    // Resolve the vector-ranked seeds that feed the entry-point discovery. An
+    // explicit `opts.seedResults` (spike/tests) wins; otherwise compute them
+    // from the stored node embeddings when a model is available. With neither,
+    // this is a no-op and everything below is today's FTS-only behavior.
+    let seedResults: SearchResult[] = opts.seedResults ?? [];
+    let seedMode: 'replace' | 'merge' = opts.seedMode ?? 'merge';
+    if (seedResults.length === 0 && !semanticDisabled()) {
+      seedResults = await computeVectorSeeds(this.queries, query, opts.searchLimit);
+      seedMode = 'merge'; // internally-computed seeds always fuse with FTS
+    }
+    const useSeeds = seedResults.length > 0;
+    const mergeSeeds = useSeeds && seedMode === 'merge'; // hybrid (RRF)
+    const replaceSeeds = useSeeds && seedMode === 'replace'; // vector-only
+
     // === HYBRID SEARCH ===
 
-    // Step 1: Extract potential symbol names from query
-    const symbolsFromQuery = extractSymbolsFromQuery(query);
+    // Step 1: Extract potential symbol names from query (skipped in vector-only)
+    const symbolsFromQuery = replaceSeeds ? [] : extractSymbolsFromQuery(query);
     logDebug('Extracted symbols from query', { query, symbols: symbolsFromQuery });
 
     // Step 2: Look up exact matches for extracted symbols
@@ -542,7 +560,7 @@ export class ContextBuilder {
     // where file names are the primary identifiers.
     let textResults: SearchResult[] = [];
     try {
-      const searchTerms = extractSearchTerms(query);
+      const searchTerms = replaceSeeds ? [] : extractSearchTerms(query);
       if (searchTerms.length > 0) {
         // Search each term individually to get broader coverage,
         // then boost results that match multiple terms
@@ -611,6 +629,54 @@ export class ContextBuilder {
         resultById.set(result.node.id, result);
         searchResults.push(result);
       }
+    }
+
+    // Vector-only: seeds ARE the entry points; the FTS channels above were
+    // skipped (replaceSeeds emptied their inputs), so just adopt the seeds.
+    if (replaceSeeds) {
+      for (const r of seedResults) {
+        if (!resultById.has(r.node.id)) {
+          resultById.set(r.node.id, r);
+          searchResults.push(r);
+        }
+      }
+    }
+
+    // Hybrid: fuse FTS + vector by RECIPROCAL RANK, not score magnitude. Rank-
+    // based fusion is scale-free, so a confident-but-WRONG FTS keyword match
+    // (high bm25 on a frequent token) can't bury a vector seed that's rank-1 by
+    // meaning. Fused values are mapped back onto the FTS score range so the
+    // downstream boosts / traversal / truncation keep working unchanged.
+    if (mergeSeeds) {
+      const K = 60; // standard RRF constant (Cormack et al.)
+      const ftsRank = new Map<string, number>();
+      [...searchResults]
+        .sort((a, b) => b.score - a.score)
+        .forEach((r, i) => ftsRank.set(r.node.id, i));
+      const vecRank = new Map<string, number>();
+      seedResults.forEach((r, i) => vecRank.set(r.node.id, i));
+
+      // Vector seeds not already present join the candidate pool.
+      for (const r of seedResults) {
+        if (!resultById.has(r.node.id)) {
+          const seed = { ...r };
+          resultById.set(r.node.id, seed);
+          searchResults.push(seed);
+        }
+      }
+
+      const maxFts = searchResults.reduce((m, r) => Math.max(m, r.score), 0) || 1;
+      let maxFused = 0;
+      const fused = new Map<string, number>();
+      for (const r of searchResults) {
+        let f = 0;
+        if (ftsRank.has(r.node.id)) f += 1 / (K + ftsRank.get(r.node.id)!);
+        if (vecRank.has(r.node.id)) f += 1 / (K + vecRank.get(r.node.id)!);
+        fused.set(r.node.id, f);
+        if (f > maxFused) maxFused = f;
+      }
+      const scale = maxFts / (maxFused || 1);
+      for (const r of searchResults) r.score = (fused.get(r.node.id) ?? 0) * scale;
     }
 
     const queryLower = query.toLowerCase();

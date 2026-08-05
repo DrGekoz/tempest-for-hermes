@@ -45,6 +45,7 @@ import {
 } from './resolution';
 import { GraphTraverser, GraphQueryManager } from './graph';
 import { ContextBuilder, createContextBuilder } from './context';
+import { syncEmbeddings, semanticDisabled } from './embedding';
 import { Mutex, FileLock } from './utils';
 import { FileWatcher, WatchOptions, PendingFile, LockUnavailableError } from './sync';
 import { EXTRACTION_VERSION } from './extraction/extraction-version';
@@ -497,6 +498,7 @@ export class Atlas {
         // Cheap and non-blocking; never load-bearing for correctness.
         if (result.success && result.filesIndexed > 0) {
           this.db.runMaintenance();
+          this.scheduleEmbedding();
         }
 
         // The orchestrator only sees extraction-phase counts; resolution and
@@ -620,6 +622,7 @@ export class Atlas {
         // Refresh planner stats + checkpoint the WAL after bulk writes.
         if (result.filesAdded > 0 || result.filesModified > 0 || result.filesRemoved > 0) {
           this.db.runMaintenance();
+          this.scheduleEmbedding();
         }
 
         return result;
@@ -627,6 +630,18 @@ export class Atlas {
         this.fileLock.release();
       }
     });
+  }
+
+  /**
+   * Kick off background semantic embedding for any nodes that need it (new/
+   * changed since last embed, or a model switch). Fire-and-forget: it runs after
+   * the index lock is released, in small batches, and never blocks a query or a
+   * later index. No-op when semantic search is disabled or no model is present;
+   * all failures (offline, model not installed) are swallowed inside.
+   */
+  private scheduleEmbedding(): void {
+    if (semanticDisabled()) return;
+    void syncEmbeddings(this.queries);
   }
 
   /**

@@ -381,6 +381,86 @@ export class QueryBuilder {
     });
   }
 
+  // ===========================================================================
+  // Semantic embeddings (optional; NULL until a local model runs). Plain SQL
+  // over the nodes.embedding* columns — the model itself lives in ../embedding.
+  // ===========================================================================
+
+  /** True if at least one node has a stored embedding (cheap gate — no model load). */
+  hasEmbeddings(): boolean {
+    const row = this.db
+      .prepare('SELECT 1 FROM nodes WHERE embedding IS NOT NULL LIMIT 1')
+      .get();
+    return row != null;
+  }
+
+  /**
+   * Every stored embedding as {id, embedding blob}. Streamed via `iterate` so
+   * the raw BLOBs aren't all materialized by SQLite at once; the caller decodes.
+   */
+  *iterateEmbeddings(): IterableIterator<{ id: string; embedding: Uint8Array }> {
+    const stmt = this.db.prepare(
+      'SELECT id, embedding FROM nodes WHERE embedding IS NOT NULL'
+    );
+    for (const row of stmt.iterate()) {
+      yield row as { id: string; embedding: Uint8Array };
+    }
+  }
+
+  /**
+   * Rows still needing an embedding for `model`: never embedded, or embedded by
+   * a different model (backfill on model switch). The work set is fully derivable
+   * from the DB, so a killed process just recomputes the delta on restart.
+   *
+   * ponytail: re-index re-inserts a changed file's nodes via INSERT OR REPLACE,
+   * which nulls their embedding — so any edit to a file re-embeds all its nodes,
+   * not just the ones whose signature moved. Fine at interactive edit rates (a
+   * handful of nodes, background). Upgrade path if it ever bites: a column-
+   * preserving UPSERT in insertNode + drive sync off embedding_text_hash.
+   */
+  getNodesNeedingEmbedding(
+    model: string,
+    kinds: readonly string[],
+    limit: number
+  ): Array<{ id: string; name: string; qualified_name: string; signature: string | null; docstring: string | null }> {
+    const placeholders = kinds.map(() => '?').join(',');
+    return this.db
+      .prepare(
+        `SELECT id, name, qualified_name, signature, docstring
+         FROM nodes
+         WHERE kind IN (${placeholders})
+           AND (embedding IS NULL OR embedding_model IS NOT ?)
+         LIMIT ?`
+      )
+      .all(...kinds, model, limit) as Array<{
+        id: string; name: string; qualified_name: string; signature: string | null; docstring: string | null;
+      }>;
+  }
+
+  /** How many nodes still need an embedding for `model` (for status reporting). */
+  countNodesNeedingEmbedding(model: string, kinds: readonly string[]): number {
+    const placeholders = kinds.map(() => '?').join(',');
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM nodes
+         WHERE kind IN (${placeholders})
+           AND (embedding IS NULL OR embedding_model IS NOT ?)`
+      )
+      .get(...kinds, model) as { n: number };
+    return row.n;
+  }
+
+  /** Store (or replace) a node's embedding. Fires only the FTS-scoped trigger's siblings, not FTS. */
+  upsertEmbedding(id: string, model: string, textHash: string, vec: Uint8Array, updatedAt: number): void {
+    this.db
+      .prepare(
+        `UPDATE nodes
+         SET embedding = ?, embedding_model = ?, embedding_text_hash = ?, embedding_updated_at = ?
+         WHERE id = ?`
+      )
+      .run(vec, model, textHash, updatedAt, id);
+  }
+
   /**
    * Delete a node by ID
    */

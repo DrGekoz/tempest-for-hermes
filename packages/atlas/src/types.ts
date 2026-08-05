@@ -606,4 +606,19 @@ export interface FindRelevantContextOptions {
 
   /** Node types to include */
   nodeKinds?: NodeKind[];
+
+  /**
+   * Vector-ranked entry points to fold into (or replace) the FTS entry points.
+   * Normally left unset — `findRelevantContext` computes these itself from the
+   * stored node embeddings when a semantic model is available. Set explicitly
+   * only to override that (e.g. the retrieval spike / tests supplying seeds).
+   */
+  seedResults?: SearchResult[];
+
+  /**
+   * How supplied/computed `seedResults` combine with the FTS channels:
+   * - `'merge'` (default): hybrid — run FTS *and* fuse the vector seeds by rank.
+   * - `'replace'`: vector-only — skip the FTS channels, seeds are the entry points.
+   */
+  seedMode?: 'replace' | 'merge';
 }

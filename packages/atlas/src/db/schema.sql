@@ -38,7 +38,13 @@ CREATE TABLE IF NOT EXISTS nodes (
     decorators TEXT, -- JSON array
     type_parameters TEXT, -- JSON array
     return_type TEXT, -- normalized return/result type name (e.g. C++ method return, for receiver-type inference)
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    -- Semantic retrieval (optional; NULL until a local embedding model runs).
+    -- embedding is a float32[] stored little-endian; hash drives change-sync.
+    embedding BLOB,
+    embedding_model TEXT,
+    embedding_text_hash TEXT,
+    embedding_updated_at INTEGER
 );
 
 -- Edges: Relationships between nodes
@@ -116,7 +122,11 @@ CREATE TRIGGER IF NOT EXISTS nodes_ad AFTER DELETE ON nodes BEGIN
     VALUES ('delete', OLD.rowid, OLD.id, OLD.name, OLD.qualified_name, OLD.docstring, OLD.signature);
 END;
 
-CREATE TRIGGER IF NOT EXISTS nodes_au AFTER UPDATE ON nodes BEGIN
+-- Scoped to the FTS source columns so an embedding-only UPDATE (background
+-- semantic backfill writes just the embedding* columns) doesn't needlessly
+-- churn the FTS index. updateNode always assigns these columns, so its rows
+-- still re-sync.
+CREATE TRIGGER IF NOT EXISTS nodes_au AFTER UPDATE OF name, qualified_name, docstring, signature ON nodes BEGIN
     INSERT INTO nodes_fts(nodes_fts, rowid, id, name, qualified_name, docstring, signature)
     VALUES ('delete', OLD.rowid, OLD.id, OLD.name, OLD.qualified_name, OLD.docstring, OLD.signature);
     INSERT INTO nodes_fts(rowid, id, name, qualified_name, docstring, signature)

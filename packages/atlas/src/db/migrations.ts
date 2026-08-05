@@ -9,7 +9,7 @@ import { SqliteDatabase } from './sqlite-adapter';
 /**
  * Current schema version
  */
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 /**
  * Migration definition
@@ -97,6 +97,26 @@ const migrations: Migration[] = [
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_identity
           ON edges(source, target, kind, IFNULL(line, -1), IFNULL(col, -1));
+      `);
+    },
+  },
+  {
+    version: 7,
+    description:
+      'Add nodes.embedding* columns for local semantic retrieval, and scope the FTS update trigger to its source columns so embedding writes skip FTS churn',
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE nodes ADD COLUMN embedding BLOB;
+        ALTER TABLE nodes ADD COLUMN embedding_model TEXT;
+        ALTER TABLE nodes ADD COLUMN embedding_text_hash TEXT;
+        ALTER TABLE nodes ADD COLUMN embedding_updated_at INTEGER;
+        DROP TRIGGER IF EXISTS nodes_au;
+        CREATE TRIGGER nodes_au AFTER UPDATE OF name, qualified_name, docstring, signature ON nodes BEGIN
+          INSERT INTO nodes_fts(nodes_fts, rowid, id, name, qualified_name, docstring, signature)
+          VALUES ('delete', OLD.rowid, OLD.id, OLD.name, OLD.qualified_name, OLD.docstring, OLD.signature);
+          INSERT INTO nodes_fts(rowid, id, name, qualified_name, docstring, signature)
+          VALUES (NEW.rowid, NEW.id, NEW.name, NEW.qualified_name, NEW.docstring, NEW.signature);
+        END;
       `);
     },
   },
