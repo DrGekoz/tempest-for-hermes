@@ -6,7 +6,6 @@ import Link from "next/link"
 import { Download, ArrowRight, ChevronDown } from "lucide-react"
 import { WindowsLogo } from "@/components/icons/windows"
 import { TuxIcon } from "@/components/icons/linux"
-import { TempestLogo } from "@/components/icons/tempest-logo"
 
 type Asset = { label: string; href: string }
 
@@ -83,9 +82,8 @@ export function DownloadContent({ version, date, windowsAssets, linuxAssets, mac
         {/* Left: text + CTA */}
         <div className="flex flex-col gap-8">
           <div className="flex flex-col gap-3">
-            <h1 className="flex items-center gap-3 text-4xl min-[1000px]:text-5xl font-normal tracking-tight leading-tight">
+            <h1 className="text-4xl min-[1000px]:text-5xl font-normal tracking-tight leading-tight">
               Download Tempest
-              <TempestLogo className="h-9 min-[1000px]:h-12 w-auto" />
             </h1>
             <p className="text-base text-muted-foreground">
               Parallel AI agent sessions. Free and open source.
