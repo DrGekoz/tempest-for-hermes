@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, ArrowRight, Cpu, GitBranch, ShieldCheck, GitCommitHorizontal, BarChart3, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Cpu, GitBranch, ShieldCheck, GitCommitHorizontal, BarChart3, Sparkles, Check } from 'lucide-react';
 import { useSettings, updateSetting } from '../../store/appSettings';
 import { setTelemetryEnabled } from '../../lib/telemetry';
 import { useAttribution, setAttribution } from '../../store/attribution';
@@ -101,7 +101,7 @@ function SemanticRow({ enabled }: { enabled: boolean }) {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--tempest-fg-default)' }}>Semantic code search</span>
           <span style={{ fontSize: '12px', color: 'var(--tempest-fg-muted)', lineHeight: 1.5 }}>
-            Downloads a ~25&nbsp;MB embedding model (once) so agents can retrieve code by meaning, not just keywords. Runs fully offline afterward — nothing leaves your machine.
+            One-time ~25&nbsp;MB model so agents retrieve code by meaning. Runs offline.
           </span>
         </div>
         <button
@@ -119,10 +119,17 @@ function SemanticRow({ enabled }: { enabled: boolean }) {
       {phase === 'downloading' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
           <div style={{ height: '4px', borderRadius: '2px', background: 'var(--tempest-border-default)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--tempest-accent, #6366f1)', transition: 'width 0.2s' }} />
+            <div style={{ height: '100%', width: `${Math.max(pct, 4)}%`, background: 'var(--tempest-accent, #6366f1)', transition: 'width 0.2s' }} />
           </div>
-          <span style={{ fontSize: '11px', color: 'var(--tempest-fg-muted)' }}>Downloading model… {pct}%</span>
+          <span style={{ fontSize: '11px', color: 'var(--tempest-fg-muted)' }}>
+            {pct > 0 ? `Downloading model… ${pct}%` : 'Preparing download…'}
+          </span>
         </div>
+      )}
+      {phase === 'idle' && enabled && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#22c55e' }}>
+          <Check size={12} /> Model ready. Semantic search is on.
+        </span>
       )}
       {phase === 'error' && (
         <span style={{ fontSize: '11px', color: '#ef4444' }}>Download failed: {err}. Click to retry.</span>
@@ -153,7 +160,7 @@ export default function SettingsPage({ onBack, onComplete }: Props) {
             <SettingRow
               icon={<Cpu size={18} />}
               title="Token Intelligence"
-              description="Builds a knowledge graph of your codebase so agents receive precise, targeted context instead of whole files — reducing token usage by up to 64% without losing accuracy."
+              description="Indexes your codebase so agents get targeted context instead of whole files: up to 64% fewer tokens."
               enabled={atlasEnabled}
               onToggle={() => updateSetting('atlasEnabled', !atlasEnabled)}
             />
@@ -161,14 +168,14 @@ export default function SettingsPage({ onBack, onComplete }: Props) {
             <SettingRow
               icon={<GitBranch size={18} />}
               title="Agent Isolation"
-              description="Each agent session gets its own git worktree, so parallel agents never touch each other's files. Your main branch stays clean until you choose to merge."
+              description="Each agent gets its own git worktree, so parallel sessions never collide. Your main branch stays clean until you merge."
               enabled={isolateAgents}
               onToggle={() => updateSetting('isolateAgents', !isolateAgents)}
             />
             <SettingRow
               icon={<ShieldCheck size={18} />}
               title="Bypass agent permissions"
-              description="Passes the auto-approve flag to agents (e.g. --dangerously-skip-permissions) so they can read, write, and run commands without stopping to ask. Recommended for sandboxed sessions."
+              description="Lets agents read, write, and run commands without stopping to ask. Recommended for sandboxed sessions."
               enabled={autoApprove}
               onToggle={() => updateSetting('autoApprove', !autoApprove)}
             />
@@ -176,14 +183,14 @@ export default function SettingsPage({ onBack, onComplete }: Props) {
               className="ob-card--shine"
               icon={<GitCommitHorizontal size={18} />}
               title="Tempest co-author"
-              description="Appends a Co-authored-by: Tempest trailer to commits made inside your workspaces. On GitHub, that means every commit shows Tempest next to your name — a quiet signal to other developers that this project was built with the help of Tempest. No data is collected and nothing is sent anywhere."
+              description="Adds a Co-authored-by: Tempest trailer to commits in your workspaces. No data is collected or sent."
               enabled={attribution}
               onToggle={() => setAttribution(!attribution)}
             />
             <SettingRow
               icon={<BarChart3 size={18} />}
               title="Share anonymous usage data"
-              description="Helps improve Tempest. No code, prompts, file contents, or repo names — ever. Only anonymous usage counts and error signals. Off by default; change it anytime in Settings."
+              description="Anonymous usage counts and error signals only, never code, prompts, or repo names. Off by default."
               enabled={telemetryEnabled}
               onToggle={() => setTelemetryEnabled(!telemetryEnabled)}
             />
