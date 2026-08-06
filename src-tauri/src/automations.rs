@@ -35,7 +35,7 @@ pub fn eve_bin(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
 pub struct Automation {
     pub id: String,
     #[serde(rename = "workspaceId")]
-    pub workspace_id: String,
+    pub workspace_id: Option<String>,
     pub name: String,
     pub slug: String,
     pub path: String,
@@ -397,30 +397,42 @@ export default eveChannel({
 #[tauri::command(async)]
 pub fn list_automations(
     state: tauri::State<'_, super::DbState>,
-    workspace_id: String,
+    workspace_id: Option<String>,
 ) -> Result<Vec<Automation>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.prepare(
-        "SELECT id, workspace_id, name, slug, path, graph, sandbox_mode, enabled, built_at, created_at, updated_at \
-         FROM automations WHERE workspace_id = ?1 ORDER BY created_at"
-    )
+    // workspace_id: None → global (unbound) automations.
+    let (sql, ws): (&str, Option<String>) = match workspace_id {
+        Some(id) => (
+            "SELECT id, workspace_id, name, slug, path, graph, sandbox_mode, enabled, built_at, created_at, updated_at \
+             FROM automations WHERE workspace_id = ?1 ORDER BY created_at",
+            Some(id),
+        ),
+        None => (
+            "SELECT id, workspace_id, name, slug, path, graph, sandbox_mode, enabled, built_at, created_at, updated_at \
+             FROM automations WHERE workspace_id IS NULL ORDER BY created_at",
+            None,
+        ),
+    };
+    conn.prepare(sql)
         .and_then(|mut stmt| {
-            stmt.query_map(rusqlite::params![&workspace_id], |r| {
-                Ok(Automation {
-                    id: r.get(0)?,
-                    workspace_id: r.get(1)?,
-                    name: r.get(2)?,
-                    slug: r.get(3)?,
-                    path: r.get(4)?,
-                    graph: r.get(5)?,
-                    sandbox_mode: r.get(6)?,
-                    enabled: r.get(7)?,
-                    built_at: r.get(8)?,
-                    created_at: r.get(9)?,
-                    updated_at: r.get(10)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()
+            let mapper = |r: &rusqlite::Row| Ok(Automation {
+                id: r.get(0)?,
+                workspace_id: r.get(1)?,
+                name: r.get(2)?,
+                slug: r.get(3)?,
+                path: r.get(4)?,
+                graph: r.get(5)?,
+                sandbox_mode: r.get(6)?,
+                enabled: r.get(7)?,
+                built_at: r.get(8)?,
+                created_at: r.get(9)?,
+                updated_at: r.get(10)?,
+            });
+            let rows: Result<Vec<Automation>, _> = match &ws {
+                Some(id) => stmt.query_map(rusqlite::params![id], mapper)?.collect(),
+                None => stmt.query_map([], mapper)?.collect(),
+            };
+            rows
         })
         .map_err(|e| e.to_string())
 }
@@ -457,12 +469,14 @@ pub fn get_automation(
 #[tauri::command(async)]
 pub fn create_automation(
     state: tauri::State<'_, super::DbState>,
-    workspace_id: String,
+    workspace_id: Option<String>,
     name: String,
     graph: Option<String>,
 ) -> Result<Automation, String> {
     let id = uuid::Uuid::new_v4().to_string();
-    let slug = name.to_lowercase().replace(' ', "-");
+    // Append a short id suffix so identical names never collide on the unique index,
+    // and the on-disk path stays a filesystem-safe unique directory name.
+    let slug = format!("{}-{}", slugify(&name), &id[..6]);
     let graph = graph.unwrap_or_else(|| "{}".to_string());
     let path = format!(".tempest/automations/{}", slug);
 

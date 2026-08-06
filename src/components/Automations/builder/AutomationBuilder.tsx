@@ -185,16 +185,7 @@ function Inner({ automationId, initialGraph, builtAt, onBuiltAtChange }: Props) 
     e.dataTransfer.dropEffect = "move";
   };
 
-  const onDropCanvas = (e: React.DragEvent) => {
-    e.preventDefault();
-    const kind = e.dataTransfer.getData("application/tempest-node") as NodeKind;
-    if (!kind) return;
-    if (!wrapperRef.current) return;
-    const rect = wrapperRef.current.getBoundingClientRect();
-    const position = rf.screenToFlowPosition({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
+  const addNodeAt = useCallback((kind: NodeKind, position: { x: number; y: number }) => {
     const id = `${kind}-${Math.random().toString(36).slice(2, 9)}`;
     const data = structuredClone(NODE_DEFAULTS[kind]);
     setNodes(prev => {
@@ -202,12 +193,34 @@ function Inner({ automationId, initialGraph, builtAt, onBuiltAtChange }: Props) 
       scheduleSave({ nodes: next, edges });
       return next;
     });
+  }, [edges, scheduleSave]);
+
+  const onDropCanvas = (e: React.DragEvent) => {
+    e.preventDefault();
+    const kind = e.dataTransfer.getData("application/tempest-node") as NodeKind;
+    if (!kind) return;
+    // screenToFlowPosition takes viewport (client) coords; don't subtract offsets.
+    const position = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    addNodeAt(kind, position);
   };
 
   const handleDragStartFromPalette = (kind: NodeKind, e: React.DragEvent) => {
     e.dataTransfer.setData("application/tempest-node", kind);
     e.dataTransfer.effectAllowed = "move";
   };
+
+  // Click a palette item → drop node near the viewport centre with a small
+  // scatter so successive clicks don't stack on the same pixel.
+  const handleClickFromPalette = useCallback((kind: NodeKind) => {
+    if (!wrapperRef.current) return;
+    const rect = wrapperRef.current.getBoundingClientRect();
+    const jitter = () => (Math.random() - 0.5) * 60;
+    const position = rf.screenToFlowPosition({
+      x: rect.left + rect.width / 2 + jitter(),
+      y: rect.top + rect.height / 2 + jitter(),
+    });
+    addNodeAt(kind, position);
+  }, [rf, addNodeAt]);
 
   const selectedNode = selectedId
     ? (() => {
@@ -302,7 +315,11 @@ function Inner({ automationId, initialGraph, builtAt, onBuiltAtChange }: Props) 
         onOpenChat={hasManualTrigger && port ? () => setChatOpen(true) : undefined}
       />
       <div className="am-builder-body">
-        <NodePalette hasAgent={hasAgent} onDragStart={handleDragStartFromPalette} />
+        <NodePalette
+          hasAgent={hasAgent}
+          onDragStart={handleDragStartFromPalette}
+          onClick={handleClickFromPalette}
+        />
         <div className="am-canvas" ref={wrapperRef} onDragOver={onDragOverCanvas} onDrop={onDropCanvas}>
           <ReactFlow
             nodes={nodes}

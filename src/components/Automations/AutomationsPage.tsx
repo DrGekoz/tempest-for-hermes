@@ -15,8 +15,8 @@ interface Automation {
 
 export function AutomationsPage() {
   const projects = getOpenProjects();
-  // Default to first project; Global is opt-in (backend doesn't scope to it yet).
-  const [scope, setScope] = useState<string | null>(() => projects[0]?.id ?? null);
+  // scope: null = Global (unbound automations), otherwise project id.
+  const [scope, setScope] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState("");
   const [selected, setSelected] = useState<Automation | null>(null);

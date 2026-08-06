@@ -7,7 +7,7 @@ import { Tooltip } from "../Tooltip";
 
 interface Automation {
   id: string;
-  workspaceId: string;
+  workspaceId: string | null;
   name: string;
   slug: string;
   path: string;
@@ -54,10 +54,8 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
   async function load(projectId: string | null) {
     setLoading(true);
     try {
-      // ponytail: Global scope returns empty until backend supports unbound automations
-      const list = projectId
-        ? await invoke<Automation[]>("list_automations", { workspaceId: projectId })
-        : [];
+      // workspaceId: null → global (unbound) automations.
+      const list = await invoke<Automation[]>("list_automations", { workspaceId: projectId });
       setAutomations(list);
       const pairs = await Promise.all(
         list.map(a =>
@@ -83,9 +81,9 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
   async function handleCreate() {
     const name = newName.trim();
     if (!name) return;
-    if (!scope) return;
     setSaving(true);
     try {
+      // scope: null = Global (unbound).
       const a = await invoke<Automation>("create_automation", { workspaceId: scope, name });
       setAutomations(prev => [...prev, a]);
       setCreating(false);
@@ -143,9 +141,8 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
         <div className="am-header-right">
           <button
             className="am-new-btn"
-            onClick={() => scope && setCreating(true)}
-            disabled={!scope}
-            title={scope ? "Create a new automation" : "Select a project first"}
+            onClick={() => setCreating(true)}
+            title="Create a new automation"
           >
             <Plus size={14} />
             New Automation
@@ -187,14 +184,9 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
             <Workflow size={22} className="am-empty-icon" />
             <p className="am-empty-text">No automations yet</p>
             <p className="am-empty-sub">Build and schedule AI agents that run on autopilot.</p>
-            <button
-              className="am-empty-cta"
-              onClick={() => scope && setCreating(true)}
-              disabled={!scope}
-              title={scope ? "Create automation" : "Select a project first"}
-            >
+            <button className="am-empty-cta" onClick={() => setCreating(true)}>
               <Plus size={14} />
-              {scope ? "Create automation" : "Select a project"}
+              Create automation
             </button>
           </div>
         ) : (

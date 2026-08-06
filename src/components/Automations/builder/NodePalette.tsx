@@ -11,9 +11,10 @@ const GROUPS: Group[] = [
 interface Props {
   hasAgent: boolean;
   onDragStart: (kind: NodeKind, e: React.DragEvent) => void;
+  onClick: (kind: NodeKind) => void;
 }
 
-export function NodePalette({ hasAgent, onDragStart }: Props) {
+export function NodePalette({ hasAgent, onDragStart, onClick }: Props) {
   return (
     <div className="am-palette">
       {GROUPS.map(g => (
@@ -27,7 +28,8 @@ export function NodePalette({ hasAgent, onDragStart }: Props) {
                 className={`am-palette-item${disabled ? " am-palette-item--disabled" : ""}`}
                 draggable={!disabled}
                 onDragStart={e => !disabled && onDragStart(k, e)}
-                title={disabled ? "Only one Agent per automation" : `Drag ${nodeLabel[k]}`}
+                onClick={() => !disabled && onClick(k)}
+                title={disabled ? "Only one Agent per automation" : `Click or drag ${nodeLabel[k]}`}
               >
                 <span className="am-palette-icon">{nodeIcon[k]}</span>
                 <span>{nodeLabel[k]}</span>
