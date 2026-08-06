@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronDown, Check, ExternalLink, Loader, Plus, Trash2, Workflow } from "lucide-react";
+import { ExternalLink, Globe, Loader, Plus, Trash2, Workflow } from "lucide-react";
 import type { StoredProject } from "../../store/openProjects";
 import { Tooltip } from "../Tooltip";
 
@@ -26,8 +26,8 @@ interface ProcessInfo {
 
 interface Props {
   projects: StoredProject[];
-  project: StoredProject;
-  onSelectProject: (id: string) => void;
+  scope: string | null;
+  onSelectScope: (id: string | null) => void;
   onOpen: (id: string, name: string) => void;
 }
 
@@ -39,23 +39,25 @@ function timeAgo(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export function AutomationsList({ projects, project, onSelectProject, onOpen }: Props) {
+export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [processes, setProcesses] = useState<Record<string, ProcessInfo>>({});
   const [loading, setLoading] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  async function load(projectId: string) {
+  async function load(projectId: string | null) {
     setLoading(true);
     try {
-      const list = await invoke<Automation[]>("list_automations", { workspaceId: projectId });
+      // ponytail: Global scope returns empty until backend supports unbound automations
+      const list = projectId
+        ? await invoke<Automation[]>("list_automations", { workspaceId: projectId })
+        : [];
       setAutomations(list);
       const pairs = await Promise.all(
         list.map(a =>
@@ -72,16 +74,7 @@ export function AutomationsList({ projects, project, onSelectProject, onOpen }: 
     }
   }
 
-  useEffect(() => { load(project.id); }, [project.id]);
-
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function onOut(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
-    }
-    document.addEventListener("mousedown", onOut);
-    return () => document.removeEventListener("mousedown", onOut);
-  }, [pickerOpen]);
+  useEffect(() => { load(scope); }, [scope]);
 
   useEffect(() => {
     if (creating) setTimeout(() => nameInputRef.current?.focus(), 0);
@@ -90,9 +83,10 @@ export function AutomationsList({ projects, project, onSelectProject, onOpen }: 
   async function handleCreate() {
     const name = newName.trim();
     if (!name) return;
+    if (!scope) return;
     setSaving(true);
     try {
-      const a = await invoke<Automation>("create_automation", { workspaceId: project.id, name });
+      const a = await invoke<Automation>("create_automation", { workspaceId: scope, name });
       setAutomations(prev => [...prev, a]);
       setCreating(false);
       setNewName("");
@@ -127,19 +121,9 @@ export function AutomationsList({ projects, project, onSelectProject, onOpen }: 
 
   function meta(a: Automation) {
     const p = processes[a.id];
-    if (p) return <span className="am-meta am-meta--running">running :{p.port}</span>;
-    if (a.builtAt) return <span className="am-meta am-meta--built">built · {timeAgo(a.builtAt)}</span>;
-    return <span className="am-meta am-meta--idle">never built</span>;
-  }
-
-  function badge(a: Automation) {
-    const state = processes[a.id] ? "running" : a.builtAt ? "built" : "idle";
-    return (
-      <span className={`am-badge am-badge--${state}`}>
-        {dot(a)}
-        {meta(a)}
-      </span>
-    );
+    if (p) return <span className="am-row-meta am-row-meta--running">running · :{p.port}</span>;
+    if (a.builtAt) return <span className="am-row-meta">Built {timeAgo(a.builtAt)}</span>;
+    return <span className="am-row-meta">Never built</span>;
   }
 
   const deleteTarget = automations.find(a => a.id === deleteId);
@@ -148,45 +132,49 @@ export function AutomationsList({ projects, project, onSelectProject, onOpen }: 
     <div className="am-root">
       <div className="am-header">
         <div className="am-header-left">
-          <h1 className="am-header-title">Automations</h1>
-          {!loading && automations.length > 0 && (
-            <span className="am-header-count">{automations.length}</span>
-          )}
+          <div className="am-header-titlerow">
+            <h1 className="am-header-title">Automations</h1>
+            {!loading && automations.length > 0 && (
+              <span className="am-header-count">{automations.length}</span>
+            )}
+          </div>
+          <p className="am-header-sub">Build and schedule AI agents that run on autopilot.</p>
         </div>
         <div className="am-header-right">
-          {projects.length > 1 && (
-            <div className="am-picker" ref={pickerRef}>
-              <button
-                className={`am-picker-btn${pickerOpen ? " am-picker-btn--open" : ""}`}
-                onClick={() => setPickerOpen(v => !v)}
-              >
-                <span className="am-picker-dot" />
-                <span className="am-picker-label">{project.name}</span>
-                <ChevronDown size={12} className="am-picker-chevron" />
-              </button>
-              {pickerOpen && (
-                <div className="am-picker-menu">
-                  {projects.map(p => (
-                    <button
-                      key={p.id}
-                      className={`am-picker-item${p.id === project.id ? " am-picker-item--active" : ""}`}
-                      onClick={() => { onSelectProject(p.id); setPickerOpen(false); }}
-                    >
-                      <span className="am-picker-item-check">
-                        {p.id === project.id && <Check size={11} />}
-                      </span>
-                      <span className="am-picker-item-name">{p.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <button className="am-new-btn" onClick={() => setCreating(true)}>
+          <button
+            className="am-new-btn"
+            onClick={() => scope && setCreating(true)}
+            disabled={!scope}
+            title={scope ? "Create a new automation" : "Select a project first"}
+          >
             <Plus size={14} />
             New Automation
           </button>
         </div>
+      </div>
+
+      <div className="am-tabs" ref={tabsRef} role="tablist">
+        <button
+          className={`am-tab${scope === null ? " am-tab--active" : ""}`}
+          onClick={() => onSelectScope(null)}
+          role="tab"
+          aria-selected={scope === null}
+        >
+          <Globe size={13} className="am-tab-icon" />
+          Global
+        </button>
+        {projects.map(p => (
+          <button
+            key={p.id}
+            className={`am-tab${scope === p.id ? " am-tab--active" : ""}`}
+            onClick={() => onSelectScope(p.id)}
+            role="tab"
+            aria-selected={scope === p.id}
+            title={p.name}
+          >
+            <span className="am-tab-label">{p.name}</span>
+          </button>
+        ))}
       </div>
 
       <div className="am-list">
@@ -196,45 +184,48 @@ export function AutomationsList({ projects, project, onSelectProject, onOpen }: 
           </div>
         ) : automations.length === 0 ? (
           <div className="am-empty">
-            <div className="am-empty-art">
-              <Workflow size={30} className="am-empty-icon" />
-            </div>
+            <Workflow size={22} className="am-empty-icon" />
             <p className="am-empty-text">No automations yet</p>
             <p className="am-empty-sub">Build and schedule AI agents that run on autopilot.</p>
-            <button className="am-empty-cta" onClick={() => setCreating(true)}>
+            <button
+              className="am-empty-cta"
+              onClick={() => scope && setCreating(true)}
+              disabled={!scope}
+              title={scope ? "Create automation" : "Select a project first"}
+            >
               <Plus size={14} />
-              Create your first automation
+              {scope ? "Create automation" : "Select a project"}
             </button>
           </div>
         ) : (
-          <div className="am-grid">
+          <div className="am-rows">
             {automations.map((a, i) => (
               <div
                 key={a.id}
-                className={`am-card${processes[a.id] ? " am-card--running" : ""}`}
-                style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                className="am-row"
+                style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
+                onClick={() => onOpen(a.id, a.name)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter") onOpen(a.id, a.name); }}
               >
-                <div className="am-card-top">
-                  <span className="am-card-glyph">
-                    <Workflow size={14} />
-                  </span>
-                  {badge(a)}
+                <span className="am-row-status">{dot(a)}</span>
+
+                <div className="am-row-main">
+                  <span className="am-row-name" title={a.name}>{a.name}</span>
+                  <span className="am-row-slug">{a.slug}</span>
                 </div>
 
-                <div className="am-card-body">
-                  <span className="am-card-name" title={a.name}>{a.name}</span>
-                  <span className="am-card-slug">{a.slug}</span>
-                </div>
+                {meta(a)}
 
-                <div className="am-card-actions">
-                  <button className="am-act am-act--primary" onClick={() => onOpen(a.id, a.name)}>
-                    <ExternalLink size={12} />
-                    Open
-                  </button>
+                <div className="am-row-actions" onClick={e => e.stopPropagation()}>
                   {processes[a.id] && (
                     <button className="am-act" onClick={() => handleStop(a.id)}>Stop</button>
                   )}
-                  <span className="am-card-actions-spacer" />
+                  <button className="am-act" onClick={() => onOpen(a.id, a.name)}>
+                    <ExternalLink size={12} />
+                    Open
+                  </button>
                   <Tooltip content="Delete" placement="top">
                     <button className="am-act am-act--icon am-act--danger" onClick={() => setDeleteId(a.id)}>
                       <Trash2 size={13} />

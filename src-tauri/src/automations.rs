@@ -70,60 +70,76 @@ fn find_free_port() -> Result<u16, String> {
     Ok(port)
 }
 
-/// Generate Eve project files from the graph JSON (visual builder source of truth).
-/// Writes agent.ts, instructions.md, tools/*.ts, channels/*.ts, schedules/*.ts, sandbox.ts.
-/// Called before `eve build`.
-fn generate_eve_project(
-    path: &std::path::Path,
-    _graph: &str,
-    sandbox_mode: &str,
-) -> Result<(), String> {
-    // Create agent/ directory
-    let agent_dir = path.join("agent");
-    std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
+/// Graph JSON schema — mirrors src/components/Automations/builder/graph.ts.
+/// The visual builder is the source of truth; we deserialize and materialize
+/// Eve project files. Untagged enum matches serde's `#[serde(tag = "kind")]`
+/// pattern on the TS side (a `kind` discriminator + `data` payload).
+mod graph {
+    use serde::Deserialize;
 
-    // Minimal agent.ts: use default model
-    let agent_ts = r#"import { defineAgent } from "eve";
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    pub struct Graph {
+        pub nodes: Vec<Node>,
+        #[allow(dead_code)]
+        pub edges: Vec<Edge>,
+    }
 
-export default defineAgent({
-  model: "anthropic/claude-sonnet-5",
-});
-"#;
-    std::fs::write(agent_dir.join("agent.ts"), agent_ts)
-        .map_err(|e| e.to_string())?;
+    #[derive(Deserialize)]
+    pub struct Node {
+        pub kind: String,
+        pub data: serde_json::Value,
+    }
 
-    // Minimal instructions.md
-    let instructions_md = "# Agent\n\nAn automated Eve agent.\n";
-    std::fs::write(agent_dir.join("instructions.md"), instructions_md)
-        .map_err(|e| e.to_string())?;
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    pub struct Edge {
+        pub source: String,
+        pub target: String,
+        pub kind: String,
+    }
+}
 
-    // Sandbox config based on platform
-    let sandbox_ts = match sandbox_mode {
-        "docker" => {
-            r#"import { defineSandbox } from "eve/sandbox";
+fn slugify(s: &str) -> String {
+    let out: String = s
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let collapsed: String = out.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    if collapsed.is_empty() { "item".into() } else { collapsed }
+}
+
+fn field_str<'a>(v: &'a serde_json::Value, key: &str) -> &'a str {
+    v.get(key).and_then(|x| x.as_str()).unwrap_or("")
+}
+
+fn field_str_or<'a>(v: &'a serde_json::Value, key: &str, default: &'a str) -> &'a str {
+    let s = field_str(v, key);
+    if s.is_empty() { default } else { s }
+}
+
+fn sandbox_ts_for(mode: &str) -> &'static str {
+    match mode {
+        "docker" => r#"import { defineSandbox } from "eve/sandbox";
 import { docker } from "eve/sandbox/docker";
-import { justbash } from "eve/sandbox/justbash";
 
 export default defineSandbox({
   backend: docker(),
 });
-"#
-        }
-        "none" => {
-            r#"import { defineSandbox } from "eve/sandbox";
+"#,
+        "none" => r#"import { defineSandbox } from "eve/sandbox";
 import { justbash } from "eve/sandbox/justbash";
 
 export default defineSandbox({
   backend: justbash(),
 });
-"#
-        }
+"#,
         _ => {
-            // "auto" — platform-specific
             if cfg!(windows) {
                 r#"import { defineSandbox } from "eve/sandbox";
 import { docker } from "eve/sandbox/docker";
-import { justbash } from "eve/sandbox/justbash";
 
 export default defineSandbox({
   backend: docker(),
@@ -132,7 +148,6 @@ export default defineSandbox({
             } else {
                 r#"import { defineSandbox } from "eve/sandbox";
 import { microsandbox } from "eve/sandbox/microsandbox";
-import { docker } from "eve/sandbox/docker";
 
 export default defineSandbox({
   backend: microsandbox(),
@@ -140,9 +155,241 @@ export default defineSandbox({
 "#
             }
         }
+    }
+}
+
+fn write_agent_ts(dir: &std::path::Path, data: &serde_json::Value) -> Result<(), String> {
+    let model = field_str_or(data, "model", "anthropic/claude-sonnet-5");
+    let reasoning = field_str(data, "reasoning");
+    let max_in = data.get("maxInputTokens").and_then(|v| v.as_u64());
+    let max_out = data.get("maxOutputTokens").and_then(|v| v.as_u64());
+
+    let mut fields: Vec<String> = vec![format!("  model: {:?}", model)];
+    if !reasoning.is_empty() {
+        fields.push(format!("  reasoning: {:?}", reasoning));
+    }
+    if max_in.is_some() || max_out.is_some() {
+        let mut limits = Vec::new();
+        if let Some(v) = max_in { limits.push(format!("    maxInputTokensPerSession: {}", v)); }
+        if let Some(v) = max_out { limits.push(format!("    maxOutputTokensPerSession: {}", v)); }
+        fields.push(format!("  limits: {{\n{},\n  }}", limits.join(",\n")));
+    }
+
+    let ts = format!(
+        "import {{ defineAgent }} from \"eve\";\n\nexport default defineAgent({{\n{},\n}});\n",
+        fields.join(",\n")
+    );
+    std::fs::write(dir.join("agent.ts"), ts).map_err(|e| e.to_string())
+}
+
+fn write_tool(dir: &std::path::Path, data: &serde_json::Value) -> Result<(), String> {
+    let name = slugify(field_str_or(data, "name", "tool"));
+    let description = field_str_or(data, "description", "A tool.");
+    let preset = field_str_or(data, "preset", "custom");
+
+    let body = if preset == "http" {
+        let method = field_str_or(data, "httpMethod", "GET");
+        let url = field_str_or(data, "httpUrl", "");
+        format!(
+            r#"import {{ defineTool }} from "eve/tools";
+import {{ z }} from "zod";
+
+export default defineTool({{
+  description: {desc:?},
+  inputSchema: z.object({{
+    body: z.string().optional(),
+  }}),
+  async execute(input) {{
+    const res = await fetch({url:?}, {{
+      method: {method:?},
+      body: {method_is_body_bearing} ? input.body : undefined,
+    }});
+    const text = await res.text();
+    return {{ status: res.status, body: text }};
+  }},
+}});
+"#,
+            desc = description,
+            url = url,
+            method = method,
+            method_is_body_bearing = matches!(method, "POST" | "PUT" | "PATCH")
+        )
+    } else {
+        let input_schema = field_str_or(data, "customInputSchema", "z.object({})");
+        let execute = field_str_or(data, "customExecute", "return {};");
+        format!(
+            r#"import {{ defineTool }} from "eve/tools";
+import {{ z }} from "zod";
+
+export default defineTool({{
+  description: {desc:?},
+  inputSchema: {schema},
+  async execute(input, ctx) {{
+{body}
+  }},
+}});
+"#,
+            desc = description,
+            schema = input_schema,
+            body = indent(execute, 4),
+        )
     };
-    std::fs::write(agent_dir.join("sandbox.ts"), sandbox_ts)
+    std::fs::write(dir.join(format!("{name}.ts")), body).map_err(|e| e.to_string())
+}
+
+fn write_skill(dir: &std::path::Path, data: &serde_json::Value) -> Result<(), String> {
+    let name = slugify(field_str_or(data, "name", "skill"));
+    let md = field_str_or(data, "markdown", "# Skill\n");
+    std::fs::write(dir.join(format!("{name}.md")), md).map_err(|e| e.to_string())
+}
+
+fn write_connection(dir: &std::path::Path, data: &serde_json::Value) -> Result<(), String> {
+    let name = slugify(field_str_or(data, "name", "connection"));
+    let kind = field_str_or(data, "kind", "mcp");
+    let url = field_str_or(data, "url", "");
+    let ts = if kind == "openapi" {
+        format!(
+            r#"import {{ defineConnection }} from "eve/connections";
+
+export default defineConnection({{
+  type: "openapi",
+  url: {url:?},
+}});
+"#,
+            url = url
+        )
+    } else {
+        format!(
+            r#"import {{ defineConnection }} from "eve/connections";
+
+export default defineConnection({{
+  type: "mcp",
+  url: {url:?},
+}});
+"#,
+            url = url
+        )
+    };
+    std::fs::write(dir.join(format!("{name}.ts")), ts).map_err(|e| e.to_string())
+}
+
+fn write_subagent(root: &std::path::Path, data: &serde_json::Value) -> Result<(), String> {
+    let name = slugify(field_str_or(data, "name", "subagent"));
+    let dir = root.join(&name);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let model = field_str_or(data, "model", "anthropic/claude-sonnet-5");
+    let description = field_str_or(data, "description", "A specialist child agent.");
+    let agent_ts = format!(
+        "import {{ defineAgent }} from \"eve\";\n\nexport default defineAgent({{\n  model: {model:?},\n  description: {desc:?},\n}});\n",
+        model = model, desc = description
+    );
+    std::fs::write(dir.join("agent.ts"), agent_ts).map_err(|e| e.to_string())?;
+
+    let instructions = field_str_or(data, "instructions", "# Subagent\n");
+    std::fs::write(dir.join("instructions.md"), instructions).map_err(|e| e.to_string())
+}
+
+fn write_schedule(dir: &std::path::Path, data: &serde_json::Value, index: usize) -> Result<(), String> {
+    let cron = field_str_or(data, "cron", "0 * * * *");
+    let prompt = field_str_or(data, "prompt", "Run the scheduled task.");
+    let name = format!("schedule-{index}");
+    let md = format!("---\ncron: \"{cron}\"\n---\n\n{prompt}\n");
+    std::fs::write(dir.join(format!("{name}.md")), md).map_err(|e| e.to_string())
+}
+
+fn indent(s: &str, spaces: usize) -> String {
+    let pad = " ".repeat(spaces);
+    s.lines().map(|l| format!("{pad}{l}")).collect::<Vec<_>>().join("\n")
+}
+
+/// Generate Eve project files from the graph JSON (visual builder source of truth).
+/// Called before `eve build`. Empty/malformed graph falls back to a minimal
+/// runnable agent so Build never breaks on a fresh automation.
+fn generate_eve_project(
+    path: &std::path::Path,
+    graph_json: &str,
+    sandbox_mode: &str,
+) -> Result<(), String> {
+    let g: graph::Graph = serde_json::from_str(graph_json).unwrap_or_default();
+
+    let agent_dir = path.join("agent");
+    std::fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
+
+    // Agent + instructions come from the (single) agent node, or defaults.
+    let agent_node = g.nodes.iter().find(|n| n.kind == "agent");
+    let agent_data = agent_node.map(|n| &n.data);
+
+    if let Some(data) = agent_data {
+        write_agent_ts(&agent_dir, data)?;
+        let instructions = field_str_or(data, "instructions", "# Agent\n\nAn automated Eve agent.\n");
+        std::fs::write(agent_dir.join("instructions.md"), instructions)
+            .map_err(|e| e.to_string())?;
+    } else {
+        write_agent_ts(&agent_dir, &serde_json::json!({}))?;
+        std::fs::write(agent_dir.join("instructions.md"), "# Agent\n\nAn automated Eve agent.\n")
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Sandbox: agent's stored preference wins over the DB column.
+    let effective_sandbox = agent_data
+        .and_then(|d| d.get("sandbox"))
+        .and_then(|v| v.as_str())
+        .unwrap_or(sandbox_mode);
+    std::fs::write(agent_dir.join("sandbox.ts"), sandbox_ts_for(effective_sandbox))
         .map_err(|e| e.to_string())?;
+
+    // Group sub-nodes into their Eve slot directories.
+    let mut tools = Vec::new();
+    let mut skills = Vec::new();
+    let mut connections = Vec::new();
+    let mut subagents = Vec::new();
+    let mut schedules = Vec::new();
+    for n in &g.nodes {
+        match n.kind.as_str() {
+            "tool" => tools.push(&n.data),
+            "skill" => skills.push(&n.data),
+            "connection" => connections.push(&n.data),
+            "subagent" => subagents.push(&n.data),
+            "trigger-schedule" => schedules.push(&n.data),
+            _ => {}
+        }
+    }
+
+    fn ensure(dir: std::path::PathBuf, empty: bool) -> Result<std::path::PathBuf, String> {
+        if empty { return Ok(dir); }
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        Ok(dir)
+    }
+
+    let tools_dir = ensure(agent_dir.join("tools"), tools.is_empty())?;
+    for d in &tools { write_tool(&tools_dir, d)?; }
+
+    let skills_dir = ensure(agent_dir.join("skills"), skills.is_empty())?;
+    for d in &skills { write_skill(&skills_dir, d)?; }
+
+    let conns_dir = ensure(agent_dir.join("connections"), connections.is_empty())?;
+    for d in &connections { write_connection(&conns_dir, d)?; }
+
+    let subs_dir = ensure(agent_dir.join("subagents"), subagents.is_empty())?;
+    for d in &subagents { write_subagent(&subs_dir, d)?; }
+
+    let sched_dir = ensure(agent_dir.join("schedules"), schedules.is_empty())?;
+    for (i, d) in schedules.iter().enumerate() { write_schedule(&sched_dir, d, i)?; }
+
+    // Always write the eve channel with CORS enabled so the Tempest webview can
+    // reach the running agent on http://localhost:{port} without preflight rejection.
+    let channels_dir = agent_dir.join("channels");
+    std::fs::create_dir_all(&channels_dir).map_err(|e| e.to_string())?;
+    let eve_channel = r#"import { eveChannel } from "eve/channels/eve";
+import { localDev } from "eve/channels/auth";
+
+export default eveChannel({
+  auth: [localDev()],
+  cors: true,
+});
+"#;
+    std::fs::write(channels_dir.join("eve.ts"), eve_channel).map_err(|e| e.to_string())?;
 
     Ok(())
 }

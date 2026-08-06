@@ -1,31 +1,32 @@
-import { useState } from "react";
-import { ReactFlow, Background, Controls, MiniMap } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import { ChevronLeft, Workflow } from "lucide-react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ChevronLeft } from "lucide-react";
 import { getOpenProjects } from "../../store/openProjects";
-import { useTheme } from "../../themes/ThemeContext";
 import { AutomationsList } from "./AutomationsList";
+import { AutomationBuilder } from "./builder/AutomationBuilder";
 import "./AutomationsPage.css";
+
+interface Automation {
+  id: string;
+  name: string;
+  graph: string;
+  builtAt: string | null;
+}
 
 export function AutomationsPage() {
   const projects = getOpenProjects();
-  const [projectId, setProjectId] = useState<string | null>(projects[0]?.id ?? null);
+  // Default to first project; Global is opt-in (backend doesn't scope to it yet).
+  const [scope, setScope] = useState<string | null>(() => projects[0]?.id ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState("");
-  const { theme } = useTheme();
+  const [selected, setSelected] = useState<Automation | null>(null);
 
-  const project = projects.find(p => p.id === projectId) ?? projects[0] ?? null;
-
-  if (!project) {
-    return (
-      <div className="am-root">
-        <div className="am-no-projects">
-          <Workflow size={28} className="am-no-projects-icon" />
-          <p className="am-no-projects-text">Open a project to use Automations.</p>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!selectedId) { setSelected(null); return; }
+    invoke<Automation>("get_automation", { id: selectedId })
+      .then(setSelected)
+      .catch(() => setSelected(null));
+  }, [selectedId]);
 
   if (selectedId) {
     return (
@@ -38,13 +39,14 @@ export function AutomationsPage() {
           <span className="am-builder-sep">/</span>
           <span className="am-builder-name">{selectedName}</span>
         </div>
-        <div style={{ flex: 1, minHeight: 0 }}>
-          <ReactFlow nodes={[]} edges={[]} proOptions={{ hideAttribution: true }} colorMode={theme.type}>
-            <Background id="am-bg" bgColor="var(--tempest-bg-editor)" color="var(--tempest-border-subtle)" gap={28} size={2.5} />
-            <Controls />
-            <MiniMap pannable zoomable />
-          </ReactFlow>
-        </div>
+        {selected && (
+          <AutomationBuilder
+            automationId={selected.id}
+            initialGraph={selected.graph}
+            builtAt={selected.builtAt}
+            onBuiltAtChange={v => setSelected(prev => prev ? { ...prev, builtAt: v } : prev)}
+          />
+        )}
       </div>
     );
   }
@@ -52,8 +54,8 @@ export function AutomationsPage() {
   return (
     <AutomationsList
       projects={projects}
-      project={project}
-      onSelectProject={setProjectId}
+      scope={scope}
+      onSelectScope={setScope}
       onOpen={(id, name) => { setSelectedId(id); setSelectedName(name); }}
     />
   );
