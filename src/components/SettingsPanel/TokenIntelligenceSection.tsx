@@ -89,16 +89,20 @@ function GlobalAgentRow({ agent, semantic }: { agent: GlobalAgent; semantic: boo
 function SemanticToggle({ enabled }: { enabled: boolean }) {
   const [phase, setPhase] = useState<"idle" | "downloading" | "error">("idle");
   const [pct, setPct] = useState(0);
+  const [err, setErr] = useState<string>("");
 
   async function toggle() {
     if (phase === "downloading") return;
     if (enabled) { updateSetting("atlasSemantic", false); return; }
-    setPhase("downloading"); setPct(0);
+    setPhase("downloading"); setPct(0); setErr("");
     try {
       await downloadAtlasModel((p) => { if (typeof p.progress === "number") setPct(Math.round(p.progress)); });
       updateSetting("atlasSemantic", true);
       setPhase("idle");
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[atlas] semantic model download failed:", msg);
+      setErr(msg);
       setPhase("error");
       updateSetting("atlasSemantic", false);
     }
@@ -129,6 +133,11 @@ function SemanticToggle({ enabled }: { enabled: boolean }) {
         <div style={{ height: "4px", borderRadius: "2px", background: "var(--tempest-border-default)", overflow: "hidden" }}>
           <div style={{ height: "100%", width: `${pct}%`, background: "var(--tempest-accent, #6366f1)", transition: "width 0.2s" }} />
         </div>
+      )}
+      {phase === "error" && err && (
+        <pre style={{ margin: 0, padding: "8px", fontSize: "11px", lineHeight: 1.4, color: "var(--tempest-text-muted)", background: "var(--tempest-bg-subtle, rgba(0,0,0,0.15))", border: "1px solid var(--tempest-border-default)", borderRadius: "4px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "160px", overflow: "auto" }}>
+          {err}
+        </pre>
       )}
     </div>
   );

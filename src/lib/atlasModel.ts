@@ -17,9 +17,24 @@ export interface ModelProgress {
  */
 export async function downloadAtlasModel(onProgress?: (p: ModelProgress) => void): Promise<void> {
   const unlisten = await listen<ModelProgress>("atlas:model-download", (e) => onProgress?.(e.payload));
+  // Node stderr is emitted as atlas:log; keep the last few lines so we can attach
+  // them to the error message when the download fails (otherwise the UI just
+  // says "failed" with zero clue whether node was missing, model fetch stalled,
+  // disk perms, etc.).
+  const errLines: string[] = [];
+  const unlistenErr = await listen<{ line: string }>("atlas:log", (e) => {
+    if (e.payload?.line) {
+      errLines.push(e.payload.line);
+      if (errLines.length > 20) errLines.shift();
+    }
+  });
   try {
     await invoke("download_atlas_model");
+  } catch (e) {
+    const tail = errLines.length ? `\n${errLines.join("\n")}` : "";
+    throw new Error(`${e}${tail}`);
   } finally {
     unlisten();
+    unlistenErr();
   }
 }
