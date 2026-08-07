@@ -26,19 +26,14 @@ cpSync(src, join(destModules, '@usetempest', 'atlas'), { recursive: true })
 // only copy the Atlas package above — so `require('@xenova/transformers')` would
 // fail to resolve in the shipped bundle. Copy its transitive closure here.
 //
-// WASM-only: we bundle the pure-JS/WASM inference path (onnxruntime-web) and skip
-// the native/large deps — `onnxruntime-node` (per-platform native binaries) and
-// `sharp` (image codec, only used by image pipelines, not text embedding). This
-// keeps the installer small with no per-platform binary management; transformers
-// falls back to the WASM backend when onnxruntime-node isn't present.
-//
-// The MODEL WEIGHTS ARE NOT BUNDLED — they download on user consent at runtime
-// into the app-data cache. Only the (small) inference runtime ships here.
-//
-// No-op until the Atlas package is published WITH the @xenova/transformers dep;
-// today it isn't installed, so this warns and copies nothing (zero bloat).
+// onnxruntime-node MUST be included: transformers' backends/onnx.js is a static
+// ESM `import * as ONNX_NODE from 'onnxruntime-node'`, so a missing package
+// throws ERR_MODULE_NOT_FOUND at module-load time — there is no runtime WASM
+// fallback in v2.x. `sharp` (image codec) stays excluded — text embedding never
+// touches it. Model weights are NOT bundled: they download on user consent at
+// runtime into the app-data cache.
 const SEMANTIC_ROOTS = ['@xenova/transformers']
-const EXCLUDE = new Set(['onnxruntime-node', 'sharp'])
+const EXCLUDE = new Set(['sharp'])
 
 /** Copy `pkg` from root node_modules → dest, then recurse into its deps. */
 function copyClosure(pkg, seen = new Set()) {
@@ -53,9 +48,28 @@ function copyClosure(pkg, seen = new Set()) {
   cpSync(from, join(destModules, ...pkg.split('/')), { recursive: true })
   let meta
   try { meta = JSON.parse(readFileSync(pkgJson, 'utf8')) } catch { return }
-  for (const dep of Object.keys(meta.dependencies ?? {})) copyClosure(dep, seen)
+  // Walk both `dependencies` and `optionalDependencies` — @xenova/transformers
+  // declares `onnxruntime-node` as OPTIONAL, but its backends/onnx.js does a
+  // hard static import of it, so we still need it bundled.
+  const deps = { ...(meta.dependencies ?? {}), ...(meta.optionalDependencies ?? {}) }
+  for (const dep of Object.keys(deps)) copyClosure(dep, seen)
 }
 
 for (const pkg of SEMANTIC_ROOTS) copyClosure(pkg)
+
+// onnxruntime-node ships prebuilt native binaries for every platform under
+// bin/napi-v3/{darwin,linux,win32}/{arch}/. Each build only needs its own —
+// keeping the other two adds ~70MB of dead weight to every installer.
+// ponytail: prunes by process.platform of the build machine; per-platform CI
+// already runs this script per target, so each installer gets exactly one.
+const ORT_PLATFORMS = ['darwin', 'linux', 'win32']
+const ortBin = join(destModules, 'onnxruntime-node', 'bin', 'napi-v3')
+if (existsSync(ortBin)) {
+  for (const p of ORT_PLATFORMS) {
+    if (p !== process.platform) {
+      rmSync(join(ortBin, p), { recursive: true, force: true })
+    }
+  }
+}
 
 console.log('Atlas staged → src-tauri/resources/atlas/')
