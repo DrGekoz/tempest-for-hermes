@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap,
-  addEdge, applyEdgeChanges, applyNodeChanges, useReactFlow,
+  addEdge, applyEdgeChanges, applyNodeChanges, useReactFlow, ConnectionMode,
   type Node as RFNode, type Edge as RFEdge, type Connection,
-  type NodeChange, type EdgeChange,
+  type NodeChange, type EdgeChange, type EdgeTypes,
 } from "@xyflow/react";
+import { AutomationEdge } from "./AutomationEdge";
 import "@xyflow/react/dist/style.css";
 import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../../themes/ThemeContext";
@@ -27,12 +28,29 @@ interface Props {
 const NODE_DEFAULTS: Record<NodeKind, Node["data"]> = {
   "trigger-manual": { label: "" },
   "trigger-schedule": { cron: "0 9 * * 1-5", prompt: "" },
+  // P8: trigger channels — all share the TriggerChannelData shape.
+  "trigger-linear":   { fields: [], secrets: [], prompt: "" },
+  "trigger-discord":  { fields: [], secrets: [], prompt: "" },
+  "trigger-telegram": { fields: [], secrets: [], prompt: "" },
+  "trigger-teams":    { fields: [], secrets: [], prompt: "" },
+  "trigger-photon":   { fields: [], secrets: [], prompt: "" },
+  "trigger-poll":     { fields: [], secrets: [], prompt: "" },
   "agent": { model: "anthropic/claude-sonnet-5", instructions: "", sandbox: "auto" },
-  "tool": { name: "new_tool", description: "", preset: "http", httpMethod: "GET", httpUrl: "" },
+  "tool": {
+    name: "new_tool",
+    description: "",
+    request: { method: "GET", url: "", queryParams: [], headers: [], auth: { kind: "none" }, body: { kind: "none" } },
+    input: { fields: [] },
+    response: { kind: "raw" },
+  },
   "skill": { name: "new_skill", markdown: "" },
   "connection": { name: "new_connection", kind: "mcp", url: "" },
   "subagent": { name: "researcher", model: "anthropic/claude-sonnet-5", description: "", instructions: "" },
+  // P6/P7: a flow is a callable capability with a linear step-tree.
+  "flow": { name: "new_flow", description: "", input: { fields: [] }, steps: [] },
 };
+
+const edgeTypes: EdgeTypes = { auto: AutomationEdge };
 
 function toRF(g: Graph): { nodes: RFNode[]; edges: RFEdge[] } {
   return {
@@ -46,9 +64,9 @@ function toRF(g: Graph): { nodes: RFNode[]; edges: RFEdge[] } {
       id: e.id,
       source: e.source,
       target: e.target,
+      type: "auto",
       data: { kind: e.kind },
-      style: { stroke: edgeColor(e.kind), strokeWidth: 1.5 },
-      animated: false,
+      style: { stroke: edgeColor(e.kind), strokeWidth: 3 },
     })),
   };
 }
@@ -70,15 +88,8 @@ function fromRF(nodes: RFNode[], edges: RFEdge[]): Graph {
   };
 }
 
-function edgeColor(k: EdgeKind): string {
-  switch (k) {
-    case "fires": return "var(--tempest-fg-muted, #888)";
-    case "model": return "#8b5cf6";
-    case "tool": return "#22c55e";
-    case "skill": return "#f59e0b";
-    case "connection": return "#06b6d4";
-    case "subagent": return "#ec4899";
-  }
+function edgeColor(_k: EdgeKind): string {
+  return "var(--tempest-accent-yellow, #f5c518)";
 }
 
 function edgeKindFor(sourceKind: NodeKind, targetKind: NodeKind): EdgeKind | null {
@@ -86,6 +97,7 @@ function edgeKindFor(sourceKind: NodeKind, targetKind: NodeKind): EdgeKind | nul
   if (sourceKind === "agent") {
     switch (targetKind) {
       case "tool": return "tool";
+      case "flow": return "flow";
       case "skill": return "skill";
       case "connection": return "connection";
       case "subagent": return "subagent";
@@ -161,8 +173,9 @@ function Inner({ automationId, initialGraph, builtAt, onBuiltAtChange }: Props) 
     setEdges(prev => {
       const next = addEdge({
         ...c,
+        type: "auto",
         data: { kind },
-        style: { stroke: edgeColor(kind), strokeWidth: 1.5 },
+        style: { stroke: edgeColor(kind), strokeWidth: 3 },
       }, prev);
       scheduleSave({ nodes, edges: next });
       return next;
@@ -331,10 +344,14 @@ function Inner({ automationId, initialGraph, builtAt, onBuiltAtChange }: Props) 
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             colorMode={theme.type}
             proOptions={{ hideAttribution: true }}
             fitView={nodes.length > 0}
             fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
+            connectOnClick
+            connectionMode={ConnectionMode.Loose}
+            connectionLineStyle={{ stroke: "var(--tempest-accent-yellow, #f5c518)", strokeWidth: 3 }}
           >
             <Background
               id="am-bg"

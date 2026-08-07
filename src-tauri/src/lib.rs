@@ -4185,6 +4185,7 @@ pub fn run() {
             automations::start_automation,
             automations::stop_automation,
             automations::get_automation_process,
+            automations::try_http_request,
             claude_bridge::claude_stream_start,
             claude_bridge::claude_permission_decision,
             claude_bridge::claude_stream_cancel,

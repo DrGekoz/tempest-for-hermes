@@ -1960,6 +1960,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
             <button className={navBtn("automations")} onClick={() => goTo("automations")}>
               <Workflow size={16} />
               <span>Automations</span>
+              <span className="sidebar-nav-badge">Beta</span>
             </button>
           </div>
 

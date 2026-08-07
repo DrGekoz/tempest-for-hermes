@@ -90,6 +90,10 @@ npm run dev        # development with hot reload
 npm run build      # production build -> dist-installers/
 ```
 
+## Star History
+
+[![Star Trail](https://star-trail.fun/api/chart/tempestai-dev/tempest)](https://star-trail.fun/tempestai-dev/tempest)
+
 ## Community
 
 [X (Twitter)](https://x.com/usetempest) — @usetempest
