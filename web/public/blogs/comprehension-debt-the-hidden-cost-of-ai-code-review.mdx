@@ -1,0 +1,74 @@
+---
+slug: comprehension-debt-the-hidden-cost-of-ai-code-review
+title: "Comprehension Debt: The AI Code Review Problem Teams Aren't Measuring"
+date: 2026-08-06
+type: blog
+description: "Comprehension debt — reviewing AI-generated code faster than you understand it — is accumulating silently in engineering teams. Here is what the research shows and how to slow it down."
+author: "Tempest Team"
+tags: [workflow, code-review, agents, engineering]
+---
+
+The productivity numbers for AI coding agents look extraordinary until you look at the review numbers alongside them. Teams using AI agents heavily are merging dramatically more pull requests. They are also spending dramatically more time in review. The output went up. So did the cost of understanding it.
+
+This is not a coincidence. It is a predictable consequence of a specific failure mode that does not have a common name yet, even though most developers working with AI agents have experienced it. The name, coined by developer advocate Addy Osmani in early 2026, is comprehension debt.
+
+## What comprehension debt is
+
+Comprehension debt accumulates when you review code faster than you can understand it. The review passes — no obvious bugs, tests pass, the implementation looks plausible — but you have not actually built a mental model of what the code does. You approved something you could not reconstruct from memory.
+
+This is different from approving code written by a colleague whose work you generally trust, where you are making a judgment call about review depth. Comprehension debt is the specific case where you are reading AI-generated code, the volume is high, and the cognitive cost of actually understanding it is high enough that you skim. The code is not wrong enough to catch your attention. It is right enough to pass.
+
+Survey data from Addy Osmani's 2026 research puts numbers on what developers already report anecdotally: 38% of developers find reviewing AI-generated code requires more effort than reviewing human-written code ([Addy Osmani](https://addyosmani.com/blog/comprehension-debt/), 2026). Only 48% say they consistently review AI output before committing. These two numbers together describe a population of developers merging code they have partially reviewed, some of which they would struggle to explain later.
+
+## Why AI-generated code is harder to review
+
+Human-written code carries the author's reasoning in its structure. The shape of a function, the names chosen, the abstractions introduced — these reflect a thinking process you can reconstruct. When code is confusing, you can ask the author what they were thinking and get useful context.
+
+AI-generated code does not carry reasoning in the same way. The model selects implementations that satisfy the stated requirements, but the selection is not based on the same tradeoffs a human engineer would make. The code may be correct but structured in a way no human would have structured it — not because it is wrong, but because it is optimizing for different things. It can be harder to reason about, not easier, even when it works.
+
+There is also an output volume problem. A developer writing code produces code at a rate roughly matched to the rate at which they can think about it. An AI agent produces code at a rate that far outpaces the developer's review capacity. The bottleneck shifts from generation to comprehension, and nothing about the tooling or the workflow has changed to accommodate that shift.
+
+A randomized controlled trial with 52 software engineers makes this gap concrete. Participants using AI assistance to learn a new library completed their tasks in roughly the same time as a control group but scored 17% lower on a follow-up comprehension quiz — with the largest drops in debugging ability. The pattern inside the AI group was equally striking: developers using AI for code generation scored below 40% on comprehension tests, while those using AI for conceptual inquiry — asking questions, exploring tradeoffs — scored above 65%. The mode of use matters as much as the tool itself.
+
+## The trap: easy to review, hard to understand
+
+The specific psychological trap of comprehension debt is that AI-generated code is often easy to review superficially and hard to understand deeply. The implementations are syntactically correct, follow the patterns of the codebase, pass the tests, and look fine on a first pass. There is nothing to catch your attention.
+
+A human reviewer catching a subtle bug has to notice something that does not look right. But if the code looks right — if it is plausible, coherent, and consistent with the surrounding code — the reviewer's attention passes over it. You approved code you could not explain because nothing in the review experience prompted you to try to explain it.
+
+This is what makes comprehension debt compound over time. Code you approved without fully understanding becomes part of the codebase. Future AI agents read it. Future reviews are conducted against it. The debt accumulates silently until something breaks in a way that requires actually understanding the code, at which point the accumulated misunderstanding becomes expensive.
+
+## What the 91% review time increase means
+
+A 91% increase in review time alongside a 98% increase in merged pull requests means that review is not keeping pace with output. Developers are reviewing more code but spending less time per unit of code. The per-PR review time is dropping even as total review time goes up.
+
+This is exactly the pattern that creates comprehension debt at scale. High volume, reduced per-unit attention, no natural forcing function to slow down and build a mental model. The workflow accommodates the output rate of the AI agent rather than the comprehension rate of the reviewing engineer.
+
+The consequences are not immediate. Code merges, features ship, tests pass. The debt becomes visible later, when the code needs to be modified and no one on the team can confidently describe what it does, or when a subtle bug surfaces that a careful reader would have caught and that a quick reviewer did not.
+
+## Practical countermeasures
+
+The countermeasure is not to merge less AI-generated code. It is to change the conditions under which review happens so that comprehension is the default rather than an afterthought.
+
+The most effective change is to treat the review step as a separate cognitive task rather than an extension of the delegation step. Do not review immediately after delegating. The urgency bias of a completed PR creates pressure to approve quickly. Reviewing after a gap, when you come to the diff cold, changes what you see.
+
+Ask a forcing question during review: could I modify this code confidently without looking anything up? If the answer is no, you have identified a comprehension gap. That does not necessarily mean the code should not be merged — sometimes it is fine to ship code you would need to revisit before modifying. But it means you know what you have, and you can record the gap explicitly rather than discovering it later under pressure.
+
+Scope-constrained agent sessions help with this. An agent working on a single, well-defined task produces a diff with a clear boundary. You know what the code is supposed to do because you specified it. Review becomes a question of whether the implementation does what you asked, rather than a question of what the implementation does at all.
+
+## The skill atrophy problem
+
+Comprehension debt has a longer-term consequence that is harder to measure: skill atrophy. When developers review code they did not write and do not deeply understand, they are not exercising the skills required to write that code themselves. Over time, the ability to construct mental models of complex code, to design abstractions from first principles, to debug unfamiliar systems — these erode.
+
+This matters not as a philosophical point about craftsmanship, but as a practical risk. The developers least able to catch subtle errors in AI-generated code are the developers who have been reviewing AI-generated code for the longest time without deeply understanding it. The debt compounds in the person, not just the codebase.
+
+The countermeasure here is deliberate practice on code you wrote without AI assistance. Not as a political statement, but as a way to keep the diagnostic skills sharp enough to be useful when you need them.
+
+---
+
+## Further reading
+
+- [Comprehension Debt — Addy Osmani](https://addyosmani.com/blog/comprehension-debt/)
+- [The Case Against Context Switching Between AI Agents](/blog/the-case-against-context-switching)
+- [Why Parallel Agents Change Everything](/blog/why-parallel-agents-change-everything)
+- [Context Rot: Why Your AI Agent Gets Worse the Longer It Runs](/blog/context-rot-why-your-ai-agent-gets-worse)

@@ -48,6 +48,12 @@ minisign-verify = "0.2"
 tiny_http = "0.12"
 # OS entropy for the per-run hook-server auth token.
 getrandom = "0.2"
+# UUID generation for automation IDs
+uuid = { version = "1", features = ["v4"] }
+# Blocking HTTP for the automations "Try it" tool preview — small, sync, no
+# runtime pulled in. Only reached from the try_http_request Tauri command.
+ureq = { version = "2", features = ["json"] }
+base64 = "0.22"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

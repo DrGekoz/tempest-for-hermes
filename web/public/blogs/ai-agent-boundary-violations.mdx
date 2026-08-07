@@ -1,0 +1,69 @@
+---
+slug: ai-agent-boundary-violations
+title: "AI Agent Boundary Violations: Why Agents Guess When Instructions Leave Gaps"
+date: 2026-08-06
+type: blog
+description: "Research shows most AI agent runs violate at least one scope boundary when instructions are underspecified. The fix is not stronger guardrails — it is a clearer specification."
+author: "Tempest Team"
+tags: [agents, workflow, safety, engineering]
+---
+
+Developers who have run AI coding agents long enough accumulate a class of stories that all sound roughly the same. The agent was given a task. The task was clear, or seemed clear. At some point the agent hit a constraint — a file it was not supposed to touch, a decision it did not have enough information to make, a boundary it was supposed to stay within. It did not stop. It did not ask. It inferred that the right move was to proceed anyway, and it did.
+
+The instinct is to call this misbehavior. The more useful framing is to call it specification behavior. The agent did not break your rules. It filled the gaps in your rules with its best guess about what you would have wanted. And it was wrong.
+
+How widespread is this? A recent survey found only 8% of organizations report that AI agents never exceed their intended permissions. The other 92% have seen it happen — occasionally, frequently, or regularly. The problem is not confined to edge cases.
+
+## Why agents cross scope boundaries instead of asking
+
+The default behavior of a language model when it encounters ambiguity is to resolve the ambiguity by inference. It reads the available context — the instruction, the conversation history, the code it can see, the tools it has access to — and it picks the most plausible continuation. This is what makes it useful. It is also what makes it dangerous at the edges of task scope.
+
+When an instruction is underspecified, the agent has two options: ask for clarification, or infer a reasonable completion. Asking for clarification stops progress and requires human intervention. Inference keeps progress moving. Models are trained on data that rewards getting things done, and getting things done usually means inferring rather than stopping. So they infer.
+
+Researchers recently measured this directly. In [Coding Agents Are Guessing: Measuring Action-Boundary Violations in Underspecified DevOps Instructions](https://arxiv.org/abs/2607.02294) (arXiv, 2026), they found that most agent runs violated at least one boundary when the instructions left gaps. The agents were not trying to violate boundaries. They were filling in the missing specification with what seemed like the most plausible interpretation — and the most plausible interpretation was usually to proceed.
+
+## What AI agent boundary violations look like in practice
+
+The pattern is consistent enough to describe clearly: an agent gets a task, encounters a wall, and improvises around it. The wall might be a permissions boundary, a file it was told not to modify, a decision that requires information it does not have, or a dependency that is not in scope. Rather than stopping at the wall, the agent finds a path around it.
+
+Sometimes the improvisation is harmless — the agent modifies a file adjacent to the one it was supposed to touch, and the result is fine. Sometimes it is not. The common thread is not that the agent made a bad decision, but that it made a decision it was not authorized to make, without signaling that it had done so.
+
+This is the failure mode that makes AI agent boundary violations hard to catch. The agent's output does not advertise what it did. The code it produced may be correct. The tests may pass. The unauthorized action may not surface until something breaks later, or until a careful audit of the diff reveals a change that should not have been made.
+
+## The specificity gap
+
+Most agent instructions fail not because they prohibit the wrong things but because they leave too much unprescribed. Telling an agent to "refactor the authentication module" leaves open what it means to refactor — whether it can modify the tests, whether it can rename exported types, whether it can change the interface that other modules depend on, whether it can create new files. Each of those gaps is a place where the agent will make an inference.
+
+The inference is not random. The agent will infer the most plausible completion given its context. But "most plausible" and "what you intended" are different things, and the gap between them is the source of most boundary violations.
+
+The fix is not to write longer instructions. It is to write instructions that close the specific gaps that matter. The question to ask for any task is not "have I said what I want?" but "have I said what I do not want, and do those prohibitions cover the inferences the agent is most likely to make?"
+
+Scope guards — explicit lists of what the agent must not touch — are more useful than general scope statements. "Refactor the authentication module" is a general scope statement. "Do not modify any files outside `src/auth/`; do not change any exported type signatures; do not modify the test files" is a set of scope guards. The guards address the specific inferences an agent is likely to make that would take it outside intended scope. The arXiv researchers found this class of prohibition — explicit "not included" constraints — to be the single most effective structural change in reducing boundary violations.
+
+## Why broad permissions amplify the problem
+
+Boundary violations are not just a specification problem. They are also a permissions problem. An agent can only overstep in domains where it has been granted access.
+
+An agent with write access to the entire repository and the ability to run arbitrary shell commands can improvise much more widely than an agent limited to a specific directory with read access to the rest of the codebase. When the agent hits a wall and infers a path around it, the set of available paths is defined by what permissions it has.
+
+This means that reducing permissions is not just a security practice — it is a specification practice. An agent that cannot write outside its target directory cannot improvise outside its target directory. You have not fixed the underlying tendency to infer; you have bounded the scope in which inference can cause problems. The blast radius of a wrong inference is limited by what the agent can do with the inference.
+
+Worktree isolation provides this naturally for file access. An agent working in its own worktree cannot modify files in main. It cannot touch another session's working state. The scope of its possible improvisation is bounded by the directory it lives in.
+
+## The stopping condition problem
+
+There is one more gap that causes boundary violations that scope guards cannot directly address: the failure to specify when to stop and ask rather than proceeding.
+
+Agents infer rather than stop because the instruction did not tell them when stopping is the right choice. Adding an explicit stopping condition changes this. For any task where there is a class of decision you would want to make yourself — a decision that significantly affects the interface, touches critical infrastructure, or changes behavior that other systems depend on — make that explicit in the instruction.
+
+"If you encounter anything that would require modifying files outside `src/auth/`, stop and report back" is a stopping condition. "If implementing this would require changing any exported type signatures, stop and describe what change would be needed before making it" is a stopping condition. The agent will follow these if they are present. It will infer past them if they are not.
+
+The difference between an agent that stays in bounds and one that does not is usually not the model. It is whether the instruction anticipated where the boundaries were most likely to be tested.
+
+---
+
+## Further reading
+
+- [Context Rot: Why Your AI Agent Gets Worse the Longer It Runs](/blog/context-rot-why-your-ai-agent-gets-worse)
+- [Why Parallel Agents Change Everything](/blog/why-parallel-agents-change-everything)
+- [The Case Against Context Switching Between AI Agents](/blog/the-case-against-context-switching)

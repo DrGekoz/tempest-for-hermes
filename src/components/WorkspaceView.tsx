@@ -87,6 +87,7 @@ import { startModelManifestFetch } from "../lib/remoteConfig";
 import { startAgentHooks } from "../store/agentHooks";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
+import { AutomationsPage } from "./Automations/AutomationsPage";
 import { Toolbar } from "./Toolbar";
 import AgentTabs from "./AgentTabs";
 import IconCapsule from "./IconCapsule";
@@ -1959,6 +1960,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
             <button className={navBtn("automations")} onClick={() => goTo("automations")}>
               <Workflow size={16} />
               <span>Automations</span>
+              <span className="sidebar-nav-badge">Beta</span>
             </button>
           </div>
 
@@ -2810,7 +2812,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
               <KnowledgeBasePage />
             )}
             {!activeSessionId && activeSection === "automations" && (
-              <div className="overview-page" />
+              <AutomationsPage />
             )}
             {!activeSessionId && activeSection === "overview" && (
               <div className="overview-page">

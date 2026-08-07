@@ -1,5 +1,61 @@
 [
   {
+    "slug": "ai-agent-boundary-violations",
+    "title": "AI Agent Boundary Violations: Why Agents Guess When Instructions Leave Gaps",
+    "date": "2026-08-06",
+    "type": "blog",
+    "description": "Research shows most AI agent runs violate at least one scope boundary when instructions are underspecified. The fix is not stronger guardrails — it is a clearer specification.",
+    "author": "Tempest Team",
+    "tags": [
+      "agents",
+      "workflow",
+      "safety",
+      "engineering"
+    ]
+  },
+  {
+    "slug": "comprehension-debt-the-hidden-cost-of-ai-code-review",
+    "title": "Comprehension Debt: The AI Code Review Problem Teams Aren't Measuring",
+    "date": "2026-08-06",
+    "type": "blog",
+    "description": "Comprehension debt — reviewing AI-generated code faster than you understand it — is accumulating silently in engineering teams. Here is what the research shows and how to slow it down.",
+    "author": "Tempest Team",
+    "tags": [
+      "workflow",
+      "code-review",
+      "agents",
+      "engineering"
+    ]
+  },
+  {
+    "slug": "context-rot-why-your-ai-agent-gets-worse",
+    "title": "Context Rot: Why Your AI Agent Gets Worse the Longer It Runs",
+    "date": "2026-08-06",
+    "type": "blog",
+    "description": "Context rot is what happens when a long AI coding session fills with failed exploration and the agent stops taking new direction. Here is why it happens and how to clear it.",
+    "author": "Tempest Team",
+    "tags": [
+      "context",
+      "workflow",
+      "agents",
+      "performance"
+    ]
+  },
+  {
+    "slug": "reduce-ai-agent-token-costs",
+    "title": "How to Reduce AI Agent Token Costs When Running Multiple Sessions",
+    "date": "2026-07-25",
+    "type": "blog",
+    "description": "Running multiple AI agents in parallel multiplies token costs — unless you share context between sessions. Here is how Token Intelligence cuts usage by up to 64%.",
+    "author": "Tempest Team",
+    "tags": [
+      "token-intelligence",
+      "cost",
+      "parallel-agents",
+      "performance"
+    ]
+  },
+  {
     "slug": "tempest-v013-release",
     "title": "Tempest v0.1.3: Chat",
     "date": "2026-07-11",

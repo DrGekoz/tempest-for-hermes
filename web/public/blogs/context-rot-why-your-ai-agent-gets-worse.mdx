@@ -1,0 +1,69 @@
+---
+slug: context-rot-why-your-ai-agent-gets-worse
+title: "Context Rot: Why Your AI Agent Gets Worse the Longer It Runs"
+date: 2026-08-06
+type: blog
+description: "Context rot is what happens when a long AI coding session fills with failed exploration and the agent stops taking new direction. Here is why it happens and how to clear it."
+author: "Tempest Team"
+tags: [context, workflow, agents, performance]
+---
+
+There is a failure mode that most developers eventually notice but rarely name. You start a session with an AI coding agent, give it a task, and it does excellent work. An hour in, you realize the approach is wrong. You redirect it. The agent acknowledges your direction, then continues doing roughly what it was doing before. You redirect again. Same result. The agent is not ignoring you — it is stuck.
+
+This is context rot. And unlike most AI agent problems, it is not a model capability issue. It is a physics problem.
+
+## What context rot is and why it compounds
+
+Every conversation with an AI coding agent is a growing document. Every message, every tool call, every file read, every intermediate result — all of it accumulates in the context window. The model reads the entire document every time it needs to respond.
+
+The problem is that language models do not treat all tokens equally in the way a human reader would. A human reading a long document can decide which sections are still relevant and which ones represent abandoned thinking. Models cannot do this reliably. When the context contains 10,000 tokens of work on a particular approach, and you then add 200 tokens redirecting the agent to a different approach, the model has to reconcile a massive volume of work pointing one way with a small signal pointing another. The prior work wins — not through any intentional choice, but because it dominates the evidence.
+
+The result is an agent that technically understands your new direction but behaviorally follows the old one. Its responses reflect the accumulated momentum of everything that came before.
+
+## The specific trigger: failed explorations
+
+Context rot is worst when the context contains failed work. Successful work that gets incorporated into the codebase is at least grounded in reality — there are files and outputs that correspond to it. Failed explorations are pure context pollution. The agent tried an approach, hit a wall, the approach was abandoned, but the entire reasoning chain for that approach is still in the window.
+
+If you have ever had a session where the agent kept reverting to a discarded approach even after you explicitly ruled it out, you have experienced this. The agent is not being stubborn. It is being statistically honest: the preponderance of evidence in its context window points toward that approach, and your correction is a small counter-signal against a large prior. Practitioners call this specific state context poisoning — the condition where the weight of prior failed work actively resists new direction, independent of how clearly that direction is stated.
+
+This makes long, exploratory sessions especially prone to context rot. The sessions where you most want an agent's help — messy problems where you are figuring things out as you go — are exactly the sessions where context accumulates the most unhelpful history.
+
+## Why redirecting does not always work
+
+When context rot sets in, the natural instinct is to give a stronger redirect. Add emphasis. Be more explicit. Add more instructions. This frequently makes things worse.
+
+More instructions add more tokens to an already contaminated window. The signal-to-noise ratio deteriorates further. Each new instruction competes with a larger volume of prior context, and the accumulated momentum of the earlier work continues to exert gravitational pull on the agent's responses.
+
+The redirect failure is not a failure of the model to understand your instruction. It is a failure of the architecture to let new direction override old. The model understands what you are asking. It simply cannot reconcile that request with what its context window is telling it to do.
+
+## The cure: controlled context resets
+
+The only reliable fix for context rot is to reduce the contaminated context — ideally by replacing it with a clean summary that retains what was useful and discards what was not.
+
+In Claude Code, `/compact` does a version of this automatically: it summarizes the conversation history into a compressed form and replaces the raw history with the summary. This is meaningfully different from just shortening the context. It lets the model reestablish what it knows with a fresh frame, rather than continuing to navigate a context full of contradictory signals.
+
+The more powerful approach is to spawn a new session entirely when a major direction change is needed. Take what you learned from the failed exploration, write a clean brief for the new approach, and start fresh. This feels like lost work but it is often the fastest path forward. A new session with 200 tokens of well-synthesized direction outperforms a contaminated session with 20,000 tokens of accumulated history.
+
+The scale of what compaction has to process makes this tradeoff concrete. A heavy session can accumulate hundreds of thousands of tokens of history. Standard in-session compaction is slow — often two minutes or more — and loses information in the compression. That specialized tooling for context compaction has become a category of its own ([FlashCompact by Morph](https://morph.so), among others) is a reasonable measure of how acute the context rot problem has become for developers running long agent sessions.
+
+## What to do about it proactively
+
+The agents least likely to rot are those working on tightly scoped tasks with clearly bounded files. The more a session is allowed to sprawl — exploring different parts of the codebase, trying multiple approaches, reading files loosely related to the core task — the more quickly context rot sets in.
+
+Scoped tasks resist rot. When you give an agent a task with a defined file list, a specific output, and a clear definition of done, there is much less opportunity for exploratory context to accumulate. Failed approaches get tried within a smaller surface area. The context stays focused on a coherent unit of work.
+
+This is one reason why the worktree-per-session model matters beyond isolation. A session that is scoped to one task, on one branch, with a clear output is a session that is less likely to accumulate the unfocused history that causes rot. You do not need to reset a session that never strayed in the first place.
+
+## When to reset versus when to persist
+
+Not every long session needs a reset. If the agent is making progress and you are redirecting small details rather than entire approaches, the context is doing its job — accumulating useful history that makes the agent better informed. Reset when the agent has stopped taking direction in a way that matches what you are observing, not on a timer.
+
+The signal is behavioral: the agent acknowledges new direction in its responses but executes old direction in its outputs. When what it says and what it does diverge consistently, the context is poisoned and persistence is cheaper than fighting it.
+
+---
+
+## Further reading
+
+- [The Case Against Context Switching Between AI Agents](/blog/the-case-against-context-switching)
+- [How to Reduce AI Agent Token Costs When Running Multiple Sessions](/blog/reduce-ai-agent-token-costs)
+- [Token Intelligence: Eliminating Redundant File Reads Across Agent Sessions](/blog/token-intelligence-eliminating-redundant-reads)
