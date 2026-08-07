@@ -91,7 +91,8 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libxdo-dev
+            libxdo-dev \
+            xdg-utils
 
       - name: Enable long paths (Windows)
         if: matrix.os == 'windows-latest'
@@ -100,16 +101,6 @@ jobs:
           Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1
           git config --global core.longpaths true
 
-      - name: Write Apple API key to disk
-        if: matrix.os == 'macos-latest'
-        shell: bash
-        env:
-          KEY_CONTENT: ${{ secrets.APPLE_API_KEY_PATH }}
-        run: |
-          mkdir -p "$HOME/private_keys"
-          printf '%s' "$KEY_CONTENT" > "$HOME/private_keys/AuthKey.p8"
-          echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
-
       - run: npm ci
 
       - name: Build
@@ -117,12 +108,6 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           VITE_POSTHOG_KEY: phc_meJDnwWJ6c5uFsecABnA8ydF4HBL7sykn4GUTWvMV6qL
 
       # Strip bundled libwayland-* libs from the AppImage so it loads host copies
