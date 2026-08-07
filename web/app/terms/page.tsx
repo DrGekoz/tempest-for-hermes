@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   },
 }
 
-const EFFECTIVE = "25 July 2026"
+const EFFECTIVE = "7 August 2026"
 
 export default function TermsPage() {
   return (
@@ -80,6 +80,23 @@ export default function TermsPage() {
                 configure. Your use of those services is governed by each provider&apos;s own
                 terms of service. We are not responsible for third-party service behavior,
                 pricing, or availability.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-base font-medium text-foreground mb-3">Opt-in telemetry</h2>
+              <p>
+                The Tempest desktop app can send anonymous usage telemetry to help us prioritise
+                what to build. Telemetry is <strong className="text-foreground">off by
+                default</strong> and only runs after you explicitly enable it in Settings. By
+                turning it on you consent to the collection described in our{" "}
+                <a
+                  href="/privacy"
+                  className="text-foreground underline underline-offset-4 decoration-foreground/25 hover:decoration-foreground transition-colors"
+                >
+                  Privacy Policy
+                </a>
+                . You can revoke consent at any time in the same Settings panel.
               </p>
             </section>
 
