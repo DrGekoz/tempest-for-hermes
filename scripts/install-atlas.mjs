@@ -21,18 +21,21 @@ writeFileSync(
 
 cpSync(src, join(destModules, '@usetempest', 'atlas'), { recursive: true })
 
-// Semantic search runs the model through @xenova/transformers. That library is a
-// dependency of the Atlas package, but npm hoists it to root node_modules and we
-// only copy the Atlas package above — so `require('@xenova/transformers')` would
-// fail to resolve in the shipped bundle. Copy its transitive closure here.
+// Copy the transitive closure of every dep the shipped Atlas needs at runtime.
+// npm hoists deps to the *root* node_modules and we only cpSync'd the Atlas
+// package itself above — so in the installer (no parent tree to walk up into)
+// `require('picomatch')` / `require('web-tree-sitter')` / `@xenova/transformers`
+// all fail. In `tauri dev` this happened to work because Node walked up out of
+// resources/atlas/ into the repo's real node_modules; in production there is
+// no parent, which is why installed Atlas MCP has silently failed to boot.
 //
-// onnxruntime-node MUST be included: transformers' backends/onnx.js is a static
-// ESM `import * as ONNX_NODE from 'onnxruntime-node'`, so a missing package
-// throws ERR_MODULE_NOT_FOUND at module-load time — there is no runtime WASM
-// fallback in v2.x. `sharp` (image codec) stays excluded — text embedding never
-// touches it. Model weights are NOT bundled: they download on user consent at
-// runtime into the app-data cache.
-const SEMANTIC_ROOTS = ['@xenova/transformers']
+// onnxruntime-node MUST be included: @xenova/transformers' backends/onnx.js
+// does a static ESM `import * as ONNX_NODE from 'onnxruntime-node'`, so a
+// missing package throws ERR_MODULE_NOT_FOUND at module-load time — there is
+// no runtime WASM fallback in v2.x. `sharp` (image codec) is excluded — text
+// embedding never touches it. Model weights are NOT bundled: they download on
+// user consent at runtime into the app-data cache.
+const BUNDLE_ROOTS = ['@usetempest/atlas', '@xenova/transformers']
 const EXCLUDE = new Set(['sharp'])
 
 /** Copy `pkg` from root node_modules → dest, then recurse into its deps. */
@@ -55,7 +58,7 @@ function copyClosure(pkg, seen = new Set()) {
   for (const dep of Object.keys(deps)) copyClosure(dep, seen)
 }
 
-for (const pkg of SEMANTIC_ROOTS) copyClosure(pkg)
+for (const pkg of BUNDLE_ROOTS) copyClosure(pkg)
 
 // onnxruntime-node ships prebuilt native binaries for every platform under
 // bin/napi-v3/{darwin,linux,win32}/{arch}/. Each build only needs its own —
@@ -70,6 +73,33 @@ if (existsSync(ortBin)) {
       rmSync(join(ortBin, p), { recursive: true, force: true })
     }
   }
+}
+
+// `sharp` is npm-nested inside @xenova/transformers (not hoisted) so the
+// recursive cpSync copies it in — but its transitive deps (`detect-libc`, etc.)
+// live at the root and were never followed, so `require('detect-libc')` throws
+// at sharp's module-load. Transformers does `import sharp from 'sharp'` at the
+// top of utils/image.js and then, at module scope, either uses it (else if
+// (sharp)) or throws "Unable to load image processing library" — text
+// embedding never touches images, but the throw fires at IMPORT time even so.
+// Replace the nested sharp with a truthy, self-chaining Proxy stub: the guard
+// passes, function bodies are only defined not executed, and any incidental
+// `sharp(...)` / `sharp.x.y()` access resolves to another no-op instead of
+// crashing. Avoids libvips native binaries and sharp's transitive closure.
+const sharpNested = join(destModules, '@xenova', 'transformers', 'node_modules', 'sharp')
+if (existsSync(sharpNested)) {
+  rmSync(sharpNested, { recursive: true, force: true })
+  mkdirSync(sharpNested, { recursive: true })
+  writeFileSync(
+    join(sharpNested, 'package.json'),
+    JSON.stringify({ name: 'sharp', version: '0.0.0-stub', main: 'index.js' }, null, 2) + '\n'
+  )
+  writeFileSync(
+    join(sharpNested, 'index.js'),
+    'const stub = new Proxy(function () { return stub; }, { get: () => stub });\n' +
+      'module.exports = stub;\n' +
+      'module.exports.default = stub;\n'
+  )
 }
 
 console.log('Atlas staged → src-tauri/resources/atlas/')
