@@ -55,9 +55,12 @@ type GitHubRelease = {
 }
 
 function githubHeaders(): HeadersInit {
-  return process.env.GITHUB_TOKEN
-    ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
-    : {}
+  const headers: Record<string, string> = {
+    'User-Agent': 'tempest-website',
+    Accept: 'application/vnd.github+json',
+  }
+  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`
+  return headers
 }
 
 export async function generateStaticParams() {

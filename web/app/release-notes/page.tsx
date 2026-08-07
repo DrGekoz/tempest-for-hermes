@@ -38,10 +38,14 @@ export default async function ReleaseNotesPage() {
   let releases: GitHubRelease[] = []
 
   try {
+    const headers: Record<string, string> = {
+      'User-Agent': 'tempest-website',
+      Accept: 'application/vnd.github+json',
+    }
+    if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`
     const res = await fetch('https://api.github.com/repos/tempestai-dev/tempest/releases', {
-      headers: process.env.GITHUB_TOKEN
-        ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
-        : {},
+      headers,
+      next: { revalidate: 43200 },
     })
     if (res.ok) {
       const all: GitHubRelease[] = await res.json()
@@ -63,10 +67,16 @@ export default async function ReleaseNotesPage() {
         </div>
 
         {releases.length === 0 ? (
-          <div className="grid grid-cols-1 min-[700px]:grid-cols-2 min-[1000px]:grid-cols-3 gap-4">
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-36 rounded bg-foreground/[0.06]" />
-            ))}
+          <div className="rounded border border-foreground/[0.08] bg-foreground/[0.02] p-8 flex flex-col items-start gap-3">
+            <p className="text-sm text-foreground">Release notes are temporarily unavailable.</p>
+            <a
+              href="https://github.com/tempestai-dev/tempest/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              View releases on GitHub <ArrowRight size={13} />
+            </a>
           </div>
         ) : (
           <div className="grid grid-cols-1 min-[700px]:grid-cols-2 min-[1000px]:grid-cols-3 gap-4">
