@@ -1,130 +1,60 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { Loader, Plus, Trash2, Workflow } from "lucide-react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, Globe, Loader, Plus, Trash2, Workflow } from "lucide-react";
 import type { StoredProject } from "../../store/openProjects";
-import { Tooltip } from "../Tooltip";
-
-interface Automation {
-  id: string;
-  workspaceId: string | null;
-  name: string;
-  slug: string;
-  path: string;
-  graph: string;
-  sandboxMode: string;
-  enabled: boolean;
-  builtAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ProcessInfo {
-  port: number;
-  pid: number;
-}
+import { type Automation, loadAutomations, updateAutomation, deleteAutomation } from "../../store/automations";
+import { CreateAutomationDialog } from "./CreateAutomationDialog";
+import { humanizeRrule } from "../../lib/automationSchedule";
 
 interface Props {
   projects: StoredProject[];
   scope: string | null;
   onSelectScope: (id: string | null) => void;
-  onOpen: (id: string, name: string) => void;
+  onOpen: (a: Automation) => void;
 }
 
-function timeAgo(iso: string): string {
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString();
 }
 
 export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
-  const [processes, setProcesses] = useState<Record<string, ProcessInfo>>({});
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null);
 
-  async function load(projectId: string | null) {
+  async function load() {
     setLoading(true);
     try {
-      // workspaceId: null → global (unbound) automations.
-      const list = await invoke<Automation[]>("list_automations", { workspaceId: projectId });
+      const list = await loadAutomations(scope ?? undefined);
       setAutomations(list);
-      const pairs = await Promise.all(
-        list.map(a =>
-          invoke<ProcessInfo | null>("get_automation_process", { id: a.id })
-            .then(p => [a.id, p] as const)
-            .catch(() => [a.id, null] as const)
-        )
-      );
-      const procs: Record<string, ProcessInfo> = {};
-      for (const [id, p] of pairs) if (p) procs[id] = p;
-      setProcesses(procs);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(scope); }, [scope]);
+  useEffect(() => { void load(); }, [scope]);
 
-  useEffect(() => {
-    if (creating) setTimeout(() => nameInputRef.current?.focus(), 0);
-  }, [creating]);
-
-  async function handleCreate() {
-    const name = newName.trim();
-    if (!name) return;
-    setSaving(true);
-    try {
-      // scope: null = Global (unbound).
-      const a = await invoke<Automation>("create_automation", { workspaceId: scope, name });
-      setAutomations(prev => [...prev, a]);
-      setCreating(false);
-      setNewName("");
-    } finally {
-      setSaving(false);
-    }
+  async function handleToggleEnabled(a: Automation) {
+    const updated = await updateAutomation(a.id, { enabled: !a.enabled });
+    setAutomations((prev) => prev.map((x) => x.id === updated.id ? updated : x));
   }
 
   async function handleDelete() {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      await invoke("delete_automation", { id: deleteId });
-      setAutomations(prev => prev.filter(a => a.id !== deleteId));
-      setProcesses(prev => { const next = { ...prev }; delete next[deleteId!]; return next; });
+      await deleteAutomation(deleteId);
+      setAutomations((prev) => prev.filter((a) => a.id !== deleteId));
       setDeleteId(null);
     } finally {
       setDeleting(false);
     }
   }
 
-  async function handleStop(id: string) {
-    await invoke("stop_automation", { id }).catch(() => {});
-    setProcesses(prev => { const next = { ...prev }; delete next[id]; return next; });
-  }
-
-  function dot(a: Automation) {
-    if (processes[a.id]) return <span className="am-dot am-dot--running" />;
-    if (a.builtAt) return <span className="am-dot am-dot--built" />;
-    return <span className="am-dot am-dot--idle" />;
-  }
-
-  function meta(a: Automation) {
-    const p = processes[a.id];
-    if (p) return <span className="am-row-meta am-row-meta--running">running · :{p.port}</span>;
-    if (a.builtAt) return <span className="am-row-meta">Built {timeAgo(a.builtAt)}</span>;
-    return <span className="am-row-meta">Never built</span>;
-  }
-
-  const deleteTarget = automations.find(a => a.id === deleteId);
+  const deleteTarget = automations.find((a) => a.id === deleteId);
 
   return (
     <div className="am-root">
@@ -136,31 +66,26 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
               <span className="am-header-count">{automations.length}</span>
             )}
           </div>
-          <p className="am-header-sub">Build and schedule AI agents that run on autopilot.</p>
+          <p className="am-header-sub">Schedule AI agents to run on autopilot.</p>
         </div>
         <div className="am-header-right">
-          <button
-            className="am-new-btn"
-            onClick={() => setCreating(true)}
-            title="Create a new automation"
-          >
+          <button className="am-new-btn" onClick={() => setCreating(true)}>
             <Plus size={14} />
             New Automation
           </button>
         </div>
       </div>
 
-      <div className="am-tabs" ref={tabsRef} role="tablist">
+      <div className="am-tabs" role="tablist" aria-label="Project scope">
         <button
           className={`am-tab${scope === null ? " am-tab--active" : ""}`}
           onClick={() => onSelectScope(null)}
           role="tab"
           aria-selected={scope === null}
         >
-          <Globe size={13} className="am-tab-icon" />
           Global
         </button>
-        {projects.map(p => (
+        {projects.map((p) => (
           <button
             key={p.id}
             className={`am-tab${scope === p.id ? " am-tab--active" : ""}`}
@@ -176,103 +101,73 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
 
       <div className="am-list">
         {loading ? (
-          <div className="am-loading">
-            <Loader size={16} className="am-spin" />
-          </div>
+          <div className="am-loading"><Loader size={16} className="am-spin" /></div>
         ) : automations.length === 0 ? (
           <div className="am-empty">
             <Workflow size={22} className="am-empty-icon" />
             <p className="am-empty-text">No automations yet</p>
-            <p className="am-empty-sub">Build and schedule AI agents that run on autopilot.</p>
+            <p className="am-empty-sub">Schedule AI agents to run on autopilot.</p>
             <button className="am-empty-cta" onClick={() => setCreating(true)}>
               <Plus size={14} />
               Create automation
             </button>
           </div>
         ) : (
-          <div className="am-rows">
-            {automations.map((a, i) => (
-              <div
-                key={a.id}
-                className="am-row"
-                style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
-                onClick={() => onOpen(a.id, a.name)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => { if (e.key === "Enter") onOpen(a.id, a.name); }}
-              >
-                <span className="am-row-status">{dot(a)}</span>
-
-                <div className="am-row-main">
-                  <span className="am-row-name" title={a.name}>{a.name}</span>
-                  <span className="am-row-slug">{a.slug}</span>
-                </div>
-
-                {meta(a)}
-
-                <div className="am-row-actions" onClick={e => e.stopPropagation()}>
-                  {processes[a.id] && (
-                    <button className="am-act" onClick={() => handleStop(a.id)}>Stop</button>
-                  )}
-                  <button className="am-act" onClick={() => onOpen(a.id, a.name)}>
-                    <ExternalLink size={12} />
-                    Open
-                  </button>
-                  <Tooltip content="Delete" placement="top">
-                    <button className="am-act am-act--icon am-act--danger" onClick={() => setDeleteId(a.id)}>
+          <table className="am-table">
+            <thead>
+              <tr>
+                <th className="am-th"></th>
+                <th className="am-th">Name</th>
+                <th className="am-th">Agent</th>
+                <th className="am-th">Schedule</th>
+                <th className="am-th">Next run</th>
+                <th className="am-th">Enabled</th>
+                <th className="am-th"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {automations.map((a) => (
+                <tr key={a.id} className="am-tr" onClick={() => onOpen(a)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(a); }}>
+                  <td className="am-td am-td--dot">
+                    <span className={`am-dot ${a.enabled ? "am-dot--running" : "am-dot--idle"}`} />
+                  </td>
+                  <td className="am-td am-td--name">{a.name}</td>
+                  <td className="am-td am-td--agent">{a.agent}</td>
+                  <td className="am-td am-td--schedule">{humanizeRrule(a.schedule)}</td>
+                  <td className="am-td am-td--next">{fmtDate(a.nextRunAt)}</td>
+                  <td className="am-td am-td--toggle" onClick={(e) => e.stopPropagation()}>
+                    <label className="am-toggle">
+                      <input
+                        type="checkbox"
+                        checked={a.enabled}
+                        onChange={() => void handleToggleEnabled(a)}
+                      />
+                      <span className="am-toggle-track" />
+                    </label>
+                  </td>
+                  <td className="am-td am-td--actions" onClick={(e) => e.stopPropagation()}>
+                    <button className="am-act am-act--icon am-act--danger" onClick={() => setDeleteId(a.id)} title="Delete">
                       <Trash2 size={13} />
                     </button>
-                  </Tooltip>
-                </div>
-              </div>
-            ))}
-          </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      {creating && createPortal(
-        <div className="naming-modal-overlay" onClick={() => !saving && (setCreating(false), setNewName(""))}>
-          <div className="naming-modal" onClick={e => e.stopPropagation()}>
-            <div className="naming-modal-header">
-              <Workflow size={14} />
-              <span>New automation</span>
-            </div>
-            <input
-              ref={nameInputRef}
-              className="naming-modal-input"
-              placeholder="e.g. Daily Standup Bot"
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter") handleCreate();
-                if (e.key === "Escape") { setCreating(false); setNewName(""); }
-              }}
-              disabled={saving}
-            />
-            <div className="naming-modal-actions">
-              <button
-                className="naming-modal-btn naming-modal-btn--cancel"
-                onClick={() => { setCreating(false); setNewName(""); }}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-              <button
-                className="naming-modal-btn naming-modal-btn--create"
-                onClick={handleCreate}
-                disabled={saving || !newName.trim()}
-              >
-                {saving ? <Loader size={13} className="am-spin" /> : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {creating && (
+        <CreateAutomationDialog
+          projectId={scope ?? undefined}
+          onCreated={() => { setCreating(false); void load(); }}
+          onClose={() => setCreating(false)}
+        />
       )}
 
       {deleteId && createPortal(
         <div className="naming-modal-overlay" onClick={() => !deleting && setDeleteId(null)}>
-          <div className="naming-modal" onClick={e => e.stopPropagation()}>
+          <div className="naming-modal" onClick={(e) => e.stopPropagation()}>
             <div className="naming-modal-header">
               <Trash2 size={14} />
               <span>Delete automation?</span>
@@ -281,24 +176,14 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
               <strong>{deleteTarget?.name}</strong> will be permanently removed.
             </p>
             <div className="naming-modal-actions">
-              <button
-                className="naming-modal-btn naming-modal-btn--cancel"
-                onClick={() => setDeleteId(null)}
-                disabled={deleting}
-              >
-                Cancel
-              </button>
-              <button
-                className="naming-modal-btn naming-modal-btn--delete"
-                onClick={handleDelete}
-                disabled={deleting}
-              >
+              <button className="naming-modal-btn naming-modal-btn--cancel" onClick={() => setDeleteId(null)} disabled={deleting}>Cancel</button>
+              <button className="naming-modal-btn naming-modal-btn--delete" onClick={() => void handleDelete()} disabled={deleting}>
                 {deleting ? <Loader size={13} className="am-spin" /> : "Delete"}
               </button>
             </div>
           </div>
         </div>,
-        document.body
+        document.body,
       )}
     </div>
   );

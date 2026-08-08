@@ -1,11 +1,11 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import "./SpSelect.css";
 
 export function SpSelect({ value, options, onChange, className }: {
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; icon?: ReactNode }[];
   onChange: (v: string) => void;
   className?: string;
 }) {
@@ -14,7 +14,8 @@ export function SpSelect({ value, options, onChange, className }: {
   // Menu is portaled + position:fixed off the button's viewport rect, so it never
   // clips inside overflow:hidden parents (canvas nodes) and isn't scaled by canvas zoom.
   const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
-  const label = options.find((o) => o.value === value)?.label ?? value;
+  const current = options.find((o) => o.value === value);
+  const label = current?.label ?? value;
 
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return;
@@ -30,6 +31,7 @@ export function SpSelect({ value, options, onChange, className }: {
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         type="button"
       >
+        {current?.icon && <span className="sp-drop-icon">{current.icon}</span>}
         <span className="sp-drop-label">{label}</span>
         <ChevronDown size={11} className="sp-drop-chevron" />
       </button>
@@ -48,7 +50,8 @@ export function SpSelect({ value, options, onChange, className }: {
                 className={`sp-drop-item${o.value === value ? " sp-drop-item--active" : ""}`}
                 onClick={() => { onChange(o.value); setOpen(false); }}
               >
-                {o.label}
+                {o.icon && <span className="sp-drop-icon">{o.icon}</span>}
+                <span className="sp-drop-label">{o.label}</span>
               </button>
             ))}
           </div>

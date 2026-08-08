@@ -13,7 +13,7 @@
     "dev:web": "npm run dev --workspace=tempest-web",
     "dev:docs": "npm run dev --workspace=tempest-docs",
     "build": "tauri build && node scripts/collect-artifacts.mjs",
-    "postinstall": "node scripts/install-atlas.mjs && node scripts/install-claude-bridge.mjs && node scripts/install-eve.mjs",
+    "postinstall": "node scripts/install-atlas.mjs && node scripts/install-claude-bridge.mjs",
     "build:frontend": "tsc && vite build",
     "build:web": "npm run build --workspace=tempest-web",
     "build:docs": "npm run build --workspace=tempest-docs",
@@ -71,6 +71,7 @@
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
+    "rrule": "^2.8.1",
     "yaml": "^2.9.0"
   },
   "optionalDependencies": {
