@@ -1260,6 +1260,7 @@ CREATE TABLE IF NOT EXISTS automations (
   agent        TEXT NOT NULL DEFAULT 'claude-code',
   schedule     TEXT NOT NULL DEFAULT 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0',
   prompt       TEXT NOT NULL DEFAULT '',
+  model        TEXT,
   enabled      INTEGER NOT NULL DEFAULT 1,
   next_run_at  TEXT,
   created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -1294,31 +1295,41 @@ fn init_db(handle: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
     let dir = handle.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let conn = rusqlite::Connection::open(dir.join("tempest.db")).map_err(|e| e.to_string())?;
+    // Drop any pre-new-schema automations table BEFORE running the schema batch,
+    // otherwise `CREATE INDEX ... ON automations(project_id)` blows up when the
+    // existing table lacks that column. Trigger on any table missing project_id
+    // (covers the old Eve 'slug' schema and any other stale shape).
+    let automations_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='automations'",
+        [],
+        |r| r.get::<_, i64>(0),
+    ).unwrap_or(0) > 0;
+    if automations_exists {
+        let has_project_id: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('automations') WHERE name = 'project_id'",
+            [],
+            |r| r.get::<_, i64>(0),
+        ).unwrap_or(0) > 0;
+        if !has_project_id {
+            let _ = conn.execute_batch("PRAGMA foreign_keys = OFF;");
+            let _ = conn.execute_batch("
+                BEGIN;
+                DROP TABLE IF EXISTS automation_processes;
+                DROP TABLE IF EXISTS automation_prompt_versions;
+                DROP TABLE IF EXISTS automation_runs;
+                DROP TABLE IF EXISTS automations;
+                COMMIT;
+            ");
+            let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
+        }
+    }
+
     conn.execute_batch(DB_SCHEMA).map_err(|e| e.to_string())?;
     // Best-effort column adds for DBs created before the column existed
     // (CREATE TABLE IF NOT EXISTS never alters an existing table). The dup-column
     // error on already-migrated DBs is expected and ignored.
     let _ = conn.execute("ALTER TABLE sessions ADD COLUMN placement TEXT NOT NULL DEFAULT 'tab'", []);
-
-    // Migration: old Eve-based automations schema had a 'slug' column.
-    // Detect it and rebuild with the new schema, dropping the Eve tables.
-    let has_slug: bool = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('automations') WHERE name = 'slug'",
-        [],
-        |r| r.get::<_, i64>(0),
-    ).unwrap_or(0) > 0;
-    if has_slug {
-        let _ = conn.execute_batch("PRAGMA foreign_keys = OFF;");
-        let _ = conn.execute_batch("
-            BEGIN;
-            DROP TABLE IF EXISTS automation_processes;
-            DROP TABLE IF EXISTS automations;
-            COMMIT;
-        ");
-        let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
-        // Re-run schema to create the new tables.
-        conn.execute_batch(DB_SCHEMA).map_err(|e| e.to_string())?;
-    }
+    let _ = conn.execute("ALTER TABLE automations ADD COLUMN model TEXT", []);
     Ok(conn)
 }
 

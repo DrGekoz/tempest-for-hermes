@@ -11,6 +11,7 @@ pub struct Automation {
     pub agent: String,
     pub schedule: String,
     pub prompt: String,
+    pub model: Option<String>,
     pub enabled: bool,
     #[serde(rename = "nextRunAt")]
     pub next_run_at: Option<String>,
@@ -53,6 +54,7 @@ pub struct CreateAutomationReq {
     pub agent: Option<String>,
     pub schedule: Option<String>,
     pub prompt: Option<String>,
+    pub model: Option<String>,
     #[serde(rename = "nextRunAt")]
     pub next_run_at: Option<String>,
 }
@@ -63,6 +65,7 @@ pub struct UpdateAutomationReq {
     pub agent: Option<String>,
     pub schedule: Option<String>,
     pub prompt: Option<String>,
+    pub model: Option<String>,
     pub enabled: Option<bool>,
     #[serde(rename = "nextRunAt")]
     pub next_run_at: Option<String>,
@@ -96,10 +99,11 @@ fn map_row(r: &rusqlite::Row) -> rusqlite::Result<Automation> {
         agent:        r.get(3)?,
         schedule:     r.get(4)?,
         prompt:       r.get(5)?,
-        enabled:      r.get::<_, i64>(6)? != 0,
-        next_run_at:  r.get(7)?,
-        created_at:   r.get(8)?,
-        updated_at:   r.get(9)?,
+        model:        r.get(6)?,
+        enabled:      r.get::<_, i64>(7)? != 0,
+        next_run_at:  r.get(8)?,
+        created_at:   r.get(9)?,
+        updated_at:   r.get(10)?,
     })
 }
 
@@ -111,12 +115,12 @@ pub fn list_automations(
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let (sql, pid_filter): (&str, Option<String>) = match project_id {
         Some(pid) => (
-            "SELECT id, project_id, name, agent, schedule, prompt, enabled, next_run_at, created_at, updated_at \
+            "SELECT id, project_id, name, agent, schedule, prompt, model, enabled, next_run_at, created_at, updated_at \
              FROM automations WHERE project_id = ?1 ORDER BY created_at",
             Some(pid),
         ),
         None => (
-            "SELECT id, project_id, name, agent, schedule, prompt, enabled, next_run_at, created_at, updated_at \
+            "SELECT id, project_id, name, agent, schedule, prompt, model, enabled, next_run_at, created_at, updated_at \
              FROM automations ORDER BY created_at",
             None,
         ),
@@ -140,7 +144,7 @@ pub fn get_automation(
 ) -> Result<Automation, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.query_row(
-        "SELECT id, project_id, name, agent, schedule, prompt, enabled, next_run_at, created_at, updated_at \
+        "SELECT id, project_id, name, agent, schedule, prompt, model, enabled, next_run_at, created_at, updated_at \
          FROM automations WHERE id = ?1",
         rusqlite::params![&id],
         map_row,
@@ -160,9 +164,9 @@ pub fn create_automation(
     {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO automations (id, project_id, name, agent, schedule, prompt, next_run_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![&id, &req.project_id, &req.name, &agent, &schedule, &prompt, &req.next_run_at],
+            "INSERT INTO automations (id, project_id, name, agent, schedule, prompt, model, next_run_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![&id, &req.project_id, &req.name, &agent, &schedule, &prompt, &req.model, &req.next_run_at],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -199,6 +203,14 @@ pub fn update_automation(
             conn.execute(
                 "UPDATE automations SET prompt = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?2",
                 rusqlite::params![v, &id],
+            ).map_err(|e| e.to_string())?;
+        }
+        if let Some(v) = &req.model {
+            // Empty string clears the override (fall back to agent CLI default).
+            let val: Option<&str> = if v.is_empty() { None } else { Some(v.as_str()) };
+            conn.execute(
+                "UPDATE automations SET model = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?2",
+                rusqlite::params![val, &id],
             ).map_err(|e| e.to_string())?;
         }
         if let Some(v) = req.enabled {

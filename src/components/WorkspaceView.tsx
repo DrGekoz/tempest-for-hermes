@@ -1047,8 +1047,8 @@ export function WorkspaceView({ zen, name, path }: Props) {
     }
   }
 
-  registerOpenSession(async (name, cwd, projectId, agent, prompt) => {
-    await openSession(name, cwd, projectId, agent, prompt);
+  registerOpenSession(async (name, cwd, projectId, agent, prompt, model) => {
+    await openSession(name, cwd, projectId, agent, prompt, undefined, undefined, undefined, undefined, false, undefined, undefined, model);
   });
 
   function openDiffTab(cwd: string, projectId: string, initialDiffPath?: string) {

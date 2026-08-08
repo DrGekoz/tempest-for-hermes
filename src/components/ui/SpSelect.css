@@ -77,8 +77,16 @@
   padding: 3px;
 }
 
+.sp-drop-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .sp-drop-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 5px 8px;
   background: none;

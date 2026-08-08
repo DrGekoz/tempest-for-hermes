@@ -9,6 +9,7 @@ export interface Automation {
   agent: string;
   schedule: string;
   prompt: string;
+  model: string | null;
   enabled: boolean;
   nextRunAt: string | null;
   createdAt: string;
@@ -38,6 +39,7 @@ export interface CreateAutomationReq {
   agent?: string;
   schedule?: string;
   prompt?: string;
+  model?: string;
   nextRunAt?: string;
 }
 
@@ -46,16 +48,17 @@ export interface UpdateAutomationReq {
   agent?: string;
   schedule?: string;
   prompt?: string;
+  model?: string; // "" clears the model override
   enabled?: boolean;
   nextRunAt?: string | null;
 }
 
 let _automations: Automation[] = [];
-let _openSession: ((name: string, cwd: string, projectId: string, agent: string, prompt: string) => Promise<void>) | null = null;
+let _openSession: ((name: string, cwd: string, projectId: string, agent: string, prompt: string, model?: string) => Promise<void>) | null = null;
 let _dispatchUnlisten: (() => void) | null = null;
 
 export function registerOpenSession(
-  fn: (name: string, cwd: string, projectId: string, agent: string, prompt: string) => Promise<void>,
+  fn: (name: string, cwd: string, projectId: string, agent: string, prompt: string, model?: string) => Promise<void>,
 ) {
   _openSession = fn;
 }
@@ -78,7 +81,7 @@ async function _handleDispatch(id: string) {
   await upsertAutomationRun({ id: runId, automationId: id, status: "dispatching", triggeredBy: "scheduler" });
 
   try {
-    await _openSession(automation.name, "", automation.projectId ?? "", automation.agent, automation.prompt);
+    await _openSession(automation.name, "", automation.projectId ?? "", automation.agent, automation.prompt, automation.model ?? undefined);
     await upsertAutomationRun({ id: runId, automationId: id, status: "dispatched", triggeredBy: "scheduler" });
   } catch {
     await upsertAutomationRun({ id: runId, automationId: id, status: "dispatch_failed", triggeredBy: "scheduler" });

@@ -8,6 +8,10 @@ import {
 } from "../../store/automations";
 import { SchedulePicker } from "./SchedulePicker";
 import { promptBucketAt, computeNextRunAt, humanizeRrule } from "../../lib/automationSchedule";
+import { useAgents, getAgent } from "../../lib/agentRegistry";
+import { SpSelect } from "../ui/SpSelect";
+import { AgentIcon } from "../NewSessionMenu";
+import { CLAUDE_CODE_MODELS } from "../../lib/chatModels";
 
 interface Props {
   automation: Automation;
@@ -24,9 +28,8 @@ function timeAgo(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-const AGENTS = ["claude-code", "claude", "gemini", "codex", "goose"];
-
 export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }: Props) {
+  const agents = useAgents();
   const [prompt, setPrompt] = useState(automation.prompt);
   const [schedule, setSchedule] = useState(automation.schedule);
   const [runs, setRuns] = useState<AutomationRun[]>([]);
@@ -66,6 +69,11 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
 
   async function handleAgentChange(agent: string) {
     const updated = await updateAutomation(automation.id, { agent });
+    onUpdate(updated);
+  }
+
+  async function handleModelChange(model: string) {
+    const updated = await updateAutomation(automation.id, { model });
     onUpdate(updated);
   }
 
@@ -136,14 +144,28 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
         <div className="am-detail-sidebar">
           <div className="am-sidebar-section">
             <div className="am-sidebar-label">Agent</div>
-            <select
-              className="am-field-select"
+            <SpSelect
               value={automation.agent}
-              onChange={(e) => void handleAgentChange(e.target.value)}
-            >
-              {AGENTS.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
+              onChange={(v) => void handleAgentChange(v)}
+              options={agents.map((a) => ({ value: a.hint, label: a.name, icon: <AgentIcon hint={a.hint} size={14} /> }))}
+            />
           </div>
+
+          {(() => {
+            const cfg = getAgent(automation.agent);
+            const opts = automation.agent === "claude" ? CLAUDE_CODE_MODELS : [];
+            if (!cfg?.modelArgs || opts.length === 0) return null;
+            return (
+              <div className="am-sidebar-section">
+                <div className="am-sidebar-label">Model</div>
+                <SpSelect
+                  value={automation.model ?? ""}
+                  onChange={(v) => void handleModelChange(v)}
+                  options={[{ value: "", label: "Default" }, ...opts.map((m) => ({ value: m.id, label: m.label }))]}
+                />
+              </div>
+            );
+          })()}
 
           {automation.nextRunAt && (
             <div className="am-sidebar-section">

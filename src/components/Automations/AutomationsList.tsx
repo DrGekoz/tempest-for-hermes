@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Globe, Loader, Plus, Trash2, Workflow } from "lucide-react";
+import { Loader, Plus, Trash2, Workflow } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { StoredProject } from "../../store/openProjects";
 import { type Automation, loadAutomations, updateAutomation, deleteAutomation } from "../../store/automations";
@@ -76,15 +76,14 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
         </div>
       </div>
 
-      <div className="am-tabs" role="tablist">
+      <div className="am-tabs" role="tablist" aria-label="Project scope">
         <button
           className={`am-tab${scope === null ? " am-tab--active" : ""}`}
           onClick={() => onSelectScope(null)}
           role="tab"
           aria-selected={scope === null}
         >
-          <Globe size={13} className="am-tab-icon" />
-          All
+          Global
         </button>
         {projects.map((p) => (
           <button
