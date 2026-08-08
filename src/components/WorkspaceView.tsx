@@ -88,6 +88,7 @@ import { startAgentHooks } from "../store/agentHooks";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
 import { AutomationsPage } from "./Automations/AutomationsPage";
+import { registerOpenSession } from "../store/automations";
 import { Toolbar } from "./Toolbar";
 import AgentTabs from "./AgentTabs";
 import IconCapsule from "./IconCapsule";
@@ -1045,6 +1046,10 @@ export function WorkspaceView({ zen, name, path }: Props) {
       spawningPaths.current.delete(cwd);
     }
   }
+
+  registerOpenSession(async (name, cwd, projectId, agent, prompt) => {
+    await openSession(name, cwd, projectId, agent, prompt);
+  });
 
   function openDiffTab(cwd: string, projectId: string, initialDiffPath?: string) {
     // If a diff tab for this cwd is already open, just focus it.
@@ -2812,7 +2817,11 @@ export function WorkspaceView({ zen, name, path }: Props) {
               <KnowledgeBasePage />
             )}
             {!activeSessionId && activeSection === "automations" && (
-              <AutomationsPage />
+              <AutomationsPage
+                onRunAutomation={(a) => {
+                  void openSession(a.name, "", a.projectId ?? "", a.agent, a.prompt);
+                }}
+              />
             )}
             {!activeSessionId && activeSection === "overview" && (
               <div className="overview-page">

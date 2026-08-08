@@ -1252,32 +1252,41 @@ CREATE TABLE IF NOT EXISTS thread_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_thread_edges_thread ON thread_edges(thread_id);
 
--- ── Automations (Eve agent projects) ──────────────────────────────────────────
+-- ── Automations ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS automations (
   id           TEXT PRIMARY KEY,
-  workspace_id TEXT REFERENCES projects(id) ON DELETE CASCADE, -- NULL = global (unbound)
+  project_id   TEXT REFERENCES projects(id) ON DELETE CASCADE,
   name         TEXT NOT NULL,
-  slug         TEXT NOT NULL,
-  path         TEXT NOT NULL,
-  graph        TEXT NOT NULL,
-  sandbox_mode TEXT NOT NULL DEFAULT 'auto',
+  agent        TEXT NOT NULL DEFAULT 'claude-code',
+  schedule     TEXT NOT NULL DEFAULT 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0',
+  prompt       TEXT NOT NULL DEFAULT '',
   enabled      INTEGER NOT NULL DEFAULT 1,
-  built_at     TEXT,
+  next_run_at  TEXT,
   created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
-CREATE INDEX IF NOT EXISTS idx_automations_workspace ON automations(workspace_id);
--- Partial unique indexes: slug unique per project, and unique across the global scope.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_automations_ws_slug ON automations(workspace_id, slug) WHERE workspace_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_automations_global_slug ON automations(slug) WHERE workspace_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_automations_project ON automations(project_id);
 
-CREATE TABLE IF NOT EXISTS automation_processes (
-  id             TEXT PRIMARY KEY,
-  automation_id  TEXT NOT NULL UNIQUE REFERENCES automations(id) ON DELETE CASCADE,
-  port           INTEGER NOT NULL,
-  pid            INTEGER NOT NULL,
-  started_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+CREATE TABLE IF NOT EXISTS automation_runs (
+  id            TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+  status        TEXT NOT NULL DEFAULT 'dispatching',
+  triggered_by  TEXT NOT NULL DEFAULT 'scheduler',
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id);
+
+CREATE TABLE IF NOT EXISTS automation_prompt_versions (
+  id            TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+  prompt        TEXT NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'edit',
+  bucket_at     TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_prompt_versions_bucket
+  ON automation_prompt_versions(automation_id, bucket_at);
 ";
 
 fn init_db(handle: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
@@ -1291,44 +1300,24 @@ fn init_db(handle: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
     // error on already-migrated DBs is expected and ignored.
     let _ = conn.execute("ALTER TABLE sessions ADD COLUMN placement TEXT NOT NULL DEFAULT 'tab'", []);
 
-    // Migrate: allow NULL workspace_id on automations (global scope).
-    // SQLite can't drop NOT NULL directly, so we recreate the table when the
-    // old constraint is still present. Safe on empty DBs (INSERT SELECT is a no-op).
-    let workspace_notnull: i32 = conn.query_row(
-        "SELECT notnull FROM pragma_table_info('automations') WHERE name = 'workspace_id'",
+    // Migration: old Eve-based automations schema had a 'slug' column.
+    // Detect it and rebuild with the new schema, dropping the Eve tables.
+    let has_slug: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('automations') WHERE name = 'slug'",
         [],
-        |r| r.get(0),
-    ).unwrap_or(0);
-    if workspace_notnull == 1 {
-        // Turn FKs off around the rebuild so cascade-on-DROP doesn't touch
-        // automation_processes; re-enable after.
+        |r| r.get::<_, i64>(0),
+    ).unwrap_or(0) > 0;
+    if has_slug {
         let _ = conn.execute_batch("PRAGMA foreign_keys = OFF;");
         let _ = conn.execute_batch("
             BEGIN;
-            CREATE TABLE automations_new (
-              id           TEXT PRIMARY KEY,
-              workspace_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-              name         TEXT NOT NULL,
-              slug         TEXT NOT NULL,
-              path         TEXT NOT NULL,
-              graph        TEXT NOT NULL,
-              sandbox_mode TEXT NOT NULL DEFAULT 'auto',
-              enabled      INTEGER NOT NULL DEFAULT 1,
-              built_at     TEXT,
-              created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-              updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-            );
-            INSERT INTO automations_new
-              SELECT id, workspace_id, name, slug, path, graph, sandbox_mode, enabled, built_at, created_at, updated_at
-              FROM automations;
-            DROP TABLE automations;
-            ALTER TABLE automations_new RENAME TO automations;
-            CREATE INDEX IF NOT EXISTS idx_automations_workspace ON automations(workspace_id);
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_automations_ws_slug ON automations(workspace_id, slug) WHERE workspace_id IS NOT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_automations_global_slug ON automations(slug) WHERE workspace_id IS NULL;
+            DROP TABLE IF EXISTS automation_processes;
+            DROP TABLE IF EXISTS automations;
             COMMIT;
         ");
         let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
+        // Re-run schema to create the new tables.
+        conn.execute_batch(DB_SCHEMA).map_err(|e| e.to_string())?;
     }
     Ok(conn)
 }
@@ -4061,9 +4050,12 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_icon(tauri::include_image!("icons/icon.png"));
             }
+            let db_dir = app.handle().path().app_data_dir()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
             let conn = init_db(app.handle())
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             app.manage(DbState(Mutex::new(conn)));
+            automations::start_scheduler(app.handle().clone(), db_dir.join("tempest.db"));
             tauri::async_runtime::spawn(async { let _ = dbiso::sweep_orphans().await; });
             // Loopback receiver for agent lifecycle hooks. Best-effort; a bind
             // failure leaves sessions on PTY-scraped status.
@@ -4181,11 +4173,10 @@ pub fn run() {
             automations::create_automation,
             automations::update_automation,
             automations::delete_automation,
-            automations::build_automation,
-            automations::start_automation,
-            automations::stop_automation,
-            automations::get_automation_process,
-            automations::try_http_request,
+            automations::list_automation_runs,
+            automations::upsert_automation_run,
+            automations::list_prompt_versions,
+            automations::save_prompt_version,
             claude_bridge::claude_stream_start,
             claude_bridge::claude_permission_decision,
             claude_bridge::claude_stream_cancel,
