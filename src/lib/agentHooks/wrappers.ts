@@ -5,8 +5,8 @@
 // also guards a missing script so a stale config entry is a silent no-op that
 // still drains the agent's stdin payload, never an exit-127 on every turn.
 //
-// Ported from Orca's installer-utils (design, not code) — no Node Buffer, so
-// base64 is done with browser-safe primitives that also work under `node`.
+// No Node Buffer available in this path, so base64 is done with browser-safe
+// primitives that also work under `node`.
 
 // Drains the agent's stdin payload so a missing script doesn't leave the write
 // end blocking. `|| true` keeps a hook wrapper from tripping an outer set -e.

@@ -1457,9 +1457,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
         }
         addWorktreeToState({ name: branchName, path: worktreePath }, workingProjectId);
         // Run the setup hook in the BACKGROUND so the session appears the instant the
-        // worktree exists, instead of waiting out installs/build steps first (matches
-        // how termic launches). The agent can start working while setup finishes; a
-        // failure surfaces as a notice rather than blocking the launch.
+        // worktree exists, instead of waiting out installs/build steps first. The agent
+        // can start working while setup finishes; a failure surfaces as a notice rather
+        // than blocking the launch.
         runWorktreeHook("setup", activePath, workingProjectId ?? "", worktreePath)
           .then((failure) => { if (failure) setPolicyError(failure); })
           .catch((e) => setPolicyError(String(e)));

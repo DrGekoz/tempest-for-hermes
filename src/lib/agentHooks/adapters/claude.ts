@@ -89,14 +89,14 @@ export const claudeAdapter: HookAdapter = {
       case "PermissionRequest":
         return "waiting";
       case "Notification": {
-        // Mirror orca: a Claude Notification is a "needs you" signal ONLY when it's
-        // a typed permission/elicitation prompt (notification_type). Real waiting is
-        // driven by PermissionRequest + AskUserQuestion above; orca doesn't even
-        // register the Notification hook for Claude. The idle "…is waiting for your
-        // input" nudge — fired after a turn ends when you haven't typed — is NOT a
-        // permission prompt; matching it on the message string is what raised a
-        // bogus bell on a completed response. So gate on notification_type alone
-        // and ignore every other notification.
+        // A Claude Notification is a "needs you" signal ONLY when it's a typed
+        // permission/elicitation prompt (notification_type). Real waiting is driven
+        // by PermissionRequest + AskUserQuestion above; the Notification hook here
+        // is a fallback. The idle "…is waiting for your input" nudge — fired after
+        // a turn ends when you haven't typed — is NOT a permission prompt; matching
+        // it on the message string is what raised a bogus bell on a completed
+        // response. So gate on notification_type alone and ignore every other
+        // notification.
         const nt = (readString(o, "notification_type") ?? readString(o, "notificationType") ?? "").toLowerCase();
         if (nt === "permission_prompt" || nt === "elicitation_dialog") return "waiting";
         return null;

@@ -2,11 +2,11 @@
 //
 // Opencode auto-loads ESM plugins from ~/.config/opencode/plugin/. We drop a
 // managed plugin that runs inside Opencode's process, listens to its event
-// stream, and POSTs normalized lifecycle events to Tempest's server. Mirrors
-// Orca's plugin mapping: session.status busy → SessionBusy, session.idle →
-// SessionIdle, permission.asked → PermissionRequest, question.asked →
-// AskUserQuestion, text parts → MessagePart. Opencode has real permission/ask
-// signals → coversWaiting = true.
+// stream, and POSTs normalized lifecycle events to Tempest's server. Event
+// mapping: session.status busy → SessionBusy, session.idle → SessionIdle,
+// permission.asked → PermissionRequest, question.asked → AskUserQuestion,
+// text parts → MessagePart. Opencode has real permission/ask signals →
+// coversWaiting = true.
 
 import type { AdapterInstall, HookAdapter, HookPaths, HookState } from "../types";
 import { joinNative } from "../paths.ts";
