@@ -1,6 +1,7 @@
 import { Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Tooltip } from "../Tooltip";
+import { QuotaIsland } from "../QuotaIsland";
 
 const win = getCurrentWindow();
 
@@ -9,6 +10,7 @@ export function TitleBar() {
     <div className="topbar">
       <div className="topbar-drag" data-tauri-drag-region />
       <div className="topbar-right">
+        <QuotaIsland />
         <Tooltip content="Minimize" placement="bottom">
           <button className="win-btn" onClick={() => win.minimize()}>
             <Minus size={11} />

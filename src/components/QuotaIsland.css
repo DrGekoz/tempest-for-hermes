@@ -1,0 +1,226 @@
+/* ─── Quota island ─────────────────────────────────────────────────────────── */
+/* Small pill in the title bar. Idle/ok: dot only. Warn/crit: expands to name
+   the fullest window. Hover in either state opens the panel with every
+   provider Tempest can read. */
+
+.quota-island-wrap {
+  position: relative;
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+}
+
+.quota-island {
+  height: 20px;
+  min-width: 20px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--tempest-fg-subtle);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, padding 120ms ease;
+}
+
+.quota-island:hover {
+  background: var(--tempest-bg-hover);
+}
+
+.quota-island--open {
+  padding: 0 8px 0 6px;
+  border-color: var(--tempest-border-subtle);
+}
+
+.quota-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--tempest-fg-subtle);
+}
+
+.quota-dot--ok     { background: var(--tempest-accent-green, #22c55e); }
+.quota-dot--warn   { background: var(--tempest-accent-orange, #f59e0b); }
+.quota-dot--crit   { background: var(--tempest-accent-red, #ef4444); box-shadow: 0 0 6px currentColor; }
+.quota-dot--idle   { background: var(--tempest-fg-subtle); opacity: 0.5; }
+
+.quota-label {
+  color: var(--tempest-fg-default);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quota-pct {
+  color: var(--tempest-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Panel ────────────────────────────────────────────────────────────────── */
+
+.quota-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 300px;
+  padding: 8px;
+  background: var(--tempest-bg-elevated, var(--tempest-bg-base));
+  border: 1px solid var(--tempest-border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  color: var(--tempest-fg-default);
+  z-index: 200;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quota-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tempest-fg-subtle);
+}
+
+.quota-refresh {
+  background: transparent;
+  border: none;
+  color: var(--tempest-fg-subtle);
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.quota-refresh:hover {
+  background: var(--tempest-bg-hover);
+  color: var(--tempest-fg-default);
+}
+
+/* ─── Rows ─────────────────────────────────────────────────────────────────── */
+
+.quota-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 4px;
+  border-top: 1px solid var(--tempest-border-subtle);
+}
+
+.quota-row:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.quota-row--unavailable { opacity: 0.55; }
+
+.quota-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.quota-row-name {
+  font-weight: 600;
+  color: var(--tempest-fg-default);
+}
+
+.quota-row-plan {
+  color: var(--tempest-fg-subtle);
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.quota-chip {
+  margin-left: auto;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.quota-chip--unavailable {
+  background: var(--tempest-border-subtle);
+  color: var(--tempest-fg-subtle);
+}
+
+.quota-chip--error {
+  background: color-mix(in srgb, var(--tempest-accent-red, #ef4444) 15%, transparent);
+  color: var(--tempest-accent-red, #ef4444);
+}
+
+.quota-row-err {
+  font-size: 10px;
+  color: var(--tempest-accent-red, #ef4444);
+}
+
+/* ─── Window bars ──────────────────────────────────────────────────────────── */
+
+.quota-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quota-bar-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.quota-bar-label {
+  color: var(--tempest-fg-default);
+}
+
+.quota-bar-meta {
+  display: flex;
+  gap: 6px;
+  color: var(--tempest-fg-subtle);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quota-bar-pct--ok     { color: var(--tempest-accent-green, #22c55e); }
+.quota-bar-pct--warn   { color: var(--tempest-accent-orange, #f59e0b); }
+.quota-bar-pct--crit   { color: var(--tempest-accent-red, #ef4444); }
+
+.quota-bar-track {
+  height: 3px;
+  background: var(--tempest-border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.quota-bar-fill {
+  height: 100%;
+  transition: width 200ms ease;
+}
+
+.quota-bar-fill--ok     { background: var(--tempest-accent-green, #22c55e); }
+.quota-bar-fill--warn   { background: var(--tempest-accent-orange, #f59e0b); }
+.quota-bar-fill--crit   { background: var(--tempest-accent-red, #ef4444); }
+
+.quota-row-detail {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--tempest-fg-subtle);
+  font-size: 10px;
+}
+
+.quota-row-detail > span:last-child {
+  color: var(--tempest-fg-default);
+  text-align: right;
+}

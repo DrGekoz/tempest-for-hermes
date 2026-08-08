@@ -208,10 +208,10 @@ export const TOOL_LABEL_MAP: Record<string, string> = {
   propose_agent_task: "Propose agent",
 };
 
-// Claude Code's native tool names (CLI backend). Paseo-style: an icon, a static
-// noun label, and a present-tense verb shown while the step is still running so
-// the user sees the live action ("Reading src/foo.ts"). argsPreview supplies the
-// target (basename / command / query).
+// Claude Code's native tool names (CLI backend). Each entry is an icon, a
+// static noun label, and a present-tense verb shown while the step is still
+// running so the user sees the live action ("Reading src/foo.ts"). argsPreview
+// supplies the target (basename / command / query).
 const CLI_TOOL_META: Record<string, { icon: LucideIcon; label: string; running: string }> = {
   Read:         { icon: FileText,  label: "Read",       running: "Reading" },
   Write:        { icon: FilePlus2, label: "Write",      running: "Writing" },

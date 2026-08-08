@@ -10,6 +10,7 @@ mod agent_hooks;
 mod automations;
 mod canvas_mcp;
 mod claude_bridge;
+mod quota;
 mod service_proxy;
 
 /// Managed slug → dev-server-port map, read by the reverse proxy in
@@ -4191,6 +4192,7 @@ pub fn run() {
             claude_bridge::claude_stream_start,
             claude_bridge::claude_permission_decision,
             claude_bridge::claude_stream_cancel,
+            quota::quota_read_all,
             open_devtools,
         ])
         .build(tauri::generate_context!())
