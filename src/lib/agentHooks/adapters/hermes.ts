@@ -3,9 +3,8 @@
 // Hermes loads Python plugins from ~/.hermes/plugins/<name>/ and enables them via
 // a `plugins.enabled` list in ~/.hermes/config.yaml. We install a managed plugin
 // (plugin.yaml manifest + __init__.py) that registers Hermes' lifecycle hooks and
-// POSTs each to Tempest's server, then enable it in the YAML config. Mirrors
-// Orca's Hermes service. pre_approval_request is a real "needs you" signal →
-// coversWaiting = true.
+// POSTs each to Tempest's server, then enable it in the YAML config.
+// pre_approval_request is a real "needs you" signal → coversWaiting = true.
 
 import { parse, stringify } from "yaml";
 import type { AdapterInstall, HookAdapter, HookPaths, HookState, JsonObject } from "../types";

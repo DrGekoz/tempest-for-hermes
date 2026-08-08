@@ -1,10 +1,10 @@
 // Rate-limit windows read from the agent CLIs' own credentials, surfaced by the
-// title-bar island. Pure shape + formatting here; the reader lands beside it.
+// title-bar island. Pure shape + formatting here; the reader is `store/quotas.ts`.
 
 export interface QuotaWindow {
-  /** Stable key — provider + window, e.g. `claude-5h`. */
+  /** Stable key — provider + window, e.g. `claude:five_hour`. */
   id: string;
-  /** Shown verbatim in the island, e.g. `Claude · 5h`. */
+  /** Shown verbatim in the island, e.g. `Claude · 5-hour`. */
   label: string;
   /** Fraction of the window consumed. Clamped on display, not here. */
   used: number;
@@ -31,18 +31,6 @@ export function peakQuota(quotas: QuotaWindow[]): QuotaWindow | null {
   return quotas.reduce<QuotaWindow | null>((a, b) => (a && a.used >= b.used ? a : b), null);
 }
 
-/**
- * Stand-in so the island can be looked at before the reader exists — wired in
- * under `import.meta.env.DEV` only, so it never reaches a build. Delete this
- * and its call site once real windows are being read.
- * ponytail: dev-only placeholder, goes away with the CLI reader.
- */
-export const SAMPLE_QUOTAS: QuotaWindow[] = [
-  { id: "claude-5h", label: "Claude · 5h", used: 0.82, resetsAt: Date.now() + 134 * 60_000 },
-  { id: "claude-week", label: "Claude · weekly", used: 0.41, resetsAt: Date.now() + 3.2 * 86_400_000 },
-  { id: "codex", label: "Codex", used: 0.16, resetsAt: Date.now() + 47 * 60_000 },
-];
-
 export function formatReset(resetsAt: number, now = Date.now()): string {
   const ms = resetsAt - now;
   if (ms <= 0) return "resetting";
@@ -52,4 +40,67 @@ export function formatReset(resetsAt: number, now = Date.now()): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m ? `resets in ${h}h ${m}m` : `resets in ${h}h`;
+}
+
+// ── ProviderUsage — mirror of the Rust `ProviderUsage` type ─────────────────
+// Uniform envelope so the island renders every provider through the same
+// component, even the ones that only expose a plan name (Copilot) or a USD
+// balance (Cursor) instead of a percent window.
+
+export type ProviderStatus = "available" | "unavailable" | "error";
+export type Tone = "default" | "ok" | "warning" | "danger";
+
+export interface Window {
+  id: string;
+  label: string;
+  used: number | null;
+  resetsAt: number | null;
+  tone: Tone;
+}
+
+export interface Balance {
+  id: string;
+  label: string;
+  used: number | null;
+  remaining: number | null;
+  limit: number | null;
+  /** "usd" | "credits" | "requests" | "tokens" */
+  unit: string;
+  resetsAt: number | null;
+  tone: Tone;
+}
+
+export interface Detail {
+  label: string;
+  value: string;
+}
+
+export interface ProviderUsage {
+  providerId: string;
+  displayName: string;
+  status: ProviderStatus;
+  planLabel: string | null;
+  windows: Window[];
+  balances: Balance[];
+  details: Detail[];
+  error: string | null;
+}
+
+/// Every window across every provider, flattened + namespaced, so `peakQuota`
+/// can pick the single fullest one for the island to speak for.
+export function windowsFromProviders(providers: ProviderUsage[]): QuotaWindow[] {
+  const out: QuotaWindow[] = [];
+  for (const p of providers) {
+    if (p.status !== "available") continue;
+    for (const w of p.windows) {
+      if (w.used == null || w.resetsAt == null) continue;
+      out.push({
+        id: `${p.providerId}:${w.id}`,
+        label: `${p.displayName} · ${w.label}`,
+        used: w.used,
+        resetsAt: w.resetsAt,
+      });
+    }
+  }
+  return out;
 }

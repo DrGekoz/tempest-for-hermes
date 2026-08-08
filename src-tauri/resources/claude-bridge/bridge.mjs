@@ -10,9 +10,9 @@
 // back to our stdin. Session continuity is `resume` — the next turn passes the
 // session_id from this turn's `result`.
 //
-// Clean-room against the SDK's public API only (paseo is AGPL — reference, never
-// copied). Stdout is OUR protocol exclusively; the claude subprocess's own stdout
-// is consumed by the SDK internally, and its stderr comes to us via `options.stderr`.
+// Built against the SDK's public API only. Stdout is OUR protocol exclusively;
+// the claude subprocess's own stdout is consumed by the SDK internally, and its
+// stderr comes to us via `options.stderr`.
 
 import { createInterface } from "node:readline";
 import { query } from "@anthropic-ai/claude-agent-sdk";

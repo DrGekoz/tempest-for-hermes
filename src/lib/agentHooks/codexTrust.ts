@@ -2,10 +2,10 @@
 //
 // Codex (0.129+) only runs a hook whose handler is trusted in config.toml via a
 // `[hooks.state."<key>"]` block carrying a `trusted_hash`. The hash is a SHA-256
-// over a canonical identity of the handler, reproduced here exactly from Codex's
-// own algorithm (canonical_json + command_hook_hash), the same way Orca does it.
-// A wrong hash isn't destructive — Codex just ignores the untrusted hook and we
-// fall back to PTY scraping — but a right one gives precise status.
+// over a canonical identity of the handler, computed here from Codex's published
+// algorithm (canonical_json + command_hook_hash). A wrong hash isn't destructive
+// — Codex just ignores the untrusted hook and we fall back to PTY scraping —
+// but a right one gives precise status.
 //
 // Self-contained + synchronous (no Web Crypto) so the install path and the node
 // self-check share one implementation; the SHA-256 is checked against a known

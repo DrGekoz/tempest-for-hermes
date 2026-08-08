@@ -9,7 +9,7 @@ import { loadRecents } from "./store/recents";
 import { loadTabs } from "./store/tabs";
 
 // StrictMode intentionally removed — it double-invokes effects which causes
-// PTY sessions to spawn twice on mount. This matches Termic's design decision.
+// PTY sessions to spawn twice on mount.
 (async () => {
   document.addEventListener("contextmenu", (e) => e.preventDefault());
   // Hydrate every in-memory mirror from SQLite before the first render. All of
