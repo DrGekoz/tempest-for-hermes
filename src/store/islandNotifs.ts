@@ -1,6 +1,20 @@
 import { getSession } from "./sessions";
 import { getSettings } from "./appSettings";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { resolveResource } from "@tauri-apps/api/path";
+
+// Windows toast notifications only show an app icon when the app is installed
+// with a Start Menu shortcut (AppUserModelID). In dev — and even sometimes in
+// installed builds — the OS falls back to a generic icon. Passing an absolute
+// `icon` path forces the notification to render our logo. Resolved once and
+// cached; resolveResource is a filesystem lookup, no need to repeat it.
+let _iconPathPromise: Promise<string | undefined> | null = null;
+function getIconPath(): Promise<string | undefined> {
+  if (!_iconPathPromise) {
+    _iconPathPromise = resolveResource("icons/128x128.png").catch(() => undefined);
+  }
+  return _iconPathPromise;
+}
 
 export type IslandNotifType = "permission" | "done";
 
@@ -63,7 +77,8 @@ async function fireDesktopNotif(n: Omit<IslandNotif, "id">): Promise<void> {
     const body = n.type === "permission"
       ? `${n.agent} is asking for permission${n.detail ? ` — ${n.detail}` : ""}`
       : `${n.agent} finished`;
-    sendNotification({ title: n.title, body });
+    const icon = await getIconPath();
+    sendNotification({ title: n.title, body, icon });
   } catch { /* notification plugin unavailable; ignore */ }
 }
 
