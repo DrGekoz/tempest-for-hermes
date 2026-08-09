@@ -215,7 +215,10 @@ fn parse_usage(v: &Value) -> ProviderUsage {
 
 fn window_from(id: &str, label: &str, v: &Value) -> Option<Window> {
     // `utilization` is Anthropic's field name; some scoped rows use `used_pct`.
-    let used = v.get("utilization").or_else(|| v.get("used_pct")).and_then(|x| x.as_f64());
+    // Both come back as 0–100 percentages; our shared shape is 0–1.
+    let used = v.get("utilization").or_else(|| v.get("used_pct"))
+        .and_then(|x| x.as_f64())
+        .map(|p| p / 100.0);
     let resets_at = v.get("resets_at").or_else(|| v.get("reset_at")).and_then(to_epoch_ms);
     // No used and no reset → nothing worth showing.
     if used.is_none() && resets_at.is_none() { return None; }
