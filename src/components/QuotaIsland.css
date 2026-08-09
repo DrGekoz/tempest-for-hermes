@@ -21,6 +21,7 @@
   border: 1px solid transparent;
   border-radius: 10px;
   color: var(--tempest-fg-subtle);
+  font-family: inherit;
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -76,6 +77,7 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   color: var(--tempest-fg-default);
   z-index: 200;
+  font-family: inherit;
   font-size: 11px;
   display: flex;
   flex-direction: column;
