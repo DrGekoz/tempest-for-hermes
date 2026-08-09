@@ -1,4 +1,6 @@
 import { getSession } from "./sessions";
+import { getSettings } from "./appSettings";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 
 export type IslandNotifType = "permission" | "done";
 
@@ -46,6 +48,23 @@ export function pushIslandNotif(n: Omit<IslandNotif, "id">): void {
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   _notifs = [{ ...n, id }, ..._notifs.filter((e) => !(e.sessionId === n.sessionId && e.type === n.type))].slice(0, MAX);
   emit();
+  // OS-level notification when the user is away (window unfocused). The
+  // in-app island already covers the "focused, different tab" case; only the
+  // away case needs to break through to the desktop.
+  if (!document.hasFocus() && getSettings().desktopNotifications) {
+    void fireDesktopNotif(n);
+  }
+}
+
+async function fireDesktopNotif(n: Omit<IslandNotif, "id">): Promise<void> {
+  try {
+    const granted = (await isPermissionGranted()) || (await requestPermission()) === "granted";
+    if (!granted) return;
+    const body = n.type === "permission"
+      ? `${n.agent} is asking for permission${n.detail ? ` — ${n.detail}` : ""}`
+      : `${n.agent} finished`;
+    sendNotification({ title: n.title, body });
+  } catch { /* notification plugin unavailable; ignore */ }
 }
 
 export function dismissIslandNotif(id: string): void {

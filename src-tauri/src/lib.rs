@@ -4051,6 +4051,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(PtyState(Arc::new(DashMap::new())))
         .manage(ZenState(Mutex::new(std::collections::HashMap::new())))
         .manage(DaemonState(Mutex::new(std::collections::HashMap::new())))

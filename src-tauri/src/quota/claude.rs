@@ -186,10 +186,14 @@ fn parse_usage(v: &Value) -> ProviderUsage {
         if let Some(w) = v.get(key) { if let Some(win) = window_from(key, label, w) { windows.push(win); } }
     }
     // Newer API versions moved the scoped windows under `limits: [...]`.
+    // Skip `session` / `weekly_all` — they duplicate the top-level `five_hour`
+    // and `seven_day` windows we already surface.
     if let Some(limits) = v.get("limits").and_then(|x| x.as_array()) {
         for item in limits {
             let kind = item.get("kind").and_then(|x| x.as_str()).unwrap_or("");
             let name = item.get("name").and_then(|x| x.as_str()).unwrap_or(kind);
+            let n = name.to_ascii_lowercase();
+            if n == "session" || n == "weekly_all" || n == "weekly-all" { continue; }
             let id = format!("limits:{name}");
             if let Some(win) = window_from(&id, &humanize(name), item) { windows.push(win); }
         }

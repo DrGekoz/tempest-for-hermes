@@ -75,6 +75,24 @@ export function SecuritySection() {
           </button>
         </div>
 
+        <div className="sp-toggle-row" onClick={() => updateSetting("desktopNotifications", !s.desktopNotifications)}>
+          <div className="sp-toggle-text">
+            <span className="sp-toggle-label">Desktop notifications</span>
+            <span className="sp-toggle-desc">
+              Send an OS notification when an agent finishes or asks for permission
+              while the Tempest window is unfocused. Suppressed while Tempest has focus.
+            </span>
+          </div>
+          <button
+            className={`sp-toggle${s.desktopNotifications ? " sp-toggle--on" : ""}`}
+            onClick={(e) => { e.stopPropagation(); updateSetting("desktopNotifications", !s.desktopNotifications); }}
+            role="switch"
+            aria-checked={s.desktopNotifications}
+          >
+            <span className="sp-toggle-thumb" />
+          </button>
+        </div>
+
         <div className="sp-toggle-row" onClick={() => setTelemetryEnabled(!s.telemetryEnabled)}>
           <div className="sp-toggle-text">
             <span className="sp-toggle-label">Share anonymous usage data</span>

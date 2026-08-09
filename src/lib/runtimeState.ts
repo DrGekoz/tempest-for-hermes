@@ -2,6 +2,7 @@ import { dbLoadAppState, dbSetAppState } from "./db";
 import type { AppSettings } from "../store/appSettings";
 import type { ActionId, Shortcut } from "../store/keybindings";
 import { EMPTY_AGENT_CONFIG, isEmptyAgentConfig, type PerAgentConfig } from "./agentConfig";
+import type { RemotePatch } from "./agentManifest";
 
 // App-global preferences. Persisted as a single JSON row in the `app_state`
 // table (key = "runtime"). Entity collections (projects, sessions, branches,
@@ -16,6 +17,7 @@ export interface RuntimeState {
   prompts: Array<{ id: string; title: string; body: string; enabled: boolean; isBuiltin: boolean }>;
   atlasProjects: Record<string, boolean>; // projectPath → indexed? (Token Intelligence decision)
   agentConfigs: Record<string, PerAgentConfig>; // agent id → per-agent launch defaults
+  customAgents: RemotePatch[];    // user-added agents, merged over bundled+remote
   theme?: string;         // active theme name
   chatProvider?: string;  // last selected chat provider id
   chatModel?: string;     // last selected chat model id
@@ -31,6 +33,7 @@ const DEFAULT_STATE: RuntimeState = {
   prompts: [],
   atlasProjects: {},
   agentConfigs: {},
+  customAgents: [],
 };
 
 const KEY = "runtime";

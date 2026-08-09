@@ -1415,3 +1415,51 @@
   color: var(--tempest-accent-yellow, #d29922);
   margin: 6px 0 0;
 }
+
+.sp-agent-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 8px;
+  background: var(--tempest-bg-subtle, transparent);
+}
+.sp-agent-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sp-agent-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+  margin-bottom: 10px;
+}
+.sp-agent-icon-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--tempest-border-default);
+  background: transparent;
+  color: var(--tempest-fg-default);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.sp-agent-icon-swatch:hover { border-color: var(--tempest-border-subtle); }
+.sp-agent-icon-swatch--on {
+  border-color: var(--tempest-accent, #6366f1);
+  background: color-mix(in oklab, var(--tempest-accent, #6366f1) 15%, transparent);
+}
+.sp-agent-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  cursor: pointer;
+}

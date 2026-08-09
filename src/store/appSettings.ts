@@ -22,6 +22,9 @@ export interface AppSettings {
   // working/waiting/done status. Off uninstalls them and falls back to the
   // PTY-scraping heuristic. See src/lib/agentHooks.
   preciseAgentStatus: boolean;
+  // OS desktop notifications when an agent finishes or asks for permission
+  // while the Tempest window is unfocused. Suppressed while focused.
+  desktopNotifications: boolean;
   // Anonymous usage telemetry (PostHog). Default false — nothing is loaded or
   // sent until the user explicitly opts in. Flip only via setTelemetryEnabled
   // in src/lib/telemetry.ts, never updateSetting directly.
@@ -43,6 +46,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   isolateAgents: true,
   autoApprove: true,
   preciseAgentStatus: true,
+  desktopNotifications: true,
   telemetryEnabled: false,
 };
 

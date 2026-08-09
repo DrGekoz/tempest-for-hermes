@@ -5,6 +5,7 @@
 // user always sees the full picture without leaving the title bar.
 
 import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   CRIT, WARN, formatReset, levelOf, peakQuota, pct,
   windowsFromProviders,
@@ -18,6 +19,12 @@ export function QuotaIsland() {
   useEffect(() => { startQuotaPolling(); }, []);
 
   const [hover, setHover] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  async function doRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try { await refreshQuotas(); } finally { setRefreshing(false); }
+  }
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Debounced close so the pointer can bridge the ~4px gap between the pill and
   // the popup without collapsing it (same trick the notification island uses).
@@ -48,7 +55,7 @@ export function QuotaIsland() {
         type="button"
         className={`quota-island quota-island--${level ?? "idle"}${expanded ? " quota-island--open" : ""}`}
         aria-label="Agent quota"
-        onClick={() => { setHover((v) => !v); void refreshQuotas(); }}
+        onClick={() => { setHover((v) => !v); void doRefresh(); }}
       >
         <span className={`quota-dot quota-dot--${level ?? "idle"}`} />
         {expanded && peak && (
@@ -64,8 +71,9 @@ export function QuotaIsland() {
              onMouseLeave={scheduleClose}>
           <div className="quota-panel-head">
             <span>Agent quotas</span>
-            <button className="quota-refresh" onClick={() => void refreshQuotas()} type="button">
-              Refresh
+            <button className="quota-refresh" onClick={() => void doRefresh()} type="button" disabled={refreshing}>
+              {refreshing && <Loader2 size={11} className="quota-refresh-spin" />}
+              {refreshing ? "Refreshing" : "Refresh"}
             </button>
           </div>
           {providers.map((p) => <ProviderRow key={p.providerId} p={p} />)}

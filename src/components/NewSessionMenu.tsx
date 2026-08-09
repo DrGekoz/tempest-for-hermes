@@ -2,8 +2,27 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } fr
 import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAgentAvailability } from "../store/agentAvailability";
-import { TerminalSquare, Globe, Waypoints, Download, ChevronDown, GitBranch, ArrowRight } from "lucide-react";
+import { TerminalSquare, Globe, Waypoints, Download, ChevronDown, GitBranch, ArrowRight, Terminal, Bot, Code2, Command, Cpu, Zap, Sparkles, Package, Rocket, Wrench, Ghost, Play } from "lucide-react";
 import { useAgents, getAgent, getIconDataUrl, remoteIconUrl, type AgentConfig } from "../lib/agentRegistry";
+
+// Curated Lucide icon set for user-added agents. A closed set (not free text)
+// so the picker stays scannable and CSP-safe — no runtime dynamic import into
+// the full ~1400-icon bundle. Reference by `lucide:<name>` in `AgentConfig.icon`.
+const LUCIDE_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  terminal: Terminal,
+  bot: Bot,
+  code: Code2,
+  command: Command,
+  cpu: Cpu,
+  zap: Zap,
+  sparkles: Sparkles,
+  package: Package,
+  rocket: Rocket,
+  wrench: Wrench,
+  ghost: Ghost,
+  play: Play,
+};
+export const LUCIDE_ICON_NAMES = Object.keys(LUCIDE_ICONS);
 import type { BranchInfo } from "../types/git";
 import "./NewSessionMenu.css";
 
@@ -16,6 +35,13 @@ export function AgentIcon({ hint, size, className }: { hint?: string; size: numb
   useAgents(); // re-render when an icon finishes downloading (setIconDataUrl notifies)
   const [failedSrc, setFailedSrc] = useState<string>();
   const config = getAgent(hint ?? "");
+  // Lucide icons for user-added agents render inline (no fetch, no data URL).
+  // Checked before the download pipeline so `lucide:*` never looks like a bare
+  // filename to `remoteIconUrl`.
+  if (config?.icon?.startsWith("lucide:")) {
+    const Comp = LUCIDE_ICONS[config.icon.slice("lucide:".length)];
+    if (Comp) return <Comp size={size} className={className} />;
+  }
   // Prefer a cached (downloaded) icon, then a bundled asset, then the repo URL.
   const src = config
     ? (getIconDataUrl(config.id) ?? (config.iconSrc || remoteIconUrl(config.icon)))
@@ -111,11 +137,17 @@ export function NewSessionMenu({
 
   // Terminal first, then the agent registry — one flat list, no submenu.
   const rows = useMemo<Row[]>(() => {
-    const agentRows: Row[] = agents.map((agent) => ({
-      kind: "agent" as const,
-      agent,
-      available: available[agent.hint] !== false, // true until confirmed absent
-    }));
+    const agentRows: Row[] = agents
+      // Disabled entries (user hid them in Settings → Agents) don't belong in
+      // the launcher; existing sessions bound to them keep working. A custom
+      // entry mid-edit with no command yet is also skipped — there's nothing
+      // to spawn until the user fills it in.
+      .filter((agent) => !agent.disabled && !!agent.hint)
+      .map((agent) => ({
+        kind: "agent" as const,
+        agent,
+        available: available[agent.hint] !== false, // true until confirmed absent
+      }));
     return [{ kind: "terminal" }, ...agentRows];
   }, [agents, available]);
 

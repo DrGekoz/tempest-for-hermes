@@ -180,7 +180,7 @@ function SessionNode({ id, data, isAgent }: { id: string; data?: { collapsed?: b
               {picker}
               <div style={{ marginBottom: 6 }}>Launch an agent:</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 6 }}>
-                {AGENT_CONFIGS.map((a) => (
+                {AGENT_CONFIGS.filter((a) => !a.disabled).map((a) => (
                   <button
                     key={a.id}
                     onClick={() => launch(a.hint)}
