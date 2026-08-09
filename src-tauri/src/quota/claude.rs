@@ -20,16 +20,27 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 
+// The CLI writes `~/.claude/.credentials.json` as
+//   { "claudeAiOauth": { accessToken, refreshToken, expiresAt, ... },
+//     "mcpOAuth": { ... } }
+// We own only the `claudeAiOauth` slot; every other top-level key + every
+// unknown key inside it is preserved verbatim across a refresh write so we
+// don't stomp MCP tokens or future fields.
 #[derive(Debug, Deserialize)]
-struct Credentials {
+struct OauthSlot {
     #[serde(rename = "accessToken")]
     access_token: Option<String>,
     #[serde(rename = "refreshToken")]
     refresh_token: Option<String>,
-    // Preserved verbatim across a refresh — the file may carry keys we don't
-    // model (subscription hints, expiry, feature flags) and we mustn't drop them.
     #[serde(flatten)]
     extra: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Debug)]
+struct Credentials {
+    oauth: OauthSlot,
+    /// Every top-level key other than `claudeAiOauth`, kept intact on write.
+    other: std::collections::BTreeMap<String, Value>,
 }
 
 pub fn fetch() -> ProviderUsage {
@@ -39,20 +50,20 @@ pub fn fetch() -> ProviderUsage {
         Ok(None) => return ProviderUsage::unavailable(ID, NAME),
         Err(e) => return ProviderUsage::errored(ID, NAME, e),
     };
-    let Some(access) = creds.access_token.clone() else {
+    let Some(access) = creds.oauth.access_token.clone() else {
         return ProviderUsage::unavailable(ID, NAME);
     };
 
     match call_usage(&access) {
         Ok(v) => parse_usage(&v),
         Err(FetchError::Unauthorized) => {
-            let Some(refresh) = creds.refresh_token.clone() else {
+            let Some(refresh) = creds.oauth.refresh_token.clone() else {
                 return ProviderUsage::errored(ID, NAME, "sign in expired — re-run `claude`");
             };
             match refresh_tokens(&refresh) {
                 Ok((new_access, new_refresh)) => {
-                    creds.access_token = Some(new_access.clone());
-                    if let Some(r) = new_refresh { creds.refresh_token = Some(r); }
+                    creds.oauth.access_token = Some(new_access.clone());
+                    if let Some(r) = new_refresh { creds.oauth.refresh_token = Some(r); }
                     // Persist first, then retry: a successful refresh whose
                     // write failed still leaves the *new* token in memory, but
                     // the next Tempest launch would reuse the *stale* one and
@@ -88,19 +99,33 @@ impl std::fmt::Display for FetchError {
 }
 
 fn read_credentials(path: &std::path::Path) -> Result<Option<Credentials>, String> {
-    match std::fs::read_to_string(path) {
-        Ok(s) => serde_json::from_str::<Credentials>(&s).map(Some).map_err(|e| format!("credentials.json unreadable: {e}")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("credentials.json unreadable: {e}")),
-    }
+    let s = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("credentials.json unreadable: {e}")),
+    };
+    let mut top: std::collections::BTreeMap<String, Value> = serde_json::from_str(&s)
+        .map_err(|e| format!("credentials.json unreadable: {e}"))?;
+    let oauth_val = top.remove("claudeAiOauth").unwrap_or(Value::Null);
+    // Missing/null slot → treated as signed-out, not a parse error. Anything
+    // else that is present but wrong-shaped IS an error worth surfacing.
+    let oauth: OauthSlot = if oauth_val.is_null() {
+        return Ok(None);
+    } else {
+        serde_json::from_value(oauth_val).map_err(|e| format!("credentials.json unreadable: {e}"))?
+    };
+    Ok(Some(Credentials { oauth, other: top }))
 }
 
 fn write_credentials(path: &std::path::Path, c: &Credentials) -> Result<(), String> {
-    let mut map = serde_json::Map::new();
-    if let Some(a) = &c.access_token { map.insert("accessToken".into(), Value::String(a.clone())); }
-    if let Some(r) = &c.refresh_token { map.insert("refreshToken".into(), Value::String(r.clone())); }
-    for (k, v) in &c.extra { map.insert(k.clone(), v.clone()); }
-    let text = serde_json::to_string_pretty(&Value::Object(map)).map_err(|e| e.to_string())?;
+    let mut oauth_map = serde_json::Map::new();
+    if let Some(a) = &c.oauth.access_token { oauth_map.insert("accessToken".into(), Value::String(a.clone())); }
+    if let Some(r) = &c.oauth.refresh_token { oauth_map.insert("refreshToken".into(), Value::String(r.clone())); }
+    for (k, v) in &c.oauth.extra { oauth_map.insert(k.clone(), v.clone()); }
+    let mut top = serde_json::Map::new();
+    for (k, v) in &c.other { top.insert(k.clone(), v.clone()); }
+    top.insert("claudeAiOauth".into(), Value::Object(oauth_map));
+    let text = serde_json::to_string_pretty(&Value::Object(top)).map_err(|e| e.to_string())?;
     // Non-atomic; a torn write here would delete a user's login. Write to a
     // sibling temp file and rename — same pattern as `hooks_write_atomic`.
     let tmp = path.with_extension("json.tmp");
