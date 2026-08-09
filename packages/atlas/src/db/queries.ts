@@ -85,6 +85,7 @@ interface EdgeRow {
   line: number | null;
   col: number | null;
   provenance: string | null;
+  confidence: string | null;
 }
 
 interface FileRow {
@@ -151,6 +152,7 @@ function rowToEdge(row: EdgeRow): Edge {
     line: row.line ?? undefined,
     column: row.col ?? undefined,
     provenance: row.provenance as Edge['provenance'],
+    confidence: (row.confidence as Edge['confidence']) ?? undefined,
   };
 }
 
@@ -1338,10 +1340,18 @@ export class QueryBuilder {
   insertEdge(edge: Edge): void {
     if (!this.stmts.insertEdge) {
       this.stmts.insertEdge = this.db.prepare(`
-        INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, col, provenance)
-        VALUES (@source, @target, @kind, @metadata, @line, @col, @provenance)
+        INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, col, provenance, confidence)
+        VALUES (@source, @target, @kind, @metadata, @line, @col, @provenance, @confidence)
       `);
     }
+
+    // Default confidence when the producer didn't set one: a heuristic-provenance
+    // edge (callback synthesizer, dynamic-dispatch bridges) is INFERRED; anything
+    // else is EXTRACTED (a literal-source edge from the tree-sitter extractor).
+    // A resolver that saw >1 candidate sets AMBIGUOUS explicitly upstream, so it
+    // is never overwritten here.
+    const derivedConfidence: Edge['confidence'] | undefined =
+      edge.confidence ?? (edge.provenance === 'heuristic' ? 'INFERRED' : 'EXTRACTED');
 
     this.stmts.insertEdge.run({
       source: edge.source,
@@ -1351,6 +1361,7 @@ export class QueryBuilder {
       line: edge.line ?? null,
       col: edge.column ?? null,
       provenance: edge.provenance ?? null,
+      confidence: derivedConfidence ?? null,
     });
   }
 

@@ -21,7 +21,7 @@ import {
   type WorktreeIndexMismatch,
 } from '../sync/worktree';
 import type { PendingFile } from '../sync';
-import type { Node, Edge, SearchResult, Subgraph, NodeKind } from '../types';
+import type { Node, Edge, SearchResult, Subgraph, NodeKind, SearchChannel } from '../types';
 import { isTestFile, normalizeNameToken } from '../search/query-utils';
 import {
   existsSync,
@@ -2338,19 +2338,36 @@ export class ToolHandler {
       .slice(0, ROOT_CAP);
     if (roots.length === 0) return '';
 
+    let anyLowConfidence = false;
     const entries: string[] = [];
     for (const root of roots) {
-      let callers: Array<{ node: Node }> = [];
-      try { callers = cg.getCallers(root.id) as Array<{ node: Node }>; } catch { /* skip this root */ }
+      let callers: Array<{ node: Node; edge?: Edge }> = [];
+      try { callers = cg.getCallers(root.id) as Array<{ node: Node; edge?: Edge }>; } catch { /* skip this root */ }
 
       const seen = new Set<string>();
-      const uniq: Node[] = [];
+      const uniq: Array<{ node: Node; edge?: Edge }> = [];
       for (const c of callers) {
-        if (c?.node && !seen.has(c.node.id)) { seen.add(c.node.id); uniq.push(c.node); }
+        if (c?.node && !seen.has(c.node.id)) { seen.add(c.node.id); uniq.push(c); }
       }
       if (uniq.length === 0) continue; // no blast radius → nothing to flag
 
-      const callerFiles = [...new Set(uniq.map((n) => rel(n.filePath)))];
+      // Edge-confidence breakdown across callers (atlas-extension-plan #8). We
+      // report ambiguous/inferred counts inline so the agent knows how many of
+      // these callers are literal-source hops vs. resolved-by-heuristic before
+      // trusting the number. Missing confidence (pre-migration edge) counts as
+      // extracted — the historical default.
+      let inf = 0, amb = 0;
+      for (const c of uniq) {
+        const conf = c.edge?.confidence;
+        if (conf === 'INFERRED') inf++;
+        else if (conf === 'AMBIGUOUS') amb++;
+      }
+      const confNote = amb > 0 || inf > 0
+        ? ` (${amb > 0 ? `${amb} ambiguous` : ''}${amb > 0 && inf > 0 ? ', ' : ''}${inf > 0 ? `${inf} inferred` : ''} — verify)`
+        : '';
+      if (amb > 0 || inf > 0) anyLowConfidence = true;
+
+      const callerFiles = [...new Set(uniq.map((c) => rel(c.node.filePath)))];
       const testFiles = callerFiles.filter((f) => isTestFile(f));
       const nonTest = callerFiles.filter((f) => !isTestFile(f));
 
@@ -2361,18 +2378,44 @@ export class ToolHandler {
         ? `; tests: ${testFiles.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ')}${testFiles.length > FILE_CAP ? ` +${testFiles.length - FILE_CAP}` : ''}`
         : '; ⚠️ no covering tests found';
 
+      // Per-hit provenance for the entry itself (atlas-extension-plan #4).
+      // `[via: fts+vector]` tells the agent which channels agreed on this seed
+      // — a hit surfaced by every channel is a stronger signal than one only
+      // grep or only vector found.
+      const via = this.formatChannelTag(subgraph.nodeChannels?.get(root.id));
+
       entries.push(
-        `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} caller${uniq.length === 1 ? '' : 's'}${where}${tests}`,
+        `- \`${root.name}\`${via} (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} caller${uniq.length === 1 ? '' : 's'}${confNote}${where}${tests}`,
       );
     }
     if (entries.length === 0) return '';
+
+    const footer = anyLowConfidence
+      ? '\n> _Edge tiers: `EXTRACTED` = literal in source · `INFERRED` = synthesizer/heuristic · `AMBIGUOUS` = resolution had >1 candidate. Verify the flagged hops before relying on them._\n'
+      : '';
 
     return [
       '**Blast radius — what depends on these (update/verify before editing)**',
       '',
       ...entries,
-      '',
-    ].join('\n');
+      footer ? footer : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  /**
+   * Format a `[via: …]` tag from a SearchResult's channel list (atlas-extension-
+   * plan note #4). Returns an empty string when no channel signal is present —
+   * the pre-migration path and any traversal-only lookups leave it blank.
+   */
+  private formatChannelTag(channels: readonly SearchChannel[] | undefined): string {
+    if (!channels || channels.length === 0) return '';
+    // Compact display order: keyword → vector → grep → graph (strongest-signal
+    // channels first, so `[via: keyword+vector]` reads naturally).
+    const ORDER: readonly SearchChannel[] = ['keyword', 'vector', 'grep', 'graph'];
+    const sorted = [...channels].sort(
+      (a, b) => ORDER.indexOf(a) - ORDER.indexOf(b),
+    );
+    return ` [via: ${sorted.join('+')}]`;
   }
 
   /**
@@ -3917,7 +3960,12 @@ export class ToolHandler {
     const fmt = (e: { node: Node; edge: Edge }) => {
       const base = `${e.node.name} (${e.node.filePath}:${e.node.startLine})`;
       const synth = this.synthEdgeNote(e.edge);
-      return synth ? `${base} [${synth.compact}]` : base;
+      // Confidence tier (atlas-extension-plan #8) — only surface when it's NOT
+      // the literal-source EXTRACTED default, so the common case stays quiet
+      // and the flagged cases (INFERRED / AMBIGUOUS) stand out.
+      const conf = e.edge.confidence;
+      const confTag = conf && conf !== 'EXTRACTED' ? ` <${conf}>` : '';
+      return synth ? `${base} [${synth.compact}]${confTag}` : `${base}${confTag}`;
     };
     const collect = (edges: Array<{ node: Node; edge: Edge }>): Array<{ node: Node; edge: Edge }> => {
       const seen = new Set<string>([node.id]);

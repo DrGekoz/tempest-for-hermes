@@ -9,7 +9,7 @@ import { SqliteDatabase } from './sqlite-adapter';
 /**
  * Current schema version
  */
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 /**
  * Migration definition
@@ -117,6 +117,16 @@ const migrations: Migration[] = [
           INSERT INTO nodes_fts(rowid, id, name, qualified_name, docstring, signature)
           VALUES (NEW.rowid, NEW.id, NEW.name, NEW.qualified_name, NEW.docstring, NEW.signature);
         END;
+      `);
+    },
+  },
+  {
+    version: 8,
+    description:
+      "Add edges.confidence — 'EXTRACTED' / 'INFERRED' / 'AMBIGUOUS' hop-confidence tier so tools can distinguish literal-source edges from synthesizer/ambiguous ones (atlas-extension-plan note #8)",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE edges ADD COLUMN confidence TEXT DEFAULT NULL;
       `);
     },
   },

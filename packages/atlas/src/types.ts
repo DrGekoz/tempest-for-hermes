@@ -202,7 +202,25 @@ export interface Edge {
 
   /** How this edge was created */
   provenance?: 'tree-sitter' | 'scip' | 'heuristic';
+
+  /**
+   * How SURE we are of this hop between nodes (note #8 from atlas-extension-plan).
+   * - `EXTRACTED`  — literal in source (import, direct call, JSX child, unique resolution)
+   * - `INFERRED`   — reached via a synthesizer or second-pass conformance walk
+   * - `AMBIGUOUS`  — resolution had >1 candidate; agent should verify before trusting
+   * NULL/undefined = pre-migration edge with no tag (treated as EXTRACTED by callers
+   * that need a value — the historical default before the column existed).
+   */
+  confidence?: EdgeConfidence;
 }
+
+/**
+ * Edge-confidence tier (atlas-extension-plan note #8). Persisted on each edge so
+ * downstream tools can distinguish a hop derived from literal source from one
+ * resolved by heuristic or ambiguous match — the "how sure of this HOP" trust
+ * multiplier that complements the per-hit provenance tags on {@link SearchResult}.
+ */
+export type EdgeConfidence = 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS';
 
 /**
  * Metadata about a tracked file
@@ -340,6 +358,16 @@ export interface Subgraph {
    * for graph traversals that don't run the search-ranking path.
    */
   confidence?: 'high' | 'low';
+
+  /**
+   * Per-node retrieval channels (atlas-extension-plan note #4). Which seed
+   * channel(s) surfaced each entry-point node — `keyword` (FTS/exact-name),
+   * `vector` (semantic), `grep` (literal ripgrep); nodes pulled in by traversal
+   * from another seed tag `graph`. Keyed by node id. Only populated for nodes
+   * that entered via the search-ranking path — pure traversal callers leave it
+   * empty. Consumed by MCP formatters to tag entries with `[via: …]`.
+   */
+  nodeChannels?: Map<string, SearchChannel[]>;
 }
 
 /**
@@ -408,7 +436,20 @@ export interface SearchResult {
 
   /** Matched text snippets for highlighting */
   highlights?: string[];
+
+  /**
+   * Which retrieval channel(s) surfaced this hit (atlas-extension-plan note #4).
+   * `keyword` = FTS or exact-name match; `vector` = semantic embedding neighbor;
+   * `grep` = literal text match via ripgrep third channel; `graph` = pulled in by
+   * traversal from another seed. Accumulates across channels — a node that
+   * matches BOTH FTS and vector carries both, which is the strongest trust
+   * signal downstream tools can display.
+   */
+  channels?: SearchChannel[];
 }
+
+/** Retrieval channel that surfaced a {@link SearchResult}. See `channels`. */
+export type SearchChannel = 'keyword' | 'vector' | 'grep' | 'graph';
 
 // =============================================================================
 // Context Types

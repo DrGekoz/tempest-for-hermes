@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS edges (
     line INTEGER,
     col INTEGER,
     provenance TEXT DEFAULT NULL,
+    -- Edge confidence tier (atlas-extension-plan note #8): 'EXTRACTED' (literal
+    -- in source), 'INFERRED' (synthesizer/second-pass), 'AMBIGUOUS' (>1
+    -- candidate at resolution time). NULL = pre-migration edge.
+    confidence TEXT DEFAULT NULL,
     FOREIGN KEY (source) REFERENCES nodes(id) ON DELETE CASCADE,
     FOREIGN KEY (target) REFERENCES nodes(id) ON DELETE CASCADE
 );
