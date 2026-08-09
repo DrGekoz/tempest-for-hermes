@@ -75,6 +75,14 @@ Both behaviours are toggles in **Settings → Security**. You stay in control.
 
 See [ROADMAP.md](ROADMAP.md) for the full picture. **Star this repo** — we announce here first.
 
+## Project
+
+- [Roadmap](ROADMAP.md) — where Tempest is going and what's currently being built
+- [Contributing](CONTRIBUTING.md) — setup, workflow, and how to send a PR
+- [Code of Conduct](CODE_OF_CONDUCT.md) — how we behave in project spaces
+- [Security policy](SECURITY.md) — reporting vulnerabilities (please do not open a public issue)
+- [License](LICENSE) — Apache 2.0
+
 ## Build from source
 
 Pre-built binaries are available for Windows, macOS, and Linux.
