@@ -28,6 +28,8 @@ Parallel agent sessions are the foundation. Tempest is an engineering platform w
 
 **Desktop notifications.** Long-running agents shouldn't require you to sit and watch them. Native OS notifications for agent completion, approval prompts, and errors — cross-platform.
 
+**Keyboard-native everything.** Several surfaces today still require a mouse — canvas navigation, node selection and creation, workspace switching, and various menus. The goal is that every function in Tempest has a keyboard path, so a mouse is a preference, not a requirement. We plan to get to this soon ourselves, but if it's something you'd enjoy working on, we'd be very glad to have your help — please open an issue and we'll support you through it.
+
 ## On the roadmap
 
 **Mobile apps (iOS + Android).** Built with Expo. Not a mini IDE — a companion surface: check on agents, approve or redirect them mid-run, review diffs, get notified when something needs you. Backed by remote agents (below) so the desktop app can be closed.
