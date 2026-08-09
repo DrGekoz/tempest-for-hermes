@@ -1,4 +1,20 @@
 import { getSession } from "./sessions";
+import { getSettings } from "./appSettings";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { resolveResource } from "@tauri-apps/api/path";
+
+// Windows toast notifications only show an app icon when the app is installed
+// with a Start Menu shortcut (AppUserModelID). In dev — and even sometimes in
+// installed builds — the OS falls back to a generic icon. Passing an absolute
+// `icon` path forces the notification to render our logo. Resolved once and
+// cached; resolveResource is a filesystem lookup, no need to repeat it.
+let _iconPathPromise: Promise<string | undefined> | null = null;
+function getIconPath(): Promise<string | undefined> {
+  if (!_iconPathPromise) {
+    _iconPathPromise = resolveResource("icons/128x128.png").catch(() => undefined);
+  }
+  return _iconPathPromise;
+}
 
 export type IslandNotifType = "permission" | "done";
 
@@ -46,6 +62,24 @@ export function pushIslandNotif(n: Omit<IslandNotif, "id">): void {
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   _notifs = [{ ...n, id }, ..._notifs.filter((e) => !(e.sessionId === n.sessionId && e.type === n.type))].slice(0, MAX);
   emit();
+  // OS-level notification when the user is away (window unfocused). The
+  // in-app island already covers the "focused, different tab" case; only the
+  // away case needs to break through to the desktop.
+  if (!document.hasFocus() && getSettings().desktopNotifications) {
+    void fireDesktopNotif(n);
+  }
+}
+
+async function fireDesktopNotif(n: Omit<IslandNotif, "id">): Promise<void> {
+  try {
+    const granted = (await isPermissionGranted()) || (await requestPermission()) === "granted";
+    if (!granted) return;
+    const body = n.type === "permission"
+      ? `${n.agent} is asking for permission${n.detail ? ` — ${n.detail}` : ""}`
+      : `${n.agent} finished`;
+    const icon = await getIconPath();
+    sendNotification({ title: n.title, body, icon });
+  } catch { /* notification plugin unavailable; ignore */ }
 }
 
 export function dismissIslandNotif(id: string): void {

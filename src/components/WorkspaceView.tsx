@@ -820,7 +820,9 @@ export function WorkspaceView({ zen, name, path }: Props) {
       // Assemble the agent's full argument list (session/resume flags + prompt) here in
       // TypeScript so Rust receives a ready-to-run command. originalId is present only
       // when resuming an existing conversation.
-      const args = agent ? buildAgentArgs(agent, sessionId, originalId, prompt, model) : null;
+      const args = agent
+        ? buildAgentArgs(agent, sessionId, originalId, prompt, model, { sessionName, cwd })
+        : null;
 
       const config = agent ? AGENT_CONFIGS.find((a) => a.hint === agent) : null;
       // Per-agent launch defaults (global, set in Settings → Agents). Only agent

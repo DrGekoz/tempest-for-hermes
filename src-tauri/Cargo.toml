@@ -8,7 +8,7 @@ resolver = "2"
 
 [package]
 name = "tempest"
-version = "0.1.12"
+version = "0.1.13"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -40,6 +40,7 @@ dashmap = "6"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
 # Verifies the signed remote agents manifest (config/agents.json). Already in the
 # tree via tauri-plugin-updater; named here so the verify command can use it.
 minisign-verify = "0.2"

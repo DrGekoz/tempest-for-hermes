@@ -9,7 +9,8 @@ import gooseSrc from "../assets/agent-icons/goose.svg";
 import codexSrc from "../assets/agent-icons/codex.svg";
 import antigravitySrc from "../assets/agent-icons/antigravity.svg";
 import bundledManifest from "../../config/agents.json";
-import { mergeAgents, sanitizeManifestAgents, sanitizeCachedPatches, type AgentConfig, type RemotePatch } from "./agentManifest";
+import { mergeAgents, sanitizeManifestAgents, sanitizeCachedPatches, sanitizeCustomAgents, type AgentConfig, type RemotePatch } from "./agentManifest";
+import { getRuntimeState, setRuntimeState } from "./runtimeState";
 
 // The agent registry — the single source of truth for which CLI agents Tempest
 // can launch and how it builds their argv. There is no hardcoded agent list:
@@ -79,8 +80,17 @@ function loadCachedRemote(): RemotePatch[] {
 
 let _remote: RemotePatch[] = loadCachedRemote();
 
+/// User-added agents live in runtimeState, so a hot-reload of appState (which
+/// runs after registry init) is reflected on the next build().
+function loadCustom(): RemotePatch[] {
+  return sanitizeCustomAgents(getRuntimeState().customAgents);
+}
+
 function build(): AgentConfig[] {
-  return resolveIcons(mergeAgents(BUNDLED_AGENTS, _remote));
+  // Custom agents are merged LAST so a user can override a bundled/remote entry
+  // (e.g. point "claude" at a local wrapper script). Removing the custom entry
+  // reveals the shipped one again.
+  return resolveIcons(mergeAgents(mergeAgents(BUNDLED_AGENTS, _remote), loadCustom()));
 }
 
 export let AGENT_CONFIGS: AgentConfig[] = build();
@@ -88,6 +98,13 @@ export let AGENT_CONFIGS: AgentConfig[] = build();
 function notify() {
   AGENT_CONFIGS = build();
   listeners.forEach((l) => l());
+}
+
+/// Trigger a registry rebuild + subscriber notify. Called by `main.tsx` once
+/// `loadAppState` has hydrated `runtimeState.customAgents` — the initial
+/// `AGENT_CONFIGS = build()` at module load ran with an empty runtime slot.
+export function refreshAgentRegistry(): void {
+  notify();
 }
 
 /// Apply a verified, sanitized downloaded manifest. Caches it for the next offline
@@ -115,6 +132,23 @@ export function useAgents(): AgentConfig[] {
     (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
     () => AGENT_CONFIGS,
   );
+}
+
+// ── custom (user-added) agents ───────────────────────────────────────────────
+// Persisted in runtimeState.customAgents. Written through here so the registry
+// rebuild + subscriber notify happen atomically with the persist.
+
+/// The raw persisted list — for the settings UI editor. Every entry has
+/// `custom: true` (stamped by `sanitizeCustomAgent`).
+export function getCustomAgents(): RemotePatch[] {
+  return sanitizeCustomAgents(getRuntimeState().customAgents);
+}
+
+/// Persist a new custom list and rebuild the registry. The list is re-sanitized
+/// on the way in so a bad entry from the UI can never reach a spawn.
+export function setCustomAgents(list: RemotePatch[]): void {
+  setRuntimeState({ customAgents: sanitizeCustomAgents(list) });
+  notify();
 }
 
 // ── icon cache ───────────────────────────────────────────────────────────────

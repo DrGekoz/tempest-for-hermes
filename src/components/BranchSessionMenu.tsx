@@ -58,7 +58,7 @@ export function BranchSessionMenu({
   // Flat list of every row, in render order. Unavailable agents stay in the list
   // (so they render) but are skipped by keyboard navigation.
   const items = useMemo<NavItem[]>(() => {
-    const agentItems: NavItem[] = AGENT_CONFIGS.map((agent) => ({
+    const agentItems: NavItem[] = AGENT_CONFIGS.filter((a) => !a.disabled).map((agent) => ({
       kind: "agent" as const,
       agent,
       available: available[agent.hint] !== false, // true until confirmed absent

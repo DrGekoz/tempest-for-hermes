@@ -49,6 +49,15 @@ export interface AgentConfig {
   autoApproveArgs?: string[];
   // URL to download/install the agent when it isn't on PATH.
   downloadUrl?: string;
+  // User-added local agent (Settings → Agents → Add). Bundled + signed-remote
+  // entries have this false/absent. Only custom entries are removable from
+  // the UI and only their fields are freely editable.
+  custom?: boolean;
+  // User toggle: hide from launchers and pickers without deleting. Absent = shown.
+  disabled?: boolean;
+  // Informational: id of the agent this one was cloned from. No behavior; just
+  // shown in the settings header so the lineage is visible.
+  extends?: string;
 }
 
 /// A validated manifest entry. It PATCHES an agent of the same id (so an override
@@ -133,6 +142,59 @@ function sanitizeEntry(a: unknown): RemotePatch | null {
 export function sanitizeManifestAgents(list: unknown): RemotePatch[] {
   if (!Array.isArray(list)) return [];
   return list.map(sanitizeEntry).filter((a): a is RemotePatch => a !== null);
+}
+
+// Icons for user-added agents may also be a "lucide:name" reference — a bundled
+// icon-set key that AgentIcon renders as an inline SVG. Keeps user icons offline
+// and CSP-clean without any download step. Never accepted from the signed
+// manifest so remote entries always resolve through the standard icon pipeline.
+const iconRefLocal = (v: unknown): string | undefined => {
+  if (typeof v !== "string") return undefined;
+  if (/^lucide:[a-z0-9-]+$/i.test(v)) return v;
+  return iconRef(v);
+};
+
+/// Sanitize a single user-added agent. Same validation as the signed manifest,
+/// with two extras: `lucide:*` icon refs are allowed, and the `custom: true`
+/// marker is always stamped on so the merge path can tell local entries apart
+/// from bundled/remote ones.
+export function sanitizeCustomAgent(a: unknown): RemotePatch | null {
+  if (!a || typeof a !== "object") return null;
+  const e = a as Record<string, unknown>;
+  const { id, name, hint } = e;
+  if (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]*$/i.test(id)) return null;
+  if (typeof name !== "string" || !name.trim()) return null;
+  // Custom entries may be saved with an empty `hint` while the user is still
+  // filling in the form; the launcher hides them until it validates. A
+  // NON-empty hint that fails CMD_RE is still a spawn-injection risk → drop.
+  if (typeof hint !== "string") return null;
+  if (hint !== "" && !CMD_RE.test(hint)) return null;
+
+  const patch: RemotePatch & { custom: true } = { id, name: name.trim(), hint, custom: true };
+  const icon = iconRefLocal(e.icon);
+  if (icon) patch.icon = icon;
+  if (e.mono === true) patch.mono = true;
+  const session = strList(e.sessionIdArgs);
+  if (session) patch.sessionIdArgs = session;
+  const resume = strList(e.resumeArgs);
+  if (resume) patch.resumeArgs = resume;
+  const model = strList(e.modelArgs);
+  if (model) patch.modelArgs = model;
+  const autoApprove = strList(e.autoApproveArgs);
+  if (autoApprove) patch.autoApproveArgs = autoApprove;
+  const dl = typeof e.downloadUrl === "string" && /^https:\/\//i.test(e.downloadUrl) ? e.downloadUrl : undefined;
+  if (dl) patch.downloadUrl = dl;
+  const capture = captureSpec(e.capture);
+  if (capture) patch.capture = capture;
+  if (e.disabled === true) patch.disabled = true;
+  if (typeof e.extends === "string" && e.extends) patch.extends = e.extends;
+  return patch;
+}
+
+/// Sanitize the whole custom-agents array read out of persisted state.
+export function sanitizeCustomAgents(list: unknown): RemotePatch[] {
+  if (!Array.isArray(list)) return [];
+  return list.map(sanitizeCustomAgent).filter((a): a is RemotePatch => a !== null);
 }
 
 /// Re-guard patches loaded from the local cache: identity + `hint` shape. Capture
