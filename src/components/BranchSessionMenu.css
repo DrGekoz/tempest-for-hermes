@@ -145,129 +145,27 @@
   color: var(--tempest-fg-default);
 }
 
-/* ── Agent prompt panel ── */
+/* ── Inline optional prompt textarea (shared by all agents) ── */
 .bsm-prompt {
-  display: flex;
-  flex-direction: column;
-  padding: 2px;
-  min-width: 288px;
-  max-width: calc(100vw - 20px);
-}
-
-.bsm-prompt-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 8px;
-}
-
-.bsm-prompt-back {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--tempest-fg-muted);
-  cursor: pointer;
-}
-
-.bsm-prompt-back:hover {
-  background: var(--tempest-bg-hover);
-  color: var(--tempest-fg-default);
-}
-
-.bsm-prompt-icon {
-  flex-shrink: 0;
-}
-
-.bsm-prompt-titles {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-
-.bsm-prompt-name {
-  font-size: 13px;
-  color: var(--tempest-fg-default);
-  white-space: nowrap;
-}
-
-.bsm-prompt-branch {
-  font-size: 11px;
-  font-family: "Geist Mono", monospace;
-  color: var(--tempest-fg-subtle);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bsm-prompt-textarea {
   width: 100%;
+  box-sizing: border-box;
   resize: none;
-  padding: 8px 9px;
-  background: var(--tempest-bg-editor);
+  margin: 4px 0 6px;
+  padding: 7px 9px;
+  background: var(--tempest-bg-default);
   border: 1px solid var(--tempest-border-default);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--tempest-fg-default);
   font-family: inherit;
   font-size: 12.5px;
-  line-height: 1.45;
-  box-sizing: border-box;
+  line-height: 1.4;
+  outline: none;
 }
 
-.bsm-prompt-textarea::placeholder {
+.bsm-prompt::placeholder {
   color: var(--tempest-fg-subtle);
 }
 
-.bsm-prompt-textarea:focus {
-  outline: none;
-  border-color: var(--tempest-accent-blue);
-}
-
-.bsm-prompt-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.bsm-prompt-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 11px;
-  border-radius: 6px;
-  font-family: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-
-.bsm-prompt-btn--ghost {
-  background: transparent;
-  border-color: var(--tempest-border-default);
-  color: var(--tempest-fg-muted);
-}
-
-.bsm-prompt-btn--ghost:hover {
-  background: var(--tempest-bg-hover);
-  color: var(--tempest-fg-default);
-}
-
-.bsm-prompt-btn--primary {
-  background: var(--tempest-accent-blue);
-  color: #fff;
-}
-
-.bsm-prompt-btn--primary:hover {
-  filter: brightness(1.08);
-}
-
-.bsm-prompt-btn-kbd {
-  opacity: 0.75;
+.bsm-prompt:focus {
+  border-color: var(--tempest-border-subtle);
 }

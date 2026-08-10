@@ -1,11 +1,11 @@
 ![Tempest — parallel AI agent sessions](media/wordmark.png)
 
 <h2 align="center">
-  <strong>The token-efficient, open-source alternative to Conductor.build.</strong>
+  <strong>Run Claude Code, Codex, Gemini and any other CLI Agent with 64% fewer tokens</strong>
 </h2>
 
 <p align="center">
-  Run Claude Code, Aider, OpenCode, Copilot CLI, and more in parallel. Each isolated in its own git worktree and branch. Zero merge conflicts, live status, built-in diff and PR.
+  Tempest indexes your codebase once and gives every agent a shared knowledge base, so they spend less context understanding your code and more tokens actually building.
 </p>
 
 <p align="center">

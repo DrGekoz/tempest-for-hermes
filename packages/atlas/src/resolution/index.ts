@@ -769,10 +769,14 @@ export class ReferenceResolver {
       return null;
     }
 
-    // Return highest confidence candidate
-    return candidates.reduce((best, curr) =>
-      curr.confidence > best.confidence ? curr : best
-    );
+    // Return highest confidence candidate. Stamp `candidateCount` so createEdges
+    // can tag the resulting edge AMBIGUOUS when >1 strategy produced a candidate
+    // (atlas-extension-plan note #8) — a same-scope function-name shadowing that
+    // the framework and name-match strategies both claim, for instance, is
+    // exactly the "verify before trusting" case the tier is meant to flag.
+    const best = candidates.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+    best.candidateCount = candidates.length;
+    return best;
   }
 
   /**
@@ -811,12 +815,28 @@ export class ReferenceResolver {
         }
       }
 
+      // Edge-confidence tier (atlas-extension-plan note #8). AMBIGUOUS wins when
+      // >1 strategy produced a candidate for this ref — the agent should verify
+      // the hop before trusting it. Otherwise a `function-ref` resolution (the
+      // callback-registration inference path) and every deferred-second-pass
+      // resolution (chained-call conformance walk, this.<member> supertype walk)
+      // are INFERRED; the literal-source direct resolutions are EXTRACTED.
+      let edgeConfidence: Edge['confidence'];
+      if ((ref.candidateCount ?? 1) > 1) {
+        edgeConfidence = 'AMBIGUOUS';
+      } else if (ref.resolvedBy === 'function-ref' || ref.resolvedBy === 'fuzzy') {
+        edgeConfidence = 'INFERRED';
+      } else {
+        edgeConfidence = 'EXTRACTED';
+      }
+
       return {
         source: ref.original.fromNodeId,
         target: ref.targetNodeId,
         kind,
         line: ref.original.line,
         column: ref.original.column,
+        confidence: edgeConfidence,
         metadata: {
           confidence: ref.confidence,
           resolvedBy: ref.resolvedBy,

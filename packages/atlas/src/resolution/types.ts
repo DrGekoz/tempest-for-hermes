@@ -40,6 +40,15 @@ export interface ResolvedRef {
   confidence: number;
   /** How it was resolved */
   resolvedBy: 'exact-match' | 'import' | 'qualified-name' | 'framework' | 'fuzzy' | 'instance-method' | 'file-path' | 'function-ref';
+
+  /**
+   * How many strategies produced a candidate for this ref before the highest-
+   * confidence one was picked (atlas-extension-plan note #8). >1 → the edge is
+   * tagged AMBIGUOUS downstream so the agent knows to verify. 1 (or undefined,
+   * for the deferred/framework-only paths that never fall through the multi-
+   * strategy loop) → EXTRACTED / INFERRED per provenance.
+   */
+  candidateCount?: number;
 }
 
 /**

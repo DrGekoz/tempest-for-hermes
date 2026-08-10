@@ -19,6 +19,7 @@ import {
   BuildContextOptions,
   FindRelevantContextOptions,
   SearchResult,
+  SearchChannel,
 } from '../types';
 import { QueryBuilder } from '../db/queries';
 import { GraphTraverser } from '../graph';
@@ -28,6 +29,10 @@ import { validatePathWithinRoot, isConfigLeafNode } from '../utils';
 import { isTestFile, extractSearchTerms, scorePathRelevance, getStemVariants, isDistinctiveIdentifier } from '../search/query-utils';
 import { LOW_CONFIDENCE_MARKER } from './markers';
 import { computeVectorSeeds, semanticDisabled } from '../embedding';
+import {
+  computeGrepSeeds, isRipgrepAvailable, shouldSkipGrep,
+  grepTopDistinctTerms, extractGrepTerms,
+} from '../search/ripgrep-channel';
 
 /**
  * Extract likely symbol names from a natural language query
@@ -131,6 +136,16 @@ function extractSymbolsFromQuery(query: string): string[] {
   ]);
 
   return Array.from(symbols).filter(s => !commonWords.has(s.toLowerCase()));
+}
+
+/**
+ * Add a channel tag to a SearchResult without duplicating (atlas-extension-plan
+ * note #4). Preserves order (first channel to hit is listed first) so downstream
+ * display can lead with the strongest signal.
+ */
+function mergeChannel(r: SearchResult, channel: SearchChannel): void {
+  if (!r.channels) r.channels = [channel];
+  else if (!r.channels.includes(channel)) r.channels.push(channel);
 }
 
 /**
@@ -448,7 +463,7 @@ export class ContextBuilder {
       return { nodes, edges, roots };
     }
 
-    // === SEMANTIC ENTRY POINTS (vector fork) ===
+    // === SEMANTIC + GREP ENTRY POINTS (extra seed channels) ===
     // Resolve the vector-ranked seeds that feed the entry-point discovery. An
     // explicit `opts.seedResults` (spike/tests) wins; otherwise compute them
     // from the stored node embeddings when a model is available. With neither,
@@ -459,9 +474,28 @@ export class ContextBuilder {
       seedResults = await computeVectorSeeds(this.queries, query, opts.searchLimit);
       seedMode = 'merge'; // internally-computed seeds always fuse with FTS
     }
-    const useSeeds = seedResults.length > 0;
+    // Tag vector seeds with their channel — merged into nodeChannels below so
+    // downstream tooling can show `[via: vector]` on entries semantic surfaced.
+    for (const r of seedResults) if (!r.channels) r.channels = ['vector'];
+
+    // Ripgrep third seed channel (atlas-extension-plan note #7). Closes the
+    // literal-token miss where the target is a JSX text child / className /
+    // string literal — none of which FTS or vector index — but the agent grepped
+    // for it. Silent no-op if `rg` isn't on PATH or the query is too tiny to
+    // grep for safely (see extractGrepTerms). Never runs in vector-only mode
+    // (`replace`), which is a diagnostic/spike path that intentionally skips FTS
+    // too.
+    // Grep seeds are computed LAZILY below — only after we see that FTS's own
+    // top results lack corroboration. Running rg up front spent ~50-100ms of
+    // spawn+scan on every query, even when FTS already knew the answer (the
+    // measurable "simple lag"). Deferring the spawn behind the confidence
+    // check keeps the fast path fast.
+    let grepSeeds: SearchResult[] = [];
+    const grepEligible = seedMode === 'merge' && isRipgrepAvailable() && !shouldSkipGrep(query);
+
+    const useSeeds = seedResults.length > 0 || grepSeeds.length > 0;
     const mergeSeeds = useSeeds && seedMode === 'merge'; // hybrid (RRF)
-    const replaceSeeds = useSeeds && seedMode === 'replace'; // vector-only
+    const replaceSeeds = seedResults.length > 0 && seedMode === 'replace'; // vector-only
 
     // === HYBRID SEARCH ===
 
@@ -631,6 +665,13 @@ export class ContextBuilder {
       }
     }
 
+    // Tag everything the FTS/exact channels contributed as `keyword` provenance
+    // (both exact-name lookups and BM25 hits are keyword-based). Merged into
+    // nodeChannels below so an entry-point that ONLY the vector channel found
+    // is distinguishable from one FTS and vector agreed on — the strongest
+    // trust signal a downstream tool can display (atlas-extension-plan #4).
+    for (const r of searchResults) mergeChannel(r, 'keyword');
+
     // Vector-only: seeds ARE the entry points; the FTS channels above were
     // skipped (replaceSeeds emptied their inputs), so just adopt the seeds.
     if (replaceSeeds) {
@@ -638,15 +679,19 @@ export class ContextBuilder {
         if (!resultById.has(r.node.id)) {
           resultById.set(r.node.id, r);
           searchResults.push(r);
+        } else {
+          mergeChannel(resultById.get(r.node.id)!, 'vector');
         }
       }
     }
 
-    // Hybrid: fuse FTS + vector by RECIPROCAL RANK, not score magnitude. Rank-
-    // based fusion is scale-free, so a confident-but-WRONG FTS keyword match
-    // (high bm25 on a frequent token) can't bury a vector seed that's rank-1 by
-    // meaning. Fused values are mapped back onto the FTS score range so the
-    // downstream boosts / traversal / truncation keep working unchanged.
+    // Hybrid: fuse FTS + vector + grep by RECIPROCAL RANK, not score magnitude.
+    // Rank-based fusion is scale-free (bm25 scores 10–100, cosine 0–1, grep
+    // hit-counts unbounded — all incomparable as raw scores), so a confident-
+    // but-WRONG keyword match can't bury a vector rank-1 or a grep rank-1 that
+    // knows the literal token no indexed field carries. Fused values are mapped
+    // back onto the FTS score range so downstream boosts / traversal /
+    // truncation keep working unchanged (§Fusion in atlas-extension-plan).
     if (mergeSeeds) {
       const K = 60; // standard RRF constant (Cormack et al.)
       const ftsRank = new Map<string, number>();
@@ -655,15 +700,24 @@ export class ContextBuilder {
         .forEach((r, i) => ftsRank.set(r.node.id, i));
       const vecRank = new Map<string, number>();
       seedResults.forEach((r, i) => vecRank.set(r.node.id, i));
+      const grepRank = new Map<string, number>();
+      grepSeeds.forEach((r, i) => grepRank.set(r.node.id, i));
 
-      // Vector seeds not already present join the candidate pool.
-      for (const r of seedResults) {
-        if (!resultById.has(r.node.id)) {
-          const seed = { ...r };
+      // Vector + grep seeds not already present join the candidate pool; ones
+      // that ARE present accumulate the channel tag so nodeChannels reflects
+      // every channel that surfaced the hit.
+      const adoptSeed = (r: SearchResult, channel: SearchChannel): void => {
+        const existing = resultById.get(r.node.id);
+        if (!existing) {
+          const seed: SearchResult = { ...r, channels: [...(r.channels ?? [channel])] };
           resultById.set(r.node.id, seed);
           searchResults.push(seed);
+        } else {
+          mergeChannel(existing, channel);
         }
-      }
+      };
+      for (const r of seedResults) adoptSeed(r, 'vector');
+      for (const r of grepSeeds) adoptSeed(r, 'grep');
 
       const maxFts = searchResults.reduce((m, r) => Math.max(m, r.score), 0) || 1;
       let maxFused = 0;
@@ -672,6 +726,7 @@ export class ContextBuilder {
         let f = 0;
         if (ftsRank.has(r.node.id)) f += 1 / (K + ftsRank.get(r.node.id)!);
         if (vecRank.has(r.node.id)) f += 1 / (K + vecRank.get(r.node.id)!);
+        if (grepRank.has(r.node.id)) f += 1 / (K + grepRank.get(r.node.id)!);
         fused.set(r.node.id, f);
         if (f > maxFused) maxFused = f;
       }
@@ -946,6 +1001,13 @@ export class ContextBuilder {
       }
     }
 
+    // Backfill the `keyword` channel tag on any result the LATER channels
+    // (CamelCase, compound-term) added — they push after the fusion pass above
+    // and so miss the initial mergeChannel loop. Every result here is keyword-
+    // sourced regardless of which specific keyword strategy found it, so a
+    // single sweep is safe (atlas-extension-plan #4).
+    for (const r of searchResults) if (!r.channels) mergeChannel(r, 'keyword');
+
     // Final sort and truncation — all search channels (exact, text, CamelCase,
     // compound) have now contributed. Sort by score so multi-term matches from
     // later steps can outrank dampened single-term matches from earlier steps.
@@ -960,11 +1022,111 @@ export class ContextBuilder {
     // they want the TerminalPanel class, not the import statement
     filteredResults = this.resolveImportsToDefinitions(filteredResults);
 
+    // Reserved slots for high-signal grep/vector-only seeds (atlas-extension-
+    // plan note #7). RRF fusion lifts them into the pool at scaled scores, but
+    // the FTS-favoring boosts downstream (multi-term co-occurrence, CamelCase,
+    // core-directory) then multiply FTS matches only, drowning grep/vector
+    // hits by the time we truncate. Without protection, a grep-only target
+    // like `AtlasIndexModal` for "Indexing your codebase" gets found by the
+    // channel but doesn't survive final ranking → we lose the exact win the
+    // grep channel exists for. Force-inject the top RESERVED_ALT_SLOTS seeds
+    // from grep/vector that aren't already in the final set; they displace
+    // the WEAKEST tail entries, so a strong FTS hit is never bumped.
+    const RESERVED_ALT_SLOTS = 2;
+    const altChannelWinners = (): SearchResult[] => {
+      const picked: SearchResult[] = [];
+      const inFinal = new Set(filteredResults.map((r) => r.node.id));
+      for (const source of [grepSeeds, seedResults]) {
+        for (const s of source) {
+          if (picked.length >= RESERVED_ALT_SLOTS) break;
+          if (inFinal.has(s.node.id) || picked.some((p) => p.node.id === s.node.id)) continue;
+          // Ensure channel is present so [via: grep] / [via: vector] renders.
+          const channel: SearchChannel = source === grepSeeds ? 'grep' : 'vector';
+          picked.push({ ...s, channels: [...(s.channels ?? [channel])] });
+        }
+        if (picked.length >= RESERVED_ALT_SLOTS) break;
+      }
+      return picked;
+    };
+
     // Cap entry points so traversal budget isn't spread too thin.
     // With 36 entry points and maxNodes=120, each gets only 3 nodes — useless.
     // Cap to searchLimit so each entry point gets a meaningful traversal budget.
     if (filteredResults.length > opts.searchLimit) {
       filteredResults = filteredResults.slice(0, opts.searchLimit);
+    }
+
+    // Reserve slots for alt-channel picks ONLY when FTS's own confidence in
+    // its top-N is LOW (using the same corroboration rule the honest-handoff
+    // footer uses below): a result whose name/dir matches ≥2 distinct query
+    // terms — or a distinctive identifier the agent explicitly named — is a
+    // STRONG FTS signal, and reserving grep/vector slots on top would evict a
+    // bullseye entry (the "apply a JSON theme" regression: FTS returned
+    // applyTheme/ThemeToggle/loadThemeFromJson perfectly; reserving grep slots
+    // for MCP config files that happened to contain "JSON"/"CSS" was harmful).
+    // Only when FTS is guessing does the alt channel's divergent evidence help.
+    const confTermsGate = extractSearchTerms(query, { stems: false }).filter((t) => t.length >= 3);
+    const ftsIsConfident = ((): boolean => {
+      if (confTermsGate.length < 2 || filteredResults.length === 0) return true;
+      const distinctive = new Set(
+        symbolsFromQuery.filter(isDistinctiveIdentifier).map((s) => s.toLowerCase()),
+      );
+      return filteredResults.some((r) => {
+        if (distinctive.has(r.node.name.toLowerCase())) return true;
+        const nameLower = r.node.name.toLowerCase();
+        const dirSegs = path.dirname(r.node.filePath).toLowerCase().split('/');
+        let hits = 0;
+        for (const t of confTermsGate) {
+          if (nameLower.includes(t) || dirSegs.includes(t)) {
+            if (++hits >= 2) return true;
+          }
+        }
+        return false;
+      });
+    })();
+
+    // Lazy grep: only when FTS is uncertain do we pay the rg spawn to see if
+    // grep can bring a divergent, corroborated alternative. Skips ~85ms per
+    // query on the majority path where FTS already knows.
+    if (!ftsIsConfident && grepEligible && grepSeeds.length === 0) {
+      try {
+        grepSeeds = computeGrepSeeds(
+          this.queries, this.projectRoot, query, opts.searchLimit,
+        );
+      } catch (err) {
+        logDebug('grep channel failed', { error: String(err) });
+      }
+    }
+
+    if (!ftsIsConfident && (grepSeeds.length > 0 || seedResults.length > 0)) {
+      // NODE-based (not file-based) divergence: grep finding a DIFFERENT symbol
+      // in the same file as an FTS peripheral hit is exactly the win we want
+      // — for "Indexing your codebase", FTS surfaced `getLastIndexedAt` /
+      // `indexAll` in `packages/atlas/src/index.ts` (compiler noise) while grep
+      // surfaced the `Atlas` CLASS in the same file (the real answer). A
+      // file-overlap check treats these as "same" and blocks reservation.
+      const ftsTopIds = new Set(filteredResults.slice(0, 3).map((r) => r.node.id));
+      const grepDiverges = grepSeeds.length > 0 &&
+        grepSeeds.slice(0, 3).every((s) => !ftsTopIds.has(s.node.id));
+      // Corroboration threshold scales to how many terms we actually queried:
+      //  - Multi-term queries need ≥2 distinct terms hitting the same file (rules
+      //    out the JSON+CSS noise trap where any config file gets crowned).
+      //  - Single-term queries (extractGrepTerms narrowed to one identifier like
+      //    "Indexing") only need that one term — otherwise the gate would BLOCK
+      //    every prose query with just one capitalized word, defeating the whole
+      //    point of the channel.
+      const grepTermsQueried = extractGrepTerms(query).length;
+      const grepCorroborated = grepTopDistinctTerms(grepSeeds) >= Math.min(2, grepTermsQueried);
+      const vectorDiverges = seedResults.length > 0 &&
+        seedResults.slice(0, 3).every((s) => !ftsTopIds.has(s.node.id));
+
+      if ((grepDiverges && grepCorroborated) || vectorDiverges) {
+        const reserved = altChannelWinners();
+        if (reserved.length > 0) {
+          const keep = Math.max(0, opts.searchLimit - reserved.length);
+          filteredResults = [...filteredResults.slice(0, keep), ...reserved];
+        }
+      }
     }
 
     // Confidence signal for the honest-handoff footer (consumed in buildContext).
@@ -994,6 +1156,19 @@ export class ContextBuilder {
         return false;
       });
       if (!anyStrong) confidence = 'low';
+    }
+
+    // Per-node retrieval channels for the returned subgraph (atlas-extension-
+    // plan note #4). Populated ONLY for the entry-point set — nodes pulled in
+    // by traversal below carry no seed-channel signal (they got there via graph
+    // structure, not a seed match), and the MCP formatter tags them `graph` at
+    // display time. Empty when no result carried a channel (pre-migration path
+    // or tests that supply raw seeds without tags).
+    const nodeChannels = new Map<string, SearchChannel[]>();
+    for (const result of filteredResults) {
+      if (result.channels && result.channels.length > 0) {
+        nodeChannels.set(result.node.id, [...result.channels]);
+      }
     }
 
     // Add entry points to subgraph
@@ -1203,7 +1378,7 @@ export class ContextBuilder {
       }
     }
 
-    return { nodes: finalNodes, edges: finalEdges, roots, confidence };
+    return { nodes: finalNodes, edges: finalEdges, roots, confidence, nodeChannels };
   }
 
   /**
