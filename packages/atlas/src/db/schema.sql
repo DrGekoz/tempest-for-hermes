@@ -1,5 +1,5 @@
 -- Atlas SQLite Schema
--- Version 1
+-- Version 9
 
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_versions (
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS schema_versions (
 
 -- Insert initial version
 INSERT INTO schema_versions (version, applied_at, description)
-VALUES (1, strftime('%s', 'now') * 1000, 'Initial schema');
+VALUES (9, strftime('%s', 'now') * 1000, 'Initial schema (bundled current)');
 
 -- =============================================================================
 -- Core Tables
@@ -175,3 +175,18 @@ CREATE TABLE IF NOT EXISTS project_metadata (
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Assets: human-attached knowledge (markdown, notes, docs) that live in the
+-- graph alongside code. Stored as rows in `nodes` with kind='asset' (reusing
+-- FTS, edges FK, embedding sync) plus this companion table for asset-only
+-- extras. Link an asset to a code symbol with a `describes` edge.
+-- ponytail: no `asset_chunks` yet — long docs are truncated at embed time;
+-- add chunking when recall on a long asset actually regresses.
+CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    extracted_text TEXT,
+    source_path TEXT NOT NULL,
+    FOREIGN KEY (id) REFERENCES nodes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_assets_source_path ON assets(source_path);

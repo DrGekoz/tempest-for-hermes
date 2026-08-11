@@ -45,7 +45,9 @@ import {
 } from './resolution';
 import { GraphTraverser, GraphQueryManager } from './graph';
 import { ContextBuilder, createContextBuilder } from './context';
-import { syncEmbeddings, semanticDisabled } from './embedding';
+import { syncEmbeddings, semanticDisabled, computeVectorSeeds } from './embedding';
+import * as assetsApi from './assets';
+import type { Asset } from './types';
 import { Mutex, FileLock } from './utils';
 import { FileWatcher, WatchOptions, PendingFile, LockUnavailableError } from './sync';
 import { EXTRACTION_VERSION } from './extraction/extraction-version';
@@ -1234,6 +1236,75 @@ export class Atlas {
     options?: BuildContextOptions
   ): Promise<TaskContext | string> {
     return this.contextBuilder.buildContext(input, options);
+  }
+
+  // ===========================================================================
+  // Assets (atlas-extension-plan Rung 3)
+  //
+  // Human-attached knowledge lives in the graph as `kind: 'asset'` nodes with
+  // a companion `assets` row. These methods are the write path — they are
+  // deliberately NOT exposed over MCP (agents read but never write); Tempest
+  // wires them to a UI/CLI. Reads are exposed via `atlas_assets`,
+  // `atlas_asset_content`, and `atlas_semantic_search`.
+  // ===========================================================================
+
+  /**
+   * Attach a file as an asset. Idempotent — call again after the file changes
+   * to re-read its text and refresh the embed queue.
+   * @param sourcePath  absolute or project-root-relative path
+   * @param opts.name   optional display name (defaults to basename)
+   */
+  addAsset(sourcePath: string, opts?: { name?: string }): Asset {
+    const asset = assetsApi.addAsset(this.queries, this.projectRoot, sourcePath, opts);
+    // Kick embedding just like a sync would — asset text feeds the same channel.
+    this.scheduleEmbedding();
+    return asset;
+  }
+
+  /** Remove an asset entirely (edges cascade). Returns true if it existed. */
+  removeAsset(id: string): boolean {
+    return assetsApi.removeAsset(this.queries, id);
+  }
+
+  /** Link an asset to a code symbol via a `describes` edge. */
+  linkAsset(assetId: string, symbolId: string): void {
+    assetsApi.linkAsset(this.queries, assetId, symbolId);
+  }
+
+  /** Remove a `describes` edge. Returns true if the edge existed. */
+  unlinkAsset(assetId: string, symbolId: string): boolean {
+    return assetsApi.unlinkAsset(this.queries, assetId, symbolId);
+  }
+
+  /** List assets, optionally filtered by content-type prefix or linked symbol. */
+  listAssets(opts?: assetsApi.ListAssetsOptions): Asset[] {
+    return assetsApi.listAssets(this.queries, opts);
+  }
+
+  /** Full asset (including extracted text) by id. Null if missing. */
+  getAsset(id: string): Asset | null {
+    return assetsApi.getAssetContent(this.queries, id);
+  }
+
+  /** Symbol ids an asset is attached to. */
+  getAssetLinks(id: string): string[] {
+    return assetsApi.getAssetLinks(this.queries, id);
+  }
+
+  /** Deterministic asset id for a given source path (mirrors `addAsset`'s id). */
+  resolveAssetIdByPath(sourcePath: string): string {
+    return assetsApi.resolveAssetIdByPath(this.queries, this.projectRoot, sourcePath);
+  }
+
+  /**
+   * Top-K semantically nearest nodes across code + assets (Rung 3). Runs the
+   * shared vector channel used by `findRelevantContext`, without the graph
+   * traversal, so callers get ranked seed hits directly. Returns [] when
+   * no embedding model is available (FTS-only mode).
+   */
+  async semanticSearch(query: string, k: number = 10): Promise<Array<{ node: Node; score: number }>> {
+    const results = await computeVectorSeeds(this.queries, query, k);
+    return results.map((r) => ({ node: r.node, score: r.score }));
   }
 
   // ===========================================================================

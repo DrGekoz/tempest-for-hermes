@@ -669,6 +669,62 @@ export const tools: ToolDefinition[] = [
     annotations: READ_ONLY_ANNOTATIONS,
   },
   {
+    name: 'atlas_assets',
+    description: "List human-attached knowledge (markdown notes, docs) in the graph. Assets are files a developer explicitly attached to the codebase via addAsset — treat their presence as intentional context, not a scan of the disk. Filter by contentType prefix (e.g. 'text/') or linkedTo a symbol id to see notes attached to a specific piece of code.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        contentType: {
+          type: 'string',
+          description: "MIME prefix filter (e.g. 'text/markdown', 'text/'). Omit to list all.",
+        },
+        linkedTo: {
+          type: 'string',
+          description: 'Symbol node id — return only assets attached to that symbol via a `describes` edge.',
+        },
+        projectPath: projectPathProperty,
+      },
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
+    name: 'atlas_asset_content',
+    description: 'Return the extracted text of an asset by id. Use this after atlas_assets picks the right one. Content is already capped at attach time — no pagination.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Asset id (from atlas_assets).',
+        },
+        projectPath: projectPathProperty,
+      },
+      required: ['id'],
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
+    name: 'atlas_semantic_search',
+    description: 'Pure vector-similarity search across code symbols AND attached assets. Skips the graph traversal — use when you want ranked candidates directly (e.g. "find notes and code about auth session expiry"). Requires the embedding model; returns an informational message when semantic search is off.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Natural-language query.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max results (default: 10, max: 50).',
+          default: 10,
+        },
+        projectPath: projectPathProperty,
+      },
+      required: ['query'],
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
     name: 'atlas_status',
     description: 'Index health check (files / nodes / edges). Skip unless debugging.',
     inputSchema: {
@@ -1448,6 +1504,9 @@ export class ToolHandler {
       case 'atlas_explore': return await this.handleExplore(args);
       case 'atlas_node': return await this.handleNode(args);
       case 'atlas_files': return await this.handleFiles(args);
+      case 'atlas_assets': return await this.handleAssets(args);
+      case 'atlas_asset_content': return await this.handleAssetContent(args);
+      case 'atlas_semantic_search': return await this.handleSemanticSearch(args);
       default: return this.errorResult(`Unknown tool: ${toolName}`);
     }
   }
@@ -1488,6 +1547,78 @@ export class ToolHandler {
 
     const formatted = this.formatSearchResults(ranked);
     return this.textResult(this.truncateOutput(formatted));
+  }
+
+  /**
+   * Handle atlas_assets — list human-attached assets.
+   */
+  private async handleAssets(args: Record<string, unknown>): Promise<ToolResult> {
+    const cg = this.getAtlas(args.projectPath as string | undefined);
+    const contentType = typeof args.contentType === 'string' ? args.contentType : undefined;
+    const linkedTo = typeof args.linkedTo === 'string' ? args.linkedTo : undefined;
+
+    const assets = cg.listAssets({ contentType, linkedTo });
+    if (assets.length === 0) {
+      const filter = linkedTo ? ` linked to ${linkedTo}` : contentType ? ` of type "${contentType}"` : '';
+      return this.textResult(`No assets found${filter}. Attach one via the Atlas.addAsset() API.`);
+    }
+
+    const lines = [`${assets.length} asset${assets.length === 1 ? '' : 's'}:`, ''];
+    for (const a of assets) {
+      const links = cg.getAssetLinks(a.id);
+      const attached = links.length > 0 ? ` — attached to ${links.length} symbol${links.length === 1 ? '' : 's'}` : '';
+      lines.push(`- **${a.name}** (${a.contentType})${attached}`);
+      lines.push(`  path: ${a.sourcePath}`);
+      lines.push(`  id: \`${a.id}\``);
+    }
+    return this.textResult(this.truncateOutput(lines.join('\n')));
+  }
+
+  /**
+   * Handle atlas_asset_content — return the extracted text of one asset.
+   */
+  private async handleAssetContent(args: Record<string, unknown>): Promise<ToolResult> {
+    const id = this.validateString(args.id, 'id');
+    if (typeof id !== 'string') return id;
+
+    const cg = this.getAtlas(args.projectPath as string | undefined);
+    const asset = cg.getAsset(id);
+    if (!asset) {
+      return this.textResult(`Asset not found: ${id}`);
+    }
+    if (asset.extractedText == null) {
+      return this.textResult(`Asset "${asset.name}" (${asset.contentType}) has no extracted text (binary or unsupported type).\nPath: ${asset.sourcePath}`);
+    }
+    const header = `# ${asset.name}\n_${asset.contentType} — ${asset.sourcePath}_\n\n`;
+    return this.textResult(this.truncateOutput(header + asset.extractedText));
+  }
+
+  /**
+   * Handle atlas_semantic_search — vector similarity across code + assets.
+   */
+  private async handleSemanticSearch(args: Record<string, unknown>): Promise<ToolResult> {
+    const query = this.validateString(args.query, 'query');
+    if (typeof query !== 'string') return query;
+
+    const cg = this.getAtlas(args.projectPath as string | undefined);
+    const rawLimit = Number(args.limit) || 10;
+    const limit = clamp(rawLimit, 1, 50);
+
+    const results = await cg.semanticSearch(query, limit);
+    if (results.length === 0) {
+      return this.textResult(
+        `No semantic results for "${query}". Semantic search requires the Atlas embedding model — ` +
+          `if you disabled it, re-enable in settings, or fall back to atlas_search (keyword) / atlas_explore (hybrid).`
+      );
+    }
+
+    const lines = [`${results.length} semantic hit${results.length === 1 ? '' : 's'} for "${query}":`, ''];
+    for (const { node, score } of results) {
+      const badge = node.kind === 'asset' ? '📄 asset' : node.kind;
+      const loc = node.startLine ? `:${node.startLine}` : '';
+      lines.push(`- [${badge}] **${node.name}** — ${node.filePath}${loc}  _(score ${score.toFixed(3)})_`);
+    }
+    return this.textResult(this.truncateOutput(lines.join('\n')));
   }
 
   /**

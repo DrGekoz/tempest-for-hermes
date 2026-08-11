@@ -9,7 +9,7 @@ import { SqliteDatabase } from './sqlite-adapter';
 /**
  * Current schema version
  */
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 /**
  * Migration definition
@@ -127,6 +127,23 @@ const migrations: Migration[] = [
     up: (db) => {
       db.exec(`
         ALTER TABLE edges ADD COLUMN confidence TEXT DEFAULT NULL;
+      `);
+    },
+  },
+  {
+    version: 9,
+    description:
+      "Add assets companion table for human-attached knowledge (atlas-extension-plan Rung 3). Assets live as rows in `nodes` with kind='asset' to reuse FTS, edges FK, and the embedding sync pipeline; this table holds asset-only extras (content_type, extracted_text). ponytail: no asset_chunks table yet — long docs are truncated at embed time; add chunking when a real long asset regresses recall.",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS assets (
+          id TEXT PRIMARY KEY,
+          content_type TEXT NOT NULL,
+          extracted_text TEXT,
+          source_path TEXT NOT NULL,
+          FOREIGN KEY (id) REFERENCES nodes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_assets_source_path ON assets(source_path);
       `);
     },
   },
