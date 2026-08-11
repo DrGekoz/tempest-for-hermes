@@ -1,12 +1,10 @@
-![Tempest — parallel AI agent sessions](media/wordmark.png)
+![Tempest — parallel AI agent sessions](media/banner.png)
 
-<h2 align="center">
-  <strong>Run Claude Code, Codex, Gemini and any other CLI Agent with 64% fewer tokens</strong>
-</h2>
+<div align="center">
 
-<p align="center">
-  Tempest indexes your codebase once and gives every agent a shared knowledge base, so they spend less context understanding your code and more tokens actually building.
-</p>
+[Download](https://tempestai.dev/download) · [Docs](https://tempestai.dev/docs) · [Releases](https://github.com/tempestai-dev/tempest/releases/latest) · [Discord](https://discord.gg/bRQhAKKVa8) · [Contributing](CONTRIBUTING.md)
+
+</div>
 
 <p align="center">
   <a href="https://github.com/tempestai-dev/tempest/releases">
@@ -27,6 +25,18 @@
   <a href="https://github.com/tempestai-dev/tempest/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/tempestai-dev/tempest/ci.yml?branch=main&label=build" alt="CI" />
   </a>
+  <a href="https://discord.gg/bRQhAKKVa8">
+    <img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord" />
+  </a>
+</p>
+
+
+<h2 align="center">
+  <strong>Run Claude Code, Codex, Gemini and any other CLI Agent with 64% fewer tokens</strong>
+</h2>
+
+<p align="center">
+  Tempest indexes your codebase once and gives every agent a shared knowledge base, so they spend less context understanding your code and more tokens actually building.
 </p>
 
 ![Tempest — parallel AI agent sessions](media/tempest.png)
