@@ -2035,4 +2035,69 @@ export class QueryBuilder {
       .run(assetId, symbolId);
     return info.changes > 0;
   }
+
+  // ===========================================================================
+  // Asset chunks (atlas-extension-plan Rung 3). Long assets split into short
+  // passages that each get their own embedding — a query hits the passage that
+  // matches instead of the doc's blurred mean. Chunk retrieval rolls up to the
+  // parent asset id at query time.
+  // ===========================================================================
+
+  /**
+   * Replace the chunk set for an asset. Called from `addAsset` on every attach:
+   * a re-add refreshes chunks in one shot, no diff logic. Empty `chunks` clears
+   * (the asset is short enough to embed as a single node).
+   */
+  replaceAssetChunks(assetId: string, chunks: Array<{ id: string; ord: number; text: string }>): void {
+    this.db.prepare('DELETE FROM asset_chunks WHERE asset_id = ?').run(assetId);
+    if (chunks.length === 0) return;
+    const insert = this.db.prepare(
+      'INSERT INTO asset_chunks (id, asset_id, ord, text) VALUES (?, ?, ?, ?)'
+    );
+    for (const c of chunks) insert.run(c.id, assetId, c.ord, c.text);
+  }
+
+  /** Every stored chunk embedding as {id, asset_id, embedding blob}. */
+  *iterateChunkEmbeddings(): IterableIterator<{ id: string; asset_id: string; embedding: Uint8Array }> {
+    const stmt = this.db.prepare(
+      'SELECT id, asset_id, embedding FROM asset_chunks WHERE embedding IS NOT NULL'
+    );
+    for (const row of stmt.iterate()) {
+      yield row as { id: string; asset_id: string; embedding: Uint8Array };
+    }
+  }
+
+  /** Chunks still needing an embedding for `model` — same shape as node work-set. */
+  getChunksNeedingEmbedding(
+    model: string,
+    limit: number
+  ): Array<{ id: string; text: string }> {
+    return this.db
+      .prepare(
+        `SELECT id, text FROM asset_chunks
+         WHERE embedding IS NULL OR embedding_model IS NOT ?
+         LIMIT ?`
+      )
+      .all(model, limit) as Array<{ id: string; text: string }>;
+  }
+
+  countChunksNeedingEmbedding(model: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM asset_chunks
+         WHERE embedding IS NULL OR embedding_model IS NOT ?`
+      )
+      .get(model) as { n: number };
+    return row.n;
+  }
+
+  upsertChunkEmbedding(id: string, model: string, textHash: string, vec: Uint8Array, updatedAt: number): void {
+    this.db
+      .prepare(
+        `UPDATE asset_chunks
+         SET embedding = ?, embedding_model = ?, embedding_text_hash = ?, embedding_updated_at = ?
+         WHERE id = ?`
+      )
+      .run(vec, model, textHash, updatedAt, id);
+  }
 }

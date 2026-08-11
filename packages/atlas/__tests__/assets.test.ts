@@ -48,11 +48,11 @@ describe('assets — Rung 3 lifecycle', () => {
     rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  it('adds a markdown asset, links it, lists it, then unlinks and removes it', () => {
+  it('adds a markdown asset, links it, lists it, then unlinks and removes it', async () => {
     const notePath = join(projectRoot, 'docs', 'auth-notes.md');
     writeFileSync(notePath, '# Auth Notes\n\nRotate the JWT secret on incident.', 'utf-8');
 
-    const asset = atlas.addAsset(notePath);
+    const asset = await atlas.addAsset(notePath);
     expect(asset.name).toBe('auth-notes.md');
     expect(asset.sourcePath).toBe('docs/auth-notes.md');
     expect(asset.contentType).toBe('text/markdown');
@@ -91,22 +91,22 @@ describe('assets — Rung 3 lifecycle', () => {
     expect(atlas.listAssets()).toEqual([]);
   });
 
-  it('re-adding an existing asset refreshes its extracted text without duplicating', () => {
+  it('re-adding an existing asset refreshes its extracted text without duplicating', async () => {
     const p = join(projectRoot, 'docs', 'plan.md');
     writeFileSync(p, 'v1 content', 'utf-8');
-    const first = atlas.addAsset(p);
+    const first = await atlas.addAsset(p);
     writeFileSync(p, 'v2 content', 'utf-8');
-    const second = atlas.addAsset(p);
+    const second = await atlas.addAsset(p);
 
     expect(second.id).toBe(first.id);
     expect(atlas.listAssets()).toHaveLength(1);
     expect(atlas.getAsset(second.id)?.extractedText).toBe('v2 content');
   });
 
-  it('records a binary/unsupported file as an asset with null extracted text', () => {
+  it('records a binary/unsupported file as an asset with null extracted text', async () => {
     const p = join(projectRoot, 'docs', 'diagram.png');
     writeFileSync(p, Buffer.from([0x89, 0x50, 0x4e, 0x47])); // PNG magic bytes
-    const asset = atlas.addAsset(p);
+    const asset = await atlas.addAsset(p);
 
     expect(asset.contentType).toBe('application/octet-stream');
     expect(asset.extractedText).toBeNull();
@@ -114,10 +114,27 @@ describe('assets — Rung 3 lifecycle', () => {
     expect(atlas.listAssets().map((a) => a.id)).toContain(asset.id);
   });
 
-  it('throws when linking to a missing symbol so callers see an actionable error', () => {
+  it('throws when linking to a missing symbol so callers see an actionable error', async () => {
     const p = join(projectRoot, 'docs', 'x.md');
     writeFileSync(p, 'x', 'utf-8');
-    const asset = atlas.addAsset(p);
+    const asset = await atlas.addAsset(p);
     expect(() => atlas.linkAsset(asset.id, 'symbol:does-not-exist')).toThrow(/Symbol not found/);
+  });
+
+  it('splits long docs into chunks and clears them on re-add of a short version', async () => {
+    const p = join(projectRoot, 'docs', 'long.md');
+    // 5000 chars > CHUNK_SIZE (1500) → should produce multiple chunks with overlap.
+    writeFileSync(p, 'x'.repeat(5000), 'utf-8');
+    const asset = await atlas.addAsset(p);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const queries = (atlas as any).queries;
+    const countLong = queries.db.prepare('SELECT COUNT(*) AS n FROM asset_chunks WHERE asset_id = ?').get(asset.id) as { n: number };
+    expect(countLong.n).toBeGreaterThan(1);
+
+    // Re-add with a short body → chunk set gets cleared (empty chunks table for this asset).
+    writeFileSync(p, 'short', 'utf-8');
+    await atlas.addAsset(p);
+    const countShort = queries.db.prepare('SELECT COUNT(*) AS n FROM asset_chunks WHERE asset_id = ?').get(asset.id) as { n: number };
+    expect(countShort.n).toBe(0);
   });
 });

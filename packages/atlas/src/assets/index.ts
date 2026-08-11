@@ -2,16 +2,19 @@
  * Asset nodes — human-attached knowledge (atlas-extension-plan Rung 3).
  *
  * An asset is a file the developer attaches to the graph (a markdown note, a
- * design doc, an ADR). It lives as a `nodes` row with `kind: 'asset'` — which
- * gets it FTS indexing, embedding sync, and edges FK "for free" — plus a row
- * in the `assets` companion table for asset-only fields (content_type,
- * extracted_text, source_path). Attach an asset to a code symbol with
- * {@link linkAsset}; the link is a normal `describes` edge, so it flows
+ * design doc, an ADR, a PDF). It lives as a `nodes` row with `kind: 'asset'` —
+ * which gets it FTS indexing, embedding sync, and edges FK "for free" — plus a
+ * row in the `assets` companion table for asset-only fields (content_type,
+ * extracted_text, source_path). Long docs are additionally split into
+ * `asset_chunks` (one embedding per passage) so a query hits the relevant
+ * section instead of the doc's blurred mean. Attach an asset to a code symbol
+ * with {@link linkAsset}; the link is a normal `describes` edge, so it flows
  * through the existing traversal.
  *
- * ponytail: no chunking, no PDF, no image embeddings. Long docs are truncated
- * at the embed window; add {@link ../db/schema.sql}'s `asset_chunks` table
- * when a real long asset regresses recall.
+ * PDF text is extracted via `pdf-parse` when the optionalDependency is
+ * installed; without it, PDFs are still tracked (as an asset row) but with
+ * `extractedText = null`. Images stay null-embedding by design (multimodal is
+ * a future step, per the plan).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -38,6 +41,7 @@ const TEXT_EXTENSIONS: Record<string, string> = {
   '.adoc': 'text/asciidoc',
   '.org': 'text/org',
   '.log': 'text/plain',
+  '.pdf': 'application/pdf',
 };
 
 /** Max characters kept in `docstring` — feeds FTS + the embed-text. MiniLM's
@@ -47,6 +51,33 @@ const DOCSTRING_MAX_CHARS = 4000;
 /** Max characters kept in `extracted_text` — the field `atlas_asset_content`
  * returns. Bounded so a stray huge log file can't blow up query results. */
 const EXTRACTED_TEXT_MAX_CHARS = 200_000;
+
+/** Chunk long docs into ~1500-char passages. ~375 tokens at 4 chars/token —
+ * safely under MiniLM's 256-token *effective* window after truncation, and each
+ * passage gets its own vector so a query hits the section instead of the doc's
+ * blurred mean. Only triggers when the extracted text exceeds this: short docs
+ * still ride the single-node embedding path.
+ * ponytail: hard slices at char boundaries — no paragraph-aware splitter yet;
+ * upgrade when a real long doc's chunk boundaries visibly split a section. */
+const CHUNK_SIZE = 1500;
+
+/**
+ * Chunk `text` into fixed-size slices with a small overlap so a query term
+ * straddling a boundary still hits at least one chunk. Empty input → [].
+ */
+function chunkText(text: string): string[] {
+  if (!text) return [];
+  if (text.length <= CHUNK_SIZE) return [];
+  const overlap = 100;
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    chunks.push(text.slice(i, i + CHUNK_SIZE));
+    if (i + CHUNK_SIZE >= text.length) break;
+    i += CHUNK_SIZE - overlap;
+  }
+  return chunks;
+}
 
 function assetId(sourcePath: string): string {
   return 'asset:' + createHash('sha1').update(sourcePath).digest('hex');
@@ -58,20 +89,34 @@ function detectContentType(absPath: string): string {
 }
 
 /**
- * Read + text-extract the file, returning `null` for unsupported types.
- * ponytail: PDF/image handled later — wire `pdf-parse` in when the first PDF
- * asset actually gets attached, not before.
+ * Read + text-extract the file, returning `null` for unsupported types or
+ * failures. PDF handled via `pdf-parse` (optionalDependency) — lazy require so
+ * a missing install just downgrades PDFs to null text, everything else keeps
+ * working. Images stay null-embedding per the plan (multimodal is out of scope).
  */
-function extractText(absPath: string, contentType: string): string | null {
-  if (!contentType.startsWith('text/') && contentType !== 'application/json') {
-    return null;
-  }
+async function extractText(absPath: string, contentType: string): Promise<string | null> {
   try {
-    const raw = fs.readFileSync(absPath, 'utf-8');
-    return raw.length > EXTRACTED_TEXT_MAX_CHARS ? raw.slice(0, EXTRACTED_TEXT_MAX_CHARS) : raw;
+    if (contentType.startsWith('text/') || contentType === 'application/json') {
+      const raw = fs.readFileSync(absPath, 'utf-8');
+      return raw.length > EXTRACTED_TEXT_MAX_CHARS ? raw.slice(0, EXTRACTED_TEXT_MAX_CHARS) : raw;
+    }
+    if (contentType === 'application/pdf') {
+      let pdfParse: ((buf: Buffer) => Promise<{ text: string }>) | null = null;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
+      } catch {
+        return null; // optionalDependency not installed → treat like binary
+      }
+      const buf = fs.readFileSync(absPath);
+      const out = await pdfParse(buf);
+      const text = out.text ?? '';
+      return text.length > EXTRACTED_TEXT_MAX_CHARS ? text.slice(0, EXTRACTED_TEXT_MAX_CHARS) : text;
+    }
   } catch {
-    return null;
+    // read/parse failure — treat as binary, still tracked
   }
+  return null;
 }
 
 function relPath(projectRoot: string, absPath: string): string {
@@ -98,12 +143,12 @@ function toAsset(
  * the file changes to re-read and re-hash; the id is stable across re-adds.
  * Throws only if the file doesn't exist.
  */
-export function addAsset(
+export async function addAsset(
   queries: QueryBuilder,
   projectRoot: string,
   sourcePathInput: string,
   opts: { name?: string } = {}
-): Asset {
+): Promise<Asset> {
   const absPath = path.isAbsolute(sourcePathInput)
     ? sourcePathInput
     : path.resolve(projectRoot, sourcePathInput);
@@ -113,7 +158,7 @@ export function addAsset(
   const sourcePath = relPath(projectRoot, absPath);
   const id = assetId(sourcePath);
   const contentType = detectContentType(absPath);
-  const extractedText = extractText(absPath, contentType);
+  const extractedText = await extractText(absPath, contentType);
   const name = opts.name ?? path.basename(sourcePath);
   const now = Date.now();
 
@@ -142,6 +187,17 @@ export function addAsset(
   };
   queries.insertNode(node); // INSERT OR REPLACE — safe re-add
   queries.upsertAssetRow(id, contentType, sourcePath, extractedText);
+
+  // Chunk long documents so each passage gets its own vector. Short docs get
+  // an empty chunk set (single-node embedding is fine). Idempotent — the
+  // queries.replaceAssetChunks call clears the old set before inserting.
+  const pieces = extractedText ? chunkText(extractedText) : [];
+  const chunks = pieces.map((text, ord) => ({
+    id: `chunk:${id.slice('asset:'.length)}:${ord}`,
+    ord,
+    text,
+  }));
+  queries.replaceAssetChunks(id, chunks);
 
   return {
     id,

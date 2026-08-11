@@ -9,7 +9,7 @@ import { SqliteDatabase } from './sqlite-adapter';
 /**
  * Current schema version
  */
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 /**
  * Migration definition
@@ -144,6 +144,27 @@ const migrations: Migration[] = [
           FOREIGN KEY (id) REFERENCES nodes(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_assets_source_path ON assets(source_path);
+      `);
+    },
+  },
+  {
+    version: 10,
+    description:
+      "Add asset_chunks — long documents split into ~1500-char chunks, each embedded separately so a query hits the relevant passage instead of the whole doc's mean vector. Chunk hits roll up to their parent asset at retrieval time. Cascades from the asset's node row via FK.",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS asset_chunks (
+          id TEXT PRIMARY KEY,
+          asset_id TEXT NOT NULL,
+          ord INTEGER NOT NULL,
+          text TEXT NOT NULL,
+          embedding BLOB,
+          embedding_model TEXT,
+          embedding_text_hash TEXT,
+          embedding_updated_at INTEGER,
+          FOREIGN KEY (asset_id) REFERENCES nodes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_asset_chunks_asset ON asset_chunks(asset_id);
       `);
     },
   },

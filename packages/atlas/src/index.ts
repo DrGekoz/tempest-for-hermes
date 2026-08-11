@@ -1254,9 +1254,10 @@ export class Atlas {
    * @param sourcePath  absolute or project-root-relative path
    * @param opts.name   optional display name (defaults to basename)
    */
-  addAsset(sourcePath: string, opts?: { name?: string }): Asset {
-    const asset = assetsApi.addAsset(this.queries, this.projectRoot, sourcePath, opts);
-    // Kick embedding just like a sync would — asset text feeds the same channel.
+  async addAsset(sourcePath: string, opts?: { name?: string }): Promise<Asset> {
+    const asset = await assetsApi.addAsset(this.queries, this.projectRoot, sourcePath, opts);
+    // Kick embedding just like a sync would — asset text (and any chunks split
+    // from long docs) feeds the same channel.
     this.scheduleEmbedding();
     return asset;
   }
