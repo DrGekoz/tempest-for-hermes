@@ -607,7 +607,12 @@ export class ContextBuilder {
           : ['file', 'module', 'class', 'struct', 'interface', 'trait', 'protocol',
              'function', 'method', 'property', 'field', 'variable', 'constant',
              'enum', 'enum_member', 'type_alias', 'namespace', 'export',
-             'route', 'component'] as NodeKind[];
+             'route', 'component',
+             // Rung 3: human-attached assets participate in the FTS seed channel
+             // alongside code, so `atlas_explore` surfaces a linked design doc when
+             // its text hits the query terms. Vector + grep channels already include
+             // assets (EMBEDDABLE_KINDS, no kind filter respectively).
+             'asset'] as NodeKind[];
         for (const term of searchTerms) {
           const termResults = this.queries.searchNodes(term, {
             limit: opts.searchLimit * 2,

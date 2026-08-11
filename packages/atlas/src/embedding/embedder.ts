@@ -22,6 +22,10 @@ export const EMBEDDING_DIM = 384;
 export const EMBEDDABLE_KINDS = [
   'function', 'method', 'class', 'interface', 'struct', 'enum',
   'type_alias', 'component', 'route',
+  // Rung 3: human-attached knowledge participates in the same hybrid retrieval.
+  // Asset embed-text comes from the truncated extracted text stored in docstring;
+  // syncEmbeddings' generic path handles both without a branch.
+  'asset',
 ] as const;
 
 /** Model-download progress event, as reported by @xenova/transformers. */

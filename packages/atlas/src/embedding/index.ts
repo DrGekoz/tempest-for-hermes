@@ -39,10 +39,25 @@ export async function computeVectorSeeds(
     for (const row of queries.iterateEmbeddings()) {
       scored.push({ id: row.id, score: cosine(qv, decodeVec(row.embedding)) });
     }
+    // Chunk hits roll up to their parent asset id (best chunk wins). A long doc
+    // otherwise disappears from vector because its mean vector blurs; each
+    // chunk's tighter vector lets the query hit the passage that matters.
+    const bestPerAsset = new Map<string, number>();
+    for (const row of queries.iterateChunkEmbeddings()) {
+      const s = cosine(qv, decodeVec(row.embedding));
+      const prev = bestPerAsset.get(row.asset_id);
+      if (prev === undefined || s > prev) bestPerAsset.set(row.asset_id, s);
+    }
+    for (const [assetId, score] of bestPerAsset) {
+      scored.push({ id: assetId, score });
+    }
     scored.sort((a, b) => b.score - a.score);
 
     const seeds: SearchResult[] = [];
+    const seen = new Set<string>();
     for (const s of scored) {
+      if (seen.has(s.id)) continue; // an asset can appear twice (own vector + a chunk); dedup
+      seen.add(s.id);
       const node = queries.getNodeById(s.id);
       if (node) seeds.push({ node, score: s.score });
       if (seeds.length >= k) break;
@@ -82,7 +97,9 @@ export async function syncEmbeddings(
 
   inFlight.add(queries);
   try {
-    const total = queries.countNodesNeedingEmbedding(EMBEDDING_MODEL, EMBEDDABLE_KINDS);
+    const nodeTotal = queries.countNodesNeedingEmbedding(EMBEDDING_MODEL, EMBEDDABLE_KINDS);
+    const chunkTotal = queries.countChunksNeedingEmbedding(EMBEDDING_MODEL);
+    const total = nodeTotal + chunkTotal;
     if (total === 0) return;
 
     let done = 0;
@@ -107,6 +124,28 @@ export async function syncEmbeddings(
       done += rows.length;
       options.onProgress?.(done, total);
       await new Promise((r) => setTimeout(r, 50)); // idle-biased: hand the CPU back
+    }
+
+    // Same drain shape for asset chunks — each chunk's raw text IS its embed-
+    // text (no name/signature scaffolding to prepend). Chunks and nodes share
+    // one model, so the loops don't need to interleave.
+    for (;;) {
+      if (options.signal?.aborted) return;
+      const rows = queries.getChunksNeedingEmbedding(EMBEDDING_MODEL, batchSize);
+      if (rows.length === 0) break;
+
+      const texts = rows.map((r) => r.text);
+      const vecs = await embed(texts);
+      const now = Date.now();
+      rows.forEach((row, i) => {
+        const vec = vecs[i];
+        const text = texts[i];
+        if (!vec || text === undefined) return;
+        queries.upsertChunkEmbedding(row.id, EMBEDDING_MODEL, embedTextHash(text), encodeVec(vec), now);
+      });
+      done += rows.length;
+      options.onProgress?.(done, total);
+      await new Promise((r) => setTimeout(r, 50));
     }
   } catch {
     // Model unavailable or transient failure — leave the remaining work set for

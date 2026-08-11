@@ -34,6 +34,14 @@ async function main(): Promise<void> {
   let semantic = false;
   let modelCache: string | undefined;
   let downloadModel = false;
+  // Asset write path (atlas-extension-plan Rung 3). Deliberately NOT exposed
+  // over MCP — agents read assets, humans/CLI write them. One flag per verb,
+  // consuming the next positional arg(s) so a Tauri host / shell script can
+  // shell out with the same syntax as `--init`.
+  let assetVerb: 'add' | 'remove' | 'link' | 'unlink' | 'list' | null = null;
+  let assetArg1: string | undefined;
+  let assetArg2: string | undefined;
+  let assetLinkedTo: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -55,6 +63,20 @@ async function main(): Promise<void> {
         modelCache = next;
         i++;
       }
+    } else if (arg === '--asset-add' || arg === '--asset-remove') {
+      assetVerb = arg === '--asset-add' ? 'add' : 'remove';
+      const next = args[i + 1];
+      if (next !== undefined) { assetArg1 = next; i++; }
+    } else if (arg === '--asset-link' || arg === '--asset-unlink') {
+      assetVerb = arg === '--asset-link' ? 'link' : 'unlink';
+      const a = args[i + 1];
+      const b = args[i + 2];
+      if (a !== undefined && b !== undefined) { assetArg1 = a; assetArg2 = b; i += 2; }
+    } else if (arg === '--asset-list') {
+      assetVerb = 'list';
+    } else if (arg === '--asset-linked-to') {
+      const next = args[i + 1];
+      if (next !== undefined) { assetLinkedTo = next; i++; }
     }
     // Ignore 'serve', '--mcp', and other flags the daemon spawner may pass
     // when re-invoking this script with ATLAS_DAEMON_INTERNAL=1.
@@ -86,6 +108,61 @@ async function main(): Promise<void> {
   }
 
   const resolvedPath = path.resolve(projectPath);
+
+  // Asset write-path mode. Opens the project, runs the verb, prints the
+  // result JSON on stdout, and exits. Never starts an MCP server.
+  if (assetVerb) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('../index') as typeof import('../index');
+    if (!mod.isInitialized(resolvedPath)) {
+      process.stderr.write(`[Atlas] project not initialized at ${resolvedPath} — run --init first\n`);
+      process.exitCode = 1;
+      return;
+    }
+    let instance: import('../index').Atlas | undefined;
+    try {
+      instance = await mod.default.open(resolvedPath);
+      let output: unknown;
+      switch (assetVerb) {
+        case 'add': {
+          if (!assetArg1) throw new Error('--asset-add requires a file path');
+          output = await instance.addAsset(assetArg1);
+          break;
+        }
+        case 'remove': {
+          if (!assetArg1) throw new Error('--asset-remove requires an id or path');
+          const id = assetArg1.startsWith('asset:')
+            ? assetArg1
+            : instance.resolveAssetIdByPath(assetArg1);
+          output = { removed: instance.removeAsset(id), id };
+          break;
+        }
+        case 'link': {
+          if (!assetArg1 || !assetArg2) throw new Error('--asset-link requires <asset-id> <symbol-id>');
+          instance.linkAsset(assetArg1, assetArg2);
+          output = { linked: true, asset: assetArg1, symbol: assetArg2 };
+          break;
+        }
+        case 'unlink': {
+          if (!assetArg1 || !assetArg2) throw new Error('--asset-unlink requires <asset-id> <symbol-id>');
+          output = { unlinked: instance.unlinkAsset(assetArg1, assetArg2), asset: assetArg1, symbol: assetArg2 };
+          break;
+        }
+        case 'list': {
+          output = instance.listAssets(assetLinkedTo ? { linkedTo: assetLinkedTo } : undefined);
+          break;
+        }
+      }
+      process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+      process.exitCode = 0;
+    } catch (err) {
+      process.stderr.write(`[Atlas] asset ${assetVerb} failed: ${err}\n`);
+      process.exitCode = 1;
+    } finally {
+      try { instance?.close(); } catch { /* best-effort */ }
+    }
+    return;
+  }
 
   if (initMode) {
     process.stderr.write(`[Atlas] --init for ${resolvedPath}\n`);

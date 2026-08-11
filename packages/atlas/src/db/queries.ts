@@ -1957,8 +1957,147 @@ export class QueryBuilder {
     this.db.transaction(() => {
       this.db.exec('DELETE FROM unresolved_refs');
       this.db.exec('DELETE FROM edges');
+      this.db.exec('DELETE FROM assets');
       this.db.exec('DELETE FROM nodes');
       this.db.exec('DELETE FROM files');
     })();
+  }
+
+  // ===========================================================================
+  // Assets (atlas-extension-plan Rung 3). Assets live as `nodes` rows with
+  // kind='asset' (reusing FTS/edges/embedding) plus this companion table for
+  // extras. Callers upsert BOTH parts inside `Atlas.addAsset` — the queries
+  // here are the primitives.
+  // ===========================================================================
+
+  upsertAssetRow(id: string, contentType: string, sourcePath: string, extractedText: string | null): void {
+    this.db.prepare(
+      `INSERT INTO assets (id, content_type, source_path, extracted_text)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         content_type = excluded.content_type,
+         source_path  = excluded.source_path,
+         extracted_text = excluded.extracted_text`
+    ).run(id, contentType, sourcePath, extractedText);
+  }
+
+  getAssetRow(id: string): { id: string; content_type: string; source_path: string; extracted_text: string | null } | null {
+    const row = this.db
+      .prepare('SELECT id, content_type, source_path, extracted_text FROM assets WHERE id = ?')
+      .get(id) as { id: string; content_type: string; source_path: string; extracted_text: string | null } | undefined;
+    return row ?? null;
+  }
+
+  /** All asset ids, optionally filtered by content-type prefix (e.g. 'text/'). */
+  listAssetIds(contentTypePrefix?: string): string[] {
+    if (contentTypePrefix) {
+      return (this.db
+        .prepare('SELECT id FROM assets WHERE content_type LIKE ? ORDER BY id')
+        .all(contentTypePrefix + '%') as { id: string }[]).map((r) => r.id);
+    }
+    return (this.db.prepare('SELECT id FROM assets ORDER BY id').all() as { id: string }[]).map((r) => r.id);
+  }
+
+  /** Asset ids that link to `symbolId` via a `describes` edge. */
+  listAssetIdsLinkedTo(symbolId: string): string[] {
+    return (this.db
+      .prepare(
+        `SELECT a.id FROM assets a
+         JOIN edges e ON e.source = a.id
+         WHERE e.target = ? AND e.kind = 'describes'
+         ORDER BY a.id`
+      )
+      .all(symbolId) as { id: string }[]).map((r) => r.id);
+  }
+
+  /**
+   * Symbol ids an asset links to via `describes`. Used to render an asset's
+   * "attached to" list.
+   */
+  listSymbolIdsForAsset(assetId: string): string[] {
+    return (this.db
+      .prepare(
+        `SELECT target AS id FROM edges
+         WHERE source = ? AND kind = 'describes'
+         ORDER BY target`
+      )
+      .all(assetId) as { id: string }[]).map((r) => r.id);
+  }
+
+  /**
+   * Remove a specific describes-edge between an asset and a symbol. Returns
+   * true if a row was deleted. Coordinate-less by design — `describes` edges
+   * carry no line/col, so (source, target, kind) is unique.
+   */
+  deleteDescribesEdge(assetId: string, symbolId: string): boolean {
+    const info = this.db
+      .prepare(`DELETE FROM edges WHERE source = ? AND target = ? AND kind = 'describes'`)
+      .run(assetId, symbolId);
+    return info.changes > 0;
+  }
+
+  // ===========================================================================
+  // Asset chunks (atlas-extension-plan Rung 3). Long assets split into short
+  // passages that each get their own embedding — a query hits the passage that
+  // matches instead of the doc's blurred mean. Chunk retrieval rolls up to the
+  // parent asset id at query time.
+  // ===========================================================================
+
+  /**
+   * Replace the chunk set for an asset. Called from `addAsset` on every attach:
+   * a re-add refreshes chunks in one shot, no diff logic. Empty `chunks` clears
+   * (the asset is short enough to embed as a single node).
+   */
+  replaceAssetChunks(assetId: string, chunks: Array<{ id: string; ord: number; text: string }>): void {
+    this.db.prepare('DELETE FROM asset_chunks WHERE asset_id = ?').run(assetId);
+    if (chunks.length === 0) return;
+    const insert = this.db.prepare(
+      'INSERT INTO asset_chunks (id, asset_id, ord, text) VALUES (?, ?, ?, ?)'
+    );
+    for (const c of chunks) insert.run(c.id, assetId, c.ord, c.text);
+  }
+
+  /** Every stored chunk embedding as {id, asset_id, embedding blob}. */
+  *iterateChunkEmbeddings(): IterableIterator<{ id: string; asset_id: string; embedding: Uint8Array }> {
+    const stmt = this.db.prepare(
+      'SELECT id, asset_id, embedding FROM asset_chunks WHERE embedding IS NOT NULL'
+    );
+    for (const row of stmt.iterate()) {
+      yield row as { id: string; asset_id: string; embedding: Uint8Array };
+    }
+  }
+
+  /** Chunks still needing an embedding for `model` — same shape as node work-set. */
+  getChunksNeedingEmbedding(
+    model: string,
+    limit: number
+  ): Array<{ id: string; text: string }> {
+    return this.db
+      .prepare(
+        `SELECT id, text FROM asset_chunks
+         WHERE embedding IS NULL OR embedding_model IS NOT ?
+         LIMIT ?`
+      )
+      .all(model, limit) as Array<{ id: string; text: string }>;
+  }
+
+  countChunksNeedingEmbedding(model: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM asset_chunks
+         WHERE embedding IS NULL OR embedding_model IS NOT ?`
+      )
+      .get(model) as { n: number };
+    return row.n;
+  }
+
+  upsertChunkEmbedding(id: string, model: string, textHash: string, vec: Uint8Array, updatedAt: number): void {
+    this.db
+      .prepare(
+        `UPDATE asset_chunks
+         SET embedding = ?, embedding_model = ?, embedding_text_hash = ?, embedding_updated_at = ?
+         WHERE id = ?`
+      )
+      .run(vec, model, textHash, updatedAt, id);
   }
 }

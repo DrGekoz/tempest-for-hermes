@@ -38,6 +38,7 @@ export const NODE_KINDS = [
   'export',
   'route',
   'component',
+  'asset',
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];
@@ -57,7 +58,8 @@ export type EdgeKind =
   | 'returns'         // Function returns type
   | 'instantiates'    // Creates instance of class
   | 'overrides'       // Method overrides parent method
-  | 'decorates';      // Decorator applied to symbol
+  | 'decorates'       // Decorator applied to symbol
+  | 'describes';      // Asset node describes a code symbol (atlas-extension-plan Rung 3)
 
 /**
  * Supported programming languages. See NODE_KINDS for why this is a
@@ -99,6 +101,32 @@ export const LANGUAGES = [
 ] as const;
 
 export type Language = (typeof LANGUAGES)[number];
+
+// =============================================================================
+// Assets (atlas-extension-plan Rung 3)
+// =============================================================================
+
+/**
+ * Human-attached knowledge (markdown notes, docs, design snippets) that lives
+ * in the graph next to code. Assets are stored as rows in `nodes` with
+ * `kind: 'asset'` (reusing FTS, edges FK, and the embedding sync pipeline);
+ * the `assets` companion table holds asset-only extras. Link an asset to a
+ * code symbol with a `describes` edge.
+ */
+export interface Asset {
+  /** Node id (stable hash of source path). */
+  id: string;
+  /** Filename or user-provided label. */
+  name: string;
+  /** Path relative to project root. */
+  sourcePath: string;
+  /** MIME-ish type: 'text/markdown', 'text/plain', 'application/json', ... */
+  contentType: string;
+  /** Plain text extracted from the source (null for binary/unsupported types). */
+  extractedText: string | null;
+  /** Unix ms timestamp. */
+  updatedAt: number;
+}
 
 // =============================================================================
 // Core Graph Types
