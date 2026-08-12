@@ -827,7 +827,16 @@ export function getStaticTools(): ToolDefinition[] {
  * status) remain fully functional — handlers stay, the library API and CLI are
  * untouched, and `ATLAS_MCP_TOOLS=explore,node,...` re-enables any of them.
  */
-const DEFAULT_MCP_TOOLS = new Set(['explore']);
+const DEFAULT_MCP_TOOLS = new Set([
+  'explore',
+  // Rung 3 asset tools — new capabilities explore doesn't cover (list
+  // human-attached assets, dump an asset's extracted text, pure vector search
+  // across code + assets). Not narrower slices of explore, so the "presence
+  // steers mis-picks" argument that hides search/callers/callees doesn't apply.
+  'assets',
+  'asset_content',
+  'semantic_search',
+]);
 
 /**
  * Tool handler that executes tools against a Atlas instance

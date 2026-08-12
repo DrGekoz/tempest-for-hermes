@@ -165,7 +165,10 @@ export class QueryPool {
     this.softTimeoutMs = opts.softTimeoutMs ?? resolveBusyTimeoutMs();
     this.maxRetries = opts.maxRetries ?? 1;
     this.createWorker = opts.createWorker ?? (() => new Worker(WORKER_FILE, { workerData: { root: this.root } }));
-    this.spawnOne(); // one eager warm worker, ready for the first call
+    // Proactively warm toward maxSize (rate-limited by MAX_CONCURRENT_SPAWN) so
+    // concurrent connections find READY workers instead of funneling through
+    // one cold-starting worker for its full 30-45s load window.
+    this.warmToTarget();
   }
 
   /** Pool size cap (for logging/status). */
@@ -205,6 +208,9 @@ export class QueryPool {
       this.pendingWorkers.delete(w);
       if (m.ok === false) this.totalCrashes++; // hard open failure
       this.idle.push(w);
+      // As one cold-start finishes, start the next — the pool converges on
+      // maxSize warm workers in the background regardless of queue depth.
+      this.warmToTarget();
       this.drain();
       return;
     }
@@ -239,6 +245,23 @@ export class QueryPool {
       }
     }
     this.drain();
+  }
+
+  /**
+   * Grow toward maxSize independent of queue depth, rate-limited by
+   * MAX_CONCURRENT_SPAWN pending cold-starts at a time. Called on construct
+   * and after every 'ready' so the pool converges on a fully-warm capacity
+   * even under a single-connection workload — the next burst finds workers
+   * ready to serve, not cold-starting.
+   */
+  private warmToTarget(): void {
+    while (
+      this.workers.size < this.maxSize &&
+      this.pendingWorkers.size < MAX_CONCURRENT_SPAWN &&
+      this.healthy
+    ) {
+      this.spawnOne();
+    }
   }
 
   private drain(): void {

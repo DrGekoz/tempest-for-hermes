@@ -85,13 +85,20 @@ export function isRipgrepAvailable(): boolean {
  * UI-copy affordance.
  */
 export function shouldSkipGrep(query: string): boolean {
-  const raw = query.split(/[^A-Za-z0-9_]+/).filter((t) => t.length >= MIN_PATTERN_LEN);
-  if (raw.length < 2) return false;
+  // Split on whitespace, not on `[^A-Za-z0-9_]+` — the hyphens in `server-entry`
+  // and `--asset-add` are the identifier signal; splitting them off first strips
+  // exactly the shape we want to detect. Leading punctuation (`--`) is trimmed
+  // so `--asset-add` still counts as one length-≥3 token.
+  const tokens = query
+    .split(/\s+/)
+    .map((t) => t.replace(/^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$/g, ''))
+    .filter((t) => t.length >= MIN_PATTERN_LEN);
+  if (tokens.length < 2) return false;
   const identShape = (t: string): boolean =>
     /[A-Z]/.test(t) || /[_-]/.test(t) || /\d/.test(t);
-  const identCount = raw.filter(identShape).length;
+  const identCount = tokens.filter(identShape).length;
   // At least 2 identifier tokens AND identifiers dominate → symbol-search intent.
-  return identCount >= 2 && identCount >= raw.length * 0.6;
+  return identCount >= 2 && identCount >= tokens.length * 0.6;
 }
 
 /** Extract the token set to grep from a natural-language query.

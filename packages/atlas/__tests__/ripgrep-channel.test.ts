@@ -69,4 +69,16 @@ describe('shouldSkipGrep', () => {
     expect(shouldSkipGrep('Onboarding')).toBe(false);
     expect(shouldSkipGrep('onboarding')).toBe(false);
   });
+
+  it('skips CLI-flag-heavy queries (hyphens are the identifier signal)', () => {
+    // Regression: earlier tokenizer split on `[^A-Za-z0-9_]+`, which stripped
+    // the very hyphens that make `server-entry` and `--asset-add` obviously
+    // identifier-shaped, letting rg spawn on a query FTS owns.
+    expect(
+      shouldSkipGrep(
+        'server-entry asset CLI flags --asset-add --asset-link --asset-list JSON output',
+      ),
+    ).toBe(true);
+    expect(shouldSkipGrep('--dry-run --project-path')).toBe(true);
+  });
 });
