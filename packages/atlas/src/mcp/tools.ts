@@ -682,6 +682,12 @@ export const tools: ToolDefinition[] = [
           type: 'string',
           description: 'Symbol node id — return only assets attached to that symbol via a `describes` edge.',
         },
+        format: {
+          type: 'string',
+          description: 'Response format: "markdown" (default) or "json" (structured array).',
+          enum: ['markdown', 'json'],
+          default: 'markdown',
+        },
         projectPath: projectPathProperty,
       },
     },
@@ -702,6 +708,58 @@ export const tools: ToolDefinition[] = [
       required: ['id'],
     },
     annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
+    name: 'atlas_asset_add',
+    description: 'Attach a file to the knowledge graph as an asset. The file is read, text-extracted, and indexed for semantic search. Idempotent — re-add after file changes to refresh.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute or project-root-relative path to the file to attach.' },
+        name: { type: 'string', description: 'Optional display name. Defaults to the file basename.' },
+        projectPath: projectPathProperty,
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'atlas_asset_remove',
+    description: 'Remove an asset from the knowledge graph by id. All `describes` edges are also removed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Asset id (from atlas_assets).' },
+        projectPath: projectPathProperty,
+      },
+      required: ['id'],
+    },
+    annotations: { destructiveHint: true, idempotentHint: false },
+  },
+  {
+    name: 'atlas_asset_link',
+    description: 'Create a `describes` edge from an asset to a code symbol.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assetId: { type: 'string', description: 'Asset id.' },
+        symbolId: { type: 'string', description: 'Symbol node id.' },
+        projectPath: projectPathProperty,
+      },
+      required: ['assetId', 'symbolId'],
+    },
+  },
+  {
+    name: 'atlas_asset_unlink',
+    description: 'Remove a `describes` edge between an asset and a code symbol.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assetId: { type: 'string', description: 'Asset id.' },
+        symbolId: { type: 'string', description: 'Symbol node id.' },
+        projectPath: projectPathProperty,
+      },
+      required: ['assetId', 'symbolId'],
+    },
   },
   {
     name: 'atlas_semantic_search',
@@ -1433,6 +1491,10 @@ export class ToolHandler {
       if (toolName === 'atlas_status') {
         return await this.handleStatus(args);
       }
+      if (toolName === 'atlas_asset_add') return await this.handleAssetAdd(args);
+      if (toolName === 'atlas_asset_remove') return this.handleAssetRemove(args);
+      if (toolName === 'atlas_asset_link') return this.handleAssetLink(args);
+      if (toolName === 'atlas_asset_unlink') return this.handleAssetUnlink(args);
 
       // Read tools: off-load the CPU-heavy dispatch to the worker pool when one
       // is attached and healthy (daemon mode), so the daemon's single event loop
@@ -1565,8 +1627,16 @@ export class ToolHandler {
     const cg = this.getAtlas(args.projectPath as string | undefined);
     const contentType = typeof args.contentType === 'string' ? args.contentType : undefined;
     const linkedTo = typeof args.linkedTo === 'string' ? args.linkedTo : undefined;
+    const useJson = args.format === 'json';
 
     const assets = cg.listAssets({ contentType, linkedTo });
+
+    if (useJson) {
+      return this.textResult(JSON.stringify(
+        assets.map((a) => ({ ...a, linkedSymbols: cg.getAssetLinks(a.id) }))
+      ));
+    }
+
     if (assets.length === 0) {
       const filter = linkedTo ? ` linked to ${linkedTo}` : contentType ? ` of type "${contentType}"` : '';
       return this.textResult(`No assets found${filter}. Attach one via the Atlas.addAsset() API.`);
@@ -1600,6 +1670,51 @@ export class ToolHandler {
     }
     const header = `# ${asset.name}\n_${asset.contentType} — ${asset.sourcePath}_\n\n`;
     return this.textResult(this.truncateOutput(header + asset.extractedText));
+  }
+
+  private async handleAssetAdd(args: Record<string, unknown>): Promise<ToolResult> {
+    const filePath = this.validateString(args.path, 'path');
+    if (typeof filePath !== 'string') return filePath;
+    const cg = this.getAtlas(args.projectPath as string | undefined);
+    const name = typeof args.name === 'string' ? args.name : undefined;
+    try {
+      const asset = await cg.addAsset(filePath, { name });
+      return this.textResult(JSON.stringify({ ok: true, asset }));
+    } catch (err) {
+      return this.errorResult(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private handleAssetRemove(args: Record<string, unknown>): ToolResult {
+    const id = this.validateString(args.id, 'id');
+    if (typeof id !== 'string') return id;
+    const cg = this.getAtlas(args.projectPath as string | undefined);
+    const ok = cg.removeAsset(id);
+    return this.textResult(JSON.stringify({ ok }));
+  }
+
+  private handleAssetLink(args: Record<string, unknown>): ToolResult {
+    const assetId = this.validateString(args.assetId, 'assetId');
+    if (typeof assetId !== 'string') return assetId;
+    const symbolId = this.validateString(args.symbolId, 'symbolId');
+    if (typeof symbolId !== 'string') return symbolId;
+    const cg = this.getAtlas(args.projectPath as string | undefined);
+    try {
+      cg.linkAsset(assetId, symbolId);
+      return this.textResult(JSON.stringify({ ok: true }));
+    } catch (err) {
+      return this.errorResult(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private handleAssetUnlink(args: Record<string, unknown>): ToolResult {
+    const assetId = this.validateString(args.assetId, 'assetId');
+    if (typeof assetId !== 'string') return assetId;
+    const symbolId = this.validateString(args.symbolId, 'symbolId');
+    if (typeof symbolId !== 'string') return symbolId;
+    const cg = this.getAtlas(args.projectPath as string | undefined);
+    const ok = cg.unlinkAsset(assetId, symbolId);
+    return this.textResult(JSON.stringify({ ok }));
   }
 
   /**

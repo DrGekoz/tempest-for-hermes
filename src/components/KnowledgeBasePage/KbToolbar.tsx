@@ -7,7 +7,9 @@ type Props = {
   projects: IndexedProject[];
   selectedPath: string | null;
   hasGraph: boolean;
+  view: "graph" | "assets";
   onSelectPath: (path: string) => void;
+  onViewChange: (v: "graph" | "assets") => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: () => void;
@@ -15,8 +17,8 @@ type Props = {
 };
 
 export function KbToolbar({
-  projects, selectedPath, hasGraph,
-  onSelectPath, onZoomIn, onZoomOut, onFit, onReset,
+  projects, selectedPath, hasGraph, view,
+  onSelectPath, onViewChange, onZoomIn, onZoomOut, onFit, onReset,
 }: Props) {
   const [open, setOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -72,6 +74,19 @@ export function KbToolbar({
       <Tooltip content="Reset view" placement="top">
         <button className="kb-tool-btn" onClick={onReset} disabled={!hasGraph}><RotateCcw size={14} /></button>
       </Tooltip>
+
+      <div className="kb-toolbar-divider" />
+
+      <div className="kb-view-tabs">
+        <button
+          className={`kb-view-tab${view === "graph" ? " kb-view-tab--active" : ""}`}
+          onClick={() => onViewChange("graph")}
+        >Graph</button>
+        <button
+          className={`kb-view-tab${view === "assets" ? " kb-view-tab--active" : ""}`}
+          onClick={() => onViewChange("assets")}
+        >Docs</button>
+      </div>
     </div>
   );
 }

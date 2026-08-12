@@ -21,6 +21,7 @@ import { resolveKindColors, nodeRadius, MINIMAP_W, MINIMAP_H } from "../lib/know
 import { renderGraph, type MinimapTf } from "../lib/knowledgeGraphRender";
 import { NodeDetailPanel } from "./KnowledgeBasePage/NodeDetailPanel";
 import { KbToolbar } from "./KnowledgeBasePage/KbToolbar";
+import { AssetsPanel } from "./KnowledgeBasePage/AssetsPanel";
 import "./KnowledgeBasePage.css";
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -39,6 +40,7 @@ export function KnowledgeBasePage() {
   const [logLine,          setLogLine]          = useState("");
   const [progress,         setProgress]         = useState(0);
   const [detailNode,       setDetailNode]       = useState<GNode | null>(null);
+  const [view,             setView]             = useState<"graph" | "assets">("graph");
 
   // Ref mirror of detail node so the render fn can read it without re-rendering
   const detailNodeRef = useRef<GNode | null>(null);
@@ -663,13 +665,18 @@ export function KnowledgeBasePage() {
         projects={indexedProjects}
         selectedPath={selectedPath}
         hasGraph={hasGraph}
+        view={view}
         onSelectPath={setSelectedPath}
+        onViewChange={setView}
         onZoomIn={() => zoomBy(1.25)}
         onZoomOut={() => zoomBy(0.8)}
         onFit={fitView}
         onReset={resetView}
       />
 
+      {view === "assets" ? (
+        <AssetsPanel projectPath={selectedPath} />
+      ) : (
       <div className="kb-canvas-wrap" ref={containerRef}>
         {projectsResolved && indexedProjects.length === 0 && (
           <div className="kb-empty">
@@ -726,6 +733,7 @@ export function KnowledgeBasePage() {
           />
         )}
       </div>
+      )}
     </div>
   );
 }
