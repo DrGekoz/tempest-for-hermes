@@ -294,45 +294,46 @@
   margin-bottom: 1px;
 }
 
-/* ── View tabs ────────────────────────────────────────────────────────────── */
+/* ── Docs toggle button ───────────────────────────────────────────────────── */
 
-.kb-view-tabs {
-  display: flex;
+.kb-docs-toggle {
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-  background: var(--tempest-bg-active);
-  border: 1px solid var(--tempest-border-default);
-  border-radius: 6px;
-  padding: 2px;
+  gap: 5px;
+  padding: 5px 9px;
 }
-
-.kb-view-tab {
-  background: transparent;
-  border: none;
-  color: var(--tempest-fg-subtle);
+.kb-docs-toggle-label {
   font-size: 11px;
   font-family: 'Geist', sans-serif;
   font-weight: 500;
-  padding: 3px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
 }
-.kb-view-tab:hover { color: var(--tempest-fg-default); }
-.kb-view-tab--active {
-  background: var(--tempest-bg-panel);
-  color: var(--tempest-fg-default);
+.kb-docs-toggle--active {
+  border-color: var(--tempest-accent-blue);
+  color: var(--tempest-accent-blue);
 }
 
-/* ── Assets panel ─────────────────────────────────────────────────────────── */
+/* ── Assets side panel (overlay over graph) ───────────────────────────────── */
 
 .kb-assets-panel {
-  flex: 1 1 auto;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: 300px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   font-family: 'Geist', sans-serif;
+  background: var(--tempest-bg-panel);
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  z-index: 50;
 }
+
+/* When docs panel is open, shift detail panel and minimap left to make room */
+.kb-canvas-wrap--docs-open .kb-detail { right: 324px; }
+.kb-canvas-wrap--docs-open .kb-minimap { right: 324px; }
 
 .kb-assets-header {
   display: flex;
@@ -364,6 +365,19 @@
   cursor: pointer;
 }
 .kb-assets-add-btn:hover { opacity: 0.85; }
+
+.kb-assets-close {
+  background: none;
+  border: none;
+  color: var(--tempest-fg-subtle);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.1s, background 0.1s;
+}
+.kb-assets-close:hover { color: var(--tempest-fg-default); background: var(--tempest-bg-hover); }
 
 .kb-assets-error {
   margin: 8px 16px;

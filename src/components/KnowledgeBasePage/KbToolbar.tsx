@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ZoomIn, ZoomOut, Maximize2, RotateCcw, ChevronDown } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, RotateCcw, ChevronDown, FileText } from "lucide-react";
 import { Tooltip } from "../Tooltip";
 import type { IndexedProject } from "../../types/knowledgeGraph";
 
@@ -7,9 +7,9 @@ type Props = {
   projects: IndexedProject[];
   selectedPath: string | null;
   hasGraph: boolean;
-  view: "graph" | "assets";
+  docsOpen: boolean;
   onSelectPath: (path: string) => void;
-  onViewChange: (v: "graph" | "assets") => void;
+  onToggleDocs: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: () => void;
@@ -17,8 +17,8 @@ type Props = {
 };
 
 export function KbToolbar({
-  projects, selectedPath, hasGraph, view,
-  onSelectPath, onViewChange, onZoomIn, onZoomOut, onFit, onReset,
+  projects, selectedPath, hasGraph, docsOpen,
+  onSelectPath, onToggleDocs, onZoomIn, onZoomOut, onFit, onReset,
 }: Props) {
   const [open, setOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -77,16 +77,16 @@ export function KbToolbar({
 
       <div className="kb-toolbar-divider" />
 
-      <div className="kb-view-tabs">
+      <Tooltip content={docsOpen ? "Hide documents" : "Show documents"} placement="top">
         <button
-          className={`kb-view-tab${view === "graph" ? " kb-view-tab--active" : ""}`}
-          onClick={() => onViewChange("graph")}
-        >Graph</button>
-        <button
-          className={`kb-view-tab${view === "assets" ? " kb-view-tab--active" : ""}`}
-          onClick={() => onViewChange("assets")}
-        >Docs</button>
-      </div>
+          className={`kb-tool-btn kb-docs-toggle${docsOpen ? " kb-docs-toggle--active" : ""}`}
+          onClick={onToggleDocs}
+          disabled={!selectedPath}
+        >
+          <FileText size={14} />
+          <span className="kb-docs-toggle-label">Docs</span>
+        </button>
+      </Tooltip>
     </div>
   );
 }

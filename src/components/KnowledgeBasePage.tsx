@@ -40,7 +40,7 @@ export function KnowledgeBasePage() {
   const [logLine,          setLogLine]          = useState("");
   const [progress,         setProgress]         = useState(0);
   const [detailNode,       setDetailNode]       = useState<GNode | null>(null);
-  const [view,             setView]             = useState<"graph" | "assets">("graph");
+  const [docsOpen,         setDocsOpen]         = useState(false);
 
   // Ref mirror of detail node so the render fn can read it without re-rendering
   const detailNodeRef = useRef<GNode | null>(null);
@@ -665,19 +665,16 @@ export function KnowledgeBasePage() {
         projects={indexedProjects}
         selectedPath={selectedPath}
         hasGraph={hasGraph}
-        view={view}
+        docsOpen={docsOpen}
         onSelectPath={setSelectedPath}
-        onViewChange={setView}
+        onToggleDocs={() => setDocsOpen((v) => !v)}
         onZoomIn={() => zoomBy(1.25)}
         onZoomOut={() => zoomBy(0.8)}
         onFit={fitView}
         onReset={resetView}
       />
 
-      {view === "assets" ? (
-        <AssetsPanel projectPath={selectedPath} />
-      ) : (
-      <div className="kb-canvas-wrap" ref={containerRef}>
+      <div className={`kb-canvas-wrap${docsOpen ? " kb-canvas-wrap--docs-open" : ""}`} ref={containerRef}>
         {projectsResolved && indexedProjects.length === 0 && (
           <div className="kb-empty">
             <span className="kb-empty-title">No indexed projects</span>
@@ -732,8 +729,11 @@ export function KnowledgeBasePage() {
             }}
           />
         )}
+
+        {docsOpen && (
+          <AssetsPanel projectPath={selectedPath} onClose={() => setDocsOpen(false)} />
+        )}
       </div>
-      )}
     </div>
   );
 }

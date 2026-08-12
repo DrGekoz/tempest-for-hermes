@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Plus, Trash2, FileText } from "lucide-react";
+import { Plus, Trash2, FileText, X } from "lucide-react";
 
 interface AssetRow {
   id: string;
@@ -22,7 +22,7 @@ async function atlasCall<T>(projectPath: string, tool: string, args: Record<stri
   return JSON.parse(result.content?.[0]?.text ?? "null") as T;
 }
 
-export function AssetsPanel({ projectPath }: { projectPath: string | null }) {
+export function AssetsPanel({ projectPath, onClose }: { projectPath: string | null; onClose: () => void }) {
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -70,29 +70,28 @@ export function AssetsPanel({ projectPath }: { projectPath: string | null }) {
     }
   }
 
-  if (!projectPath) {
-    return (
-      <div className="kb-assets-panel">
+  return (
+    <div className="kb-assets-panel">
+      <div className="kb-assets-header">
+        <span className="kb-assets-title">Documents</span>
+        {projectPath && (
+          <button className="kb-assets-add-btn" onClick={addDocs} title="Attach files">
+            <Plus size={12} />Add
+          </button>
+        )}
+        <button className="kb-assets-close" onClick={onClose} title="Close">
+          <X size={14} />
+        </button>
+      </div>
+
+      {!projectPath ? (
         <div className="kb-assets-empty-state">
           <span className="kb-empty-title">No project selected</span>
           <span className="kb-empty-desc">Select an indexed project to manage its documents.</span>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="kb-assets-panel">
-      <div className="kb-assets-header">
-        <span className="kb-assets-title">Attached Documents</span>
-        <button className="kb-assets-add-btn" onClick={addDocs}>
-          <Plus size={12} />Add
-        </button>
-      </div>
-
-      {error && <div className="kb-assets-error">{error}</div>}
-
-      {loading ? (
+      ) : error ? (
+        <div className="kb-assets-error">{error}</div>
+      ) : loading ? (
         <div className="kb-assets-loading">Loading…</div>
       ) : assets.length === 0 ? (
         <div className="kb-assets-empty-state">
