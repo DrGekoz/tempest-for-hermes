@@ -2,9 +2,11 @@
 
 <div align="center">
 
-[Download](https://tempestai.dev/download) · [Docs](https://tempestai.dev/docs) · [Releases](https://github.com/tempestai-dev/tempest/releases/latest) · [Discord](https://discord.gg/bRQhAKKVa8) · [Contributing](CONTRIBUTING.md)
+[Download](https://tempestai.dev/download) · [Docs](https://tempestai.dev/docs) · [Releases](https://github.com/tempestai-dev/tempest/releases/latest) · [Benchmarks](#why-tempest-uses-far-fewer-tokens) · [Discord](https://discord.gg/bRQhAKKVa8) · [Contributing](CONTRIBUTING.md)
 
 </div>
+
+<br>
 
 <p align="center">
   <a href="https://github.com/tempestai-dev/tempest/releases">
@@ -32,7 +34,7 @@
 
 
 <h2 align="center">
-  <strong>Run Claude Code, Codex, Gemini and any other CLI Agent with 64% fewer tokens</strong>
+  <strong>Run Claude Code, Codex, Gemini and any other CLI Agent with 86% fewer tokens</strong>
 </h2>
 
 <p align="center">
@@ -43,12 +45,23 @@
 
 ## Why Tempest uses far fewer tokens
 
+Measured across 7 open-source repos — same agent, same model, same prompts, only variable is whether Token Intelligence is wired in:
+
+| Repo | Language | Tokens with Tempest | Tokens without Tempest | Tokens saved | Tool calls with Tempest | Tool calls without Tempest | Calls saved |
+|---|---|---|---|---|---|---|---|
+| `tokio` | Rust | 119K | 1.02M | **88%** | 3.5 | 26 | 87% |
+| `okhttp` | Kotlin | 73K | 417K | **83%** | 2 | 21.5 | 91% |
+| `excalidraw` | TypeScript | 210K | 1.19M | **82%** | 5.5 | 33.5 | 84% |
+| `django` | Python | 78K | 416K | **81%** | 2 | 24.5 | 92% |
+| `gin` | Go | 84K | 243K | **66%** | 2.5 | 8.5 | 71% |
+| `alamofire` | Swift | 184K | 493K | **63%** | 5.5 | 17.5 | 69% |
+| `vscode` | TypeScript | 307K | 676K | **55%** | 9 | 24.5 | 63% |
+
+Per-repo medians over 4 valid runs per arm. Full methodology and reproduce steps: [BENCHMARKS.md](BENCHMARKS.md).
+
 Run five agents in parallel and each one reads your entire codebase from scratch — the same files, the same context, five times over. You pay for every token, every time.
 
 **Token Intelligence** is a local code-knowledge graph that lives on your machine and is shared across every parallel agent session. When an agent needs to understand your codebase, it pulls from the shared graph instead of scanning files on its own. The work is done once. Every session benefits.
-
-- **Up to 64% less context token consumption**
-- **Up to 58% fewer tool calls**
 
 No other parallel-agent tool does this.
 
