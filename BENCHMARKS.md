@@ -1,6 +1,6 @@
 # Atlas Benchmarks
 
-Reproducible A/B benchmark of [Atlas](packages/atlas) — indexing throughput and agent-flow token efficiency — driven by the opencode CLI.
+Reproducible A/B benchmark of [Atlas](packages/atlas) — indexing throughput and agent-flow token efficiency — driven by the [opencode](https://opencode.ai) CLI running the `opencode-go/deepseek-v4-flash` model.
 
 > **Status:** v4 prompt methodology run landed (2026-08-13). Numbers below are hand-curated from the raw JSONL run logs under `packages/atlas/benchmarks/results/`.
 
