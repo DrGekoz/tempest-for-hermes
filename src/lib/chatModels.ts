@@ -38,6 +38,28 @@ export const CLAUDE_CODE_MODELS: ChatModel[] = [
   { id: "opus",    label: "Opus"    },
 ];
 
+// Warp (warpllm) — experimental Rust chat backend. Its own category alongside
+// CLAUDE_CODE in the picker; gated by settings.experimentalWarp. Model ids are
+// warpllm's `provider/model` routing strings — the prefix is required.
+export const WARP = "warp";
+
+export const WARP_MODELS: ChatModel[] = [
+  { id: "openai/gpt-5-nano",                    label: "GPT-5 Nano"       },
+  { id: "openai/gpt-4o-mini",                   label: "GPT-4o Mini"      },
+  { id: "deepseek/deepseek-v4-flash",           label: "DeepSeek V4"      },
+  { id: "kimi/kimi-k3",                         label: "Kimi K3"          },
+  { id: "openrouter/anthropic/claude-sonnet-4", label: "Claude Sonnet 4"  },
+];
+
+// warpllm reads keys from process env, one per provider. Map the routing
+// prefix → the env var so the frontend can pass the right BYOK key through.
+export const WARP_PROVIDER_ENV: Record<string, string> = {
+  openai:     "OPENAI_API_KEY",
+  deepseek:   "DEEPSEEK_API_KEY",
+  kimi:       "MOONSHOT_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+};
+
 export const PROVIDER_MODELS: Record<string, ChatModel[]> = {
   anthropic: [
     { id: "claude-fable-5",            label: "Claude Fable 5"    },

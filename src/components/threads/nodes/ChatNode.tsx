@@ -11,10 +11,12 @@ import { getNodeMessages, loadNodeMessages, saveNodeMessages } from "../../../st
 import { chatGist, firstLine, formatCanvasGraph, type CanvasNodeMeta } from "../canvasContext";
 import { getRuntimeState, setRuntimeState } from "../../../lib/runtimeState";
 import { track } from "../../../lib/telemetry";
-import { CDN, CHAT_PROVIDERS, CLAUDE_CODE, CLAUDE_CODE_MODELS, type ChatProvider, type ChatModel } from "../../../lib/chatModels";
+import { CDN, CHAT_PROVIDERS, CLAUDE_CODE, CLAUDE_CODE_MODELS, WARP, WARP_MODELS, type ChatProvider, type ChatModel } from "../../../lib/chatModels";
 import { useModelManifest, contextSizeFor } from "../../../lib/remoteConfig";
 import { streamChat, type ChatStreamEvent } from "../../../lib/chat";
 import { streamClaudeCode, type ClaudeCodeStream } from "../../../lib/claudeCode";
+import { streamWarp } from "../../../lib/warp";
+import { useSettings } from "../../../store/appSettings";
 import { createChatTools } from "../../../lib/chatTools";
 import { ThreadNodeContext } from "../ThreadNodeContext";
 import { Markdown } from "../../Markdown";
@@ -166,26 +168,31 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
 
   const manifest = useModelManifest();
   // "api" = BYOK (Vercel AI SDK); "cli" = Claude Code harness (sidecar). Persisted per node.
-  const [backend, setBackend] = useState<"api" | "cli">(
-    () => getNodeData<{ backend?: "api" | "cli" }>(id).backend ?? "api",
+  const [backend, setBackend] = useState<"api" | "cli" | "warp">(
+    () => getNodeData<{ backend?: "api" | "cli" | "warp" }>(id).backend ?? "api",
   );
   const [provider, setProvider] = useState<ChatProvider>(() => {
     const saved = getRuntimeState().chatProvider;
     return CHAT_PROVIDERS.find((p) => p.id === saved) ?? CHAT_PROVIDERS[0];
   });
+  const settings = useSettings();
   const [model, setModel] = useState<ChatModel>(() => {
-    const data = getNodeData<{ backend?: "api" | "cli"; cliModel?: string }>(id);
+    const data = getNodeData<{ backend?: "api" | "cli" | "warp"; cliModel?: string; warpModel?: string }>(id);
     if (data.backend === "cli") return CLAUDE_CODE_MODELS.find((m) => m.id === data.cliModel) ?? CLAUDE_CODE_MODELS[0];
+    if (data.backend === "warp") return WARP_MODELS.find((m) => m.id === data.warpModel) ?? WARP_MODELS[0];
     const { chatProvider, chatModel } = getRuntimeState();
     const models = manifest.providers[chatProvider ?? "anthropic"] ?? [];
     return models.find((m) => m.id === chatModel) ?? manifest.providers["anthropic"][0];
   });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPos, setPickerPos] = useState({ bottom: 0, left: 0 });
-  // Selected picker category: a BYOK provider id, or the special CLAUDE_CODE.
-  const [pickerProvider, setPickerProvider] = useState(
-    () => (getNodeData<{ backend?: "api" | "cli" }>(id).backend === "cli" ? CLAUDE_CODE : CHAT_PROVIDERS[0].id),
-  );
+  // Selected picker category: a BYOK provider id, CLAUDE_CODE, or WARP (experimental).
+  const [pickerProvider, setPickerProvider] = useState(() => {
+    const b = getNodeData<{ backend?: "api" | "cli" | "warp" }>(id).backend;
+    if (b === "cli") return CLAUDE_CODE;
+    if (b === "warp") return WARP;
+    return CHAT_PROVIDERS[0].id;
+  });
   const [search, setSearch] = useState("");
   const [isEmpty, setIsEmpty] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -390,6 +397,15 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
         projectId,
         onEvent,
       });
+    } else if (backend === "warp") {
+      // Experimental Warp backend — non-streaming. system carries the same
+      // lineage + canvas map the BYOK path builds, so context stays consistent.
+      cancelRef.current = streamWarp({
+        model: model.id,
+        messages: [...history, { role: "user", content: rawText }],
+        system,
+        onEvent,
+      });
     } else {
       cancelRef.current = streamChat({
         providerId: provider.id,
@@ -451,7 +467,7 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
     if (!pickerBtnRef.current) return;
     const r = pickerBtnRef.current.getBoundingClientRect();
     setPickerPos({ bottom: window.innerHeight - r.top + 6, left: r.left });
-    setPickerProvider(backend === "cli" ? CLAUDE_CODE : provider.id);
+    setPickerProvider(backend === "cli" ? CLAUDE_CODE : backend === "warp" ? WARP : provider.id);
     setSearch("");
     setPickerOpen(true);
     setTimeout(() => searchRef.current?.focus(), 50);
@@ -483,7 +499,15 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
     setPickerOpen(false);
   }
 
-  const isCliCat = pickerProvider === CLAUDE_CODE;
+  function selectWarpModel(modelId: string) {
+    const m = WARP_MODELS.find((x) => x.id === modelId) ?? WARP_MODELS[0];
+    setBackend("warp");
+    setModel(m);
+    patchNodeData(id, { backend: "warp", warpModel: m.id });
+    setPickerOpen(false);
+  }
+
+  const isCliCat = pickerProvider === CLAUDE_CODE || pickerProvider === WARP;
   // BYOK-provider category vars (the cli category renders its own agents list).
   const activePickerProvider = CHAT_PROVIDERS.find((p) => p.id === pickerProvider);
   const catLabel  = activePickerProvider?.label ?? "";
@@ -691,7 +715,7 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
           className="chat-bar-mode"
           onClick={(e) => { e.stopPropagation(); openPicker(); }}
         >
-          {backend === "cli" ? (
+          {backend === "cli" || backend === "warp" ? (
             <Terminal size={13} style={{ flexShrink: 0 }} />
           ) : (
             <img
@@ -704,7 +728,9 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
             />
           )}
-          {backend === "cli" ? `Claude Code · ${model.label}` : model.label}
+          {backend === "cli" ? `Claude Code · ${model.label}`
+            : backend === "warp" ? `Warp · ${model.label}`
+            : model.label}
           <ChevronDown size={11} style={{ transform: pickerOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
         </button>
 
@@ -791,28 +817,97 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
             <div className="chat-picker-panel">
               <div className="chat-picker-prov-name">{isCliCat ? "Agents" : catLabel}</div>
               {isCliCat ? (
-                // Agents list: one row per connected CLI agent (v1 = Claude Code),
-                // each with its own model dropdown on the right. Picking a model
-                // activates the cli backend on this node.
-                <div className="chat-picker-list">
-                  <div
-                    className="chat-agent-row"
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
-                      borderRadius: 8, background: "var(--tempest-bg-hover, #0f0f0f)",
-                    }}
-                  >
-                    <Terminal size={16} style={{ flexShrink: 0, opacity: 0.85 }} />
-                    <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>Claude Code</span>
-                    <SpSelect
-                      className="sp-drop--full"
-                      value={backend === "cli" ? model.id : CLAUDE_CODE_MODELS[0].id}
-                      options={CLAUDE_CODE_MODELS.map((m) => ({ value: m.id, label: m.label }))}
-                      onChange={selectCliModel}
-                    />
-                    {backend === "cli" && <div className="chat-picker-item-dot" />}
-                  </div>
-                </div>
+                // Agents list: one item per (agent, model) — same shape as the
+                // BYOK model list. Grouped by a small agent header. Kills the
+                // nested-dropdown problem that squished the agent name.
+                (() => {
+                  const q = search.trim().toLowerCase();
+                  const matches = (m: ChatModel, group: string) =>
+                    !q || group.includes(q) || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q);
+                  const cliShown = CLAUDE_CODE_MODELS.filter((m) => matches(m, "claude code"));
+                  const warpShown = settings.experimentalWarp ? WARP_MODELS.filter((m) => matches(m, "warp")) : [];
+                  return (
+                    <>
+                      <div className="chat-picker-search-wrap">
+                        <div className="chat-picker-search-box">
+                          <Search size={11} className="chat-picker-search-ico" />
+                          <input
+                            ref={searchRef}
+                            className="chat-picker-search-inp"
+                            placeholder="Search agents…"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="chat-picker-list">
+                        {cliShown.length === 0 && warpShown.length === 0 && (
+                          <div className="chat-picker-empty">No agents found</div>
+                        )}
+
+                        {cliShown.length > 0 && (
+                          <>
+                            <div style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              padding: "6px 8px 4px", fontSize: 10, fontWeight: 600,
+                              color: "var(--tempest-fg-subtle)", textTransform: "uppercase",
+                              letterSpacing: "0.07em",
+                            }}>
+                              <Terminal size={11} />
+                              Claude Code
+                            </div>
+                            {cliShown.map((m) => (
+                              <button
+                                key={`cli-${m.id}`}
+                                className={`chat-picker-item${backend === "cli" && model.id === m.id ? " chat-picker-item--active" : ""}`}
+                                onClick={() => selectCliModel(m.id)}
+                              >
+                                <div className="chat-picker-item-logo"><Terminal size={16} /></div>
+                                <div className="chat-picker-item-text">
+                                  <span className="chat-picker-item-name">{m.label}</span>
+                                </div>
+                                {backend === "cli" && model.id === m.id && <div className="chat-picker-item-dot" />}
+                              </button>
+                            ))}
+                          </>
+                        )}
+
+                        {warpShown.length > 0 && (
+                          <>
+                            <div style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              padding: "10px 8px 4px", fontSize: 10, fontWeight: 600,
+                              color: "var(--tempest-fg-subtle)", textTransform: "uppercase",
+                              letterSpacing: "0.07em",
+                            }}>
+                              <Terminal size={11} />
+                              Warp
+                              <span style={{
+                                fontSize: 9, fontWeight: 600, padding: "1px 5px", borderRadius: 4,
+                                background: "var(--tempest-accent-yellow, #f5c518)", color: "#000",
+                                letterSpacing: "0.04em", textTransform: "uppercase",
+                              }}>Beta</span>
+                            </div>
+                            {warpShown.map((m) => (
+                              <button
+                                key={`warp-${m.id}`}
+                                className={`chat-picker-item${backend === "warp" && model.id === m.id ? " chat-picker-item--active" : ""}`}
+                                onClick={() => selectWarpModel(m.id)}
+                              >
+                                <div className="chat-picker-item-logo"><Terminal size={16} /></div>
+                                <div className="chat-picker-item-text">
+                                  <span className="chat-picker-item-name">{m.label}</span>
+                                  <span className="chat-picker-item-desc">{m.id}</span>
+                                </div>
+                                {backend === "warp" && model.id === m.id && <div className="chat-picker-item-dot" />}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()
               ) : (
                 <>
                   <div className="chat-picker-search-wrap">

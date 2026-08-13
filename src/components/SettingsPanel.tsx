@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Palette, Keyboard, Info, GitCommitHorizontal, Terminal as TerminalIcon, GitBranch, BookOpen, Cpu, Shield, KeyRound, Bot } from "lucide-react";
+import { X, Palette, Keyboard, Info, GitCommitHorizontal, Terminal as TerminalIcon, GitBranch, BookOpen, Cpu, Shield, KeyRound, Bot, FlaskConical } from "lucide-react";
 import { Tooltip } from "./Tooltip";
 import { useTheme } from "../themes/ThemeContext";
 import { AppearanceSection } from "./SettingsPanel/AppearanceSection";
@@ -14,11 +14,12 @@ import { PromptsSection } from "./SettingsPanel/PromptsSection";
 import { KeyboardSection } from "./SettingsPanel/KeyboardSection";
 import { AttributionSection } from "./SettingsPanel/AttributionSection";
 import { AboutSection } from "./SettingsPanel/AboutSection";
+import { ExperimentalSection } from "./SettingsPanel/ExperimentalSection";
 import "./SettingsPanel.css";
 
 export { AttributionSection } from "./SettingsPanel/AttributionSection";
 
-type Section = "appearance" | "terminal" | "git" | "intelligence" | "security" | "agents" | "apikeys" | "prompts" | "keyboard" | "attribution" | "about";
+type Section = "appearance" | "terminal" | "git" | "intelligence" | "security" | "agents" | "apikeys" | "prompts" | "keyboard" | "attribution" | "experimental" | "about";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -124,6 +125,13 @@ export function SettingsPanel({ onClose, onAttributionToggle, initialSection }: 
               <GitCommitHorizontal size={14} />
               Attribution
             </button>
+            <button
+              className={`sp-nav-item${activeSection === "experimental" ? " sp-nav-item--active" : ""}`}
+              onClick={() => setActiveSection("experimental")}
+            >
+              <FlaskConical size={14} />
+              Experimental
+            </button>
             <div className="sp-nav-group-label sp-nav-group-label--lower">Help</div>
             <button
               className={`sp-nav-item${activeSection === "about" ? " sp-nav-item--active" : ""}`}
@@ -147,6 +155,7 @@ export function SettingsPanel({ onClose, onAttributionToggle, initialSection }: 
             {activeSection === "prompts" && <PromptsSection />}
             {activeSection === "keyboard" && <KeyboardSection />}
             {activeSection === "attribution" && <AttributionSection onToggle={onAttributionToggle} />}
+            {activeSection === "experimental" && <ExperimentalSection />}
             {activeSection === "about" && <AboutSection />}
           </div>
         </div>

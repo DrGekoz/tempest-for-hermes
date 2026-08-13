@@ -12,6 +12,7 @@ mod canvas_mcp;
 mod claude_bridge;
 mod quota;
 mod service_proxy;
+mod warp_bridge;
 
 /// Managed slug → dev-server-port map, read by the reverse proxy in
 /// `service_proxy.rs` and written by `register_service_route`. The bool is
@@ -4193,6 +4194,7 @@ pub fn run() {
             claude_bridge::claude_stream_start,
             claude_bridge::claude_permission_decision,
             claude_bridge::claude_stream_cancel,
+            warp_bridge::warp_chat,
             quota::quota_read_all,
             open_devtools,
         ])

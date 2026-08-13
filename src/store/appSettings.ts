@@ -29,6 +29,9 @@ export interface AppSettings {
   // sent until the user explicitly opts in. Flip only via setTelemetryEnabled
   // in src/lib/telemetry.ts, never updateSetting directly.
   telemetryEnabled: boolean;
+  // Experimental: Warp (warpllm) chat backend on canvas chat nodes. Off by
+  // default; when on, a "Warp" row appears in a chat node's Agents picker.
+  experimentalWarp: boolean;
 }
 
 export const SETTINGS_DEFAULTS: AppSettings = {
@@ -48,6 +51,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   preciseAgentStatus: true,
   desktopNotifications: true,
   telemetryEnabled: false,
+  experimentalWarp: false,
 };
 
 export const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [

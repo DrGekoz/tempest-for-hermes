@@ -13,15 +13,27 @@ export function SpSelect({ value, options, onChange, className }: {
   const btnRef = useRef<HTMLButtonElement>(null);
   // Menu is portaled + position:fixed off the button's viewport rect, so it never
   // clips inside overflow:hidden parents (canvas nodes) and isn't scaled by canvas zoom.
-  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [rect, setRect] = useState<{ left: number; top: number; width: number; flipUp: boolean } | null>(null);
   const current = options.find((o) => o.value === value);
   const label = current?.label ?? value;
 
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return;
     const r = btnRef.current.getBoundingClientRect();
-    setRect({ left: r.left, top: r.bottom + 3, width: r.width });
-  }, [open]);
+    // Estimated menu height: 26px per row + 6px padding, capped at the CSS
+    // max-height (240). Flip upward when the space below the button is less
+    // than the menu wants AND there's more room above — matches shadcn.
+    const menuH = Math.min(240, options.length * 26 + 6);
+    const below = window.innerHeight - r.bottom;
+    const above = r.top;
+    const flipUp = below < menuH + 8 && above > below;
+    setRect({
+      left: r.left,
+      top: flipUp ? r.top - menuH - 3 : r.bottom + 3,
+      width: r.width,
+      flipUp,
+    });
+  }, [open, options.length]);
 
   return (
     <div className={`sp-drop${className ? " " + className : ""}`}>
