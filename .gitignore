@@ -19,6 +19,19 @@ src-tauri/target
 # Atlas runtime — staged from node_modules by postinstall, not committed
 src-tauri/resources/atlas/
 
+# Atlas benchmarks — raw run logs, per-run JSON, mcp-atlas.json (regenerated).
+# Commit only ground-truth.json, corpus.json, scripts/, and README. Aggregated
+# summary JSONs (index-summary.json, ab-summary.json, judged-summary.json) are
+# fine to commit as receipts once numbers land.
+packages/atlas/benchmarks/results/*.jsonl
+packages/atlas/benchmarks/results/*.jsonl.err
+packages/atlas/benchmarks/results/*.stdout.log
+packages/atlas/benchmarks/results/*.stderr.log
+packages/atlas/benchmarks/results/*.json
+!packages/atlas/benchmarks/results/index-summary.json
+!packages/atlas/benchmarks/results/ab-summary.json
+!packages/atlas/benchmarks/results/judged-summary.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,0 +1,45 @@
+{
+  "_schema": "v2. Keyed by repo id from corpus.json. One canonical architecture question per repo. `anchors` are short substrings (case-insensitive, punctuation-stripped) a correct answer MUST contain to score recall; empty [] means the judge skips scoring that cell -- filled 2026-08-13 after 1-index.ps1 -Fresh, by spot-checking real identifiers in each cloned repo.",
+
+  "vscode": {
+    "question": "How does the extension host communicate with the main process?",
+    "truth": "extHost <-> main via IPC (MessagePort in browser worker, node IPC in desktop). RPCProtocol multiplexes calls. Proxies generated from ExtHostContext (renderer-side stubs) and MainContext (main-thread impls) definitions in src/vs/workbench/api/common/extHost.protocol.ts.",
+    "anchors": ["RPCProtocol", "ExtHostContext", "MainContext", "extension host"]
+  },
+
+  "excalidraw": {
+    "question": "How does Excalidraw render and update canvas elements?",
+    "truth": "Elements live in App.tsx state; on setState/animation frame, Renderer.ts drives two canvases: StaticCanvas (via renderStaticScene) and InteractiveCanvas (via renderInteractiveScene). Scene holds normalized elements; renderers iterate and draw per-element shape helpers.",
+    "anchors": ["renderStaticScene", "renderInteractiveScene", "Scene", "canvas"]
+  },
+
+  "django": {
+    "question": "How does Django's ORM build and execute a query from a QuerySet?",
+    "truth": "QuerySet lazily builds a Query object; on iteration __iter__ calls _fetch_all -> _iterable_class -> compiler = query.get_compiler(using) -> SQLCompiler.execute_sql(chunked_fetch/CURSOR) -> cursor.execute(sql, params).",
+    "anchors": ["QuerySet", "_fetch_all", "SQLCompiler", "execute_sql"]
+  },
+
+  "tokio": {
+    "question": "How does tokio schedule and run async tasks on its runtime?",
+    "truth": "tokio::spawn allocates a Task and pushes it onto the scheduler (current-thread or multi-thread). Worker threads run a loop popping from local LIFO slot -> local queue -> global injection queue -> steal from siblings, then poll the Task's Future to completion.",
+    "anchors": ["spawn", "scheduler", "worker", "poll"]
+  },
+
+  "okhttp": {
+    "question": "How does OkHttp process a request through its interceptor chain?",
+    "truth": "Call.execute (sync) or enqueue (async) resolves to RealCall.getResponseWithInterceptorChain, which builds a list of interceptors (user application, RetryAndFollowUp, Bridge, Cache, ConnectInterceptor, network, CallServerInterceptor) and constructs a RealInterceptorChain; proceed() advances index-by-index, each interceptor calling chain.proceed(request) to continue.",
+    "anchors": ["RealCall", "RealInterceptorChain", "getResponseWithInterceptorChain", "interceptor"]
+  },
+
+  "gin": {
+    "question": "How does gin route requests through its middleware chain?",
+    "truth": "Engine.ServeHTTP -> handleHTTPRequest looks up the method's radix tree (trees) for the path, retrieves the HandlersChain (middleware + final handler), stores it on Context, then Context.Next iterates handlers by index; middleware calls c.Next() to invoke the rest of the chain.",
+    "anchors": ["ServeHTTP", "HandlersChain", "handleHTTPRequest", "Next"]
+  },
+
+  "alamofire": {
+    "question": "How does Alamofire build, send, and validate a request?",
+    "truth": "Session.request(_:) accepts a URLRequestConvertible, creates a DataRequest, and enqueues it on the underlying URLSession. The request executes as a URLSessionDataTask; on completion the Response is passed through .validate() (status code + content-type checks) and then response/responseDecodable serializers.",
+    "anchors": ["Session", "DataRequest", "URLRequestConvertible", "validate"]
+  }
+}

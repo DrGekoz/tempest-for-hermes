@@ -1,0 +1,369 @@
+{
+    "id":  "alamofire",
+    "question":  "How does Alamofire build, send, and validate a request?",
+    "engine":  "opencode",
+    "runs":  [
+                 {
+                     "atlas_tools_exposed":  1,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  6,
+                     "atlas_call_names":  [
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore"
+                                          ],
+                     "tool_calls_total":  6,
+                     "tool_calls_by_kind":  {
+                                                "atlas_atlas_explore":  6
+                                            },
+                     "counts":  {
+                                    "atlas_atlas_explore":  6
+                                },
+                     "reads":  0,
+                     "greps":  0,
+                     "globs":  0,
+                     "bash":  0,
+                     "tasks":  0,
+                     "duration_ms":  39486,
+                     "duration_s":  39.5,
+                     "num_turns":  7,
+                     "input_tokens":  37557,
+                     "fresh_input_tokens":  37557,
+                     "cache_read_input_tokens":  158848,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  1320,
+                     "total_tokens":  197725,
+                     "total_billable_tokens":  38877,
+                     "cost_usd":  0.0032387571999999997,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Here\u0027s the full request lifecycle across the three phases:\n\n## Build\n- `Session.request(...)` (Session.swift:318) wraps url/method/parameters/encoding/headers/requestModifier into a `RequestConvertible` (Session.swift:286), whose `asURLRequest()` (Session.swift:294) builds a `URLRequest`, applies the `requestModifier`, then runs the `ParameterEncoding` to attach body/query params.\n- The `request(convertible:interceptor:shouldAutomaticallyResume:)` overload (Session.swift:393) constructs a `DataRequest` on the Session\u0027s queues and calls `performEagerlyIfNecessary(request)` (Session.swift:1157) ΓÇö which only performs if `requestSetup == .eager`; otherwise it waits for `resume()`.\n\n## Send\n- `Request.resume()` (Request.swift:768) flips state to `.resumed`; if no URLSessionTask exists yet it calls `delegate?.readyToPerform` ΓåÆ `Session.perform` (Session.swift:1341).\n- `Session.perform` (Session.swift:1166) runs on `rootQueue`, inserts the request into `activeRequests`, then on `requestQueue` dispatches by subtype: DataRequest ΓåÆ `performDataRequest` ΓåÆ `performSetupOperations` (Session.swift:1246).\n- `performSetupOperations` calls `convertible.asURLRequest()`, validates it, then either creates the task directly or runs the `RequestAdapter` (from the interceptor chain) via `adapter.adapt(...)` before task creation.\n- Task creation: `didCreateURLRequest` (Session.swift:1291) calls `request.task(for:using:)` (DataStreamRequest.swift:146 ΓåÆ `session.dataTask(with:)`), records it in `requestTaskMap`, then `Request.didCreateTask` (Request.swift:388) appends it and, if already `.resumed`, calls `task.resume()`. Actual I/O is Foundation\u0027s `URLSession`, whose delegate callbacks `Session` routes back to the `Request`.\n\n## Validate\n- `validate()` (Validation.swift:146) wraps statusCode/contentType checks into `Validation` closures; `DataRequest.validate(_:)` (DataRequest.swift:144) appends a validator closure to `validators`.\n- On completion, the delegate fires `Request.didCompleteTask(_:with:)` (Request.swift:515): records the error if unset, then runs every stored validator ΓÇö a failing one sets `error = .responseValidationFailed(...)` (DataRequest.swift:151).\n- `retryOrFinish` (Request.swift:543) then consults the retrier via `Session.retryResult` (Session.swift:1349): `.doNotRetry` ΓåÆ `finish()`; `.retry` ΓåÆ `prepareForRetry()` + `perform(request, forRetry: true)` (Session.swift:1365).\n- `finish()` (Request.swift:563) starts the response serializers: `processNextResponseSerializer()` (Request.swift:613) runs each `response(...)` closure on the serializationQueue, fires completions, and `cleanup()` removes the request from `activeRequests`.\n\nThe key seam: `Request` is a state machine (initialized ΓåÆ resumed/suspended/cancelled ΓåÆ finished) with a single `underlyingQueue`; all delegate callbacks, retries, and serializers are funneled through it, so validation and serialization run asynchronously on the serialization queue after the state machine completes.",
+                     "final_text_len":  2987,
+                     "arm":  "with",
+                     "run":  1
+                 },
+                 {
+                     "atlas_tools_exposed":  0,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  0,
+                     "atlas_call_names":  [
+
+                                          ],
+                     "tool_calls_total":  19,
+                     "tool_calls_by_kind":  {
+                                                "read":  10,
+                                                "glob":  1,
+                                                "grep":  8
+                                            },
+                     "counts":  {
+                                    "read":  10,
+                                    "glob":  1,
+                                    "grep":  8
+                                },
+                     "reads":  10,
+                     "greps":  8,
+                     "globs":  1,
+                     "bash":  0,
+                     "tasks":  0,
+                     "duration_ms":  57406,
+                     "duration_s":  57.4,
+                     "num_turns":  13,
+                     "input_tokens":  41032,
+                     "fresh_input_tokens":  41032,
+                     "cache_read_input_tokens":  363776,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  2601,
+                     "total_tokens":  407409,
+                     "total_billable_tokens":  43633,
+                     "cost_usd":  0.0039395664,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Here\u0027s the full lifecycle, traced through the code:\n\n## 1. Build ΓÇö URLRequest creation\n\n- `AF` is a global `Session.default` (Source/Alamofire.swift:37). `Session.request(...)` (Source/Core/Session.swift:318) wraps your components (URL, method, parameters, encoding, headers) into a `RequestConvertible` struct.\n- `RequestConvertible.asURLRequest()` (Session.swift:294) constructs `URLRequest(url:method:headers:)` (Source/Core/URLConvertible+URLRequestConvertible.swift:97), applies an optional `requestModifier`, then runs the `ParameterEncoding` to place parameters into the query string/body. The `Encodable`-parameter variant uses `RequestEncodableConvertible` + a `ParameterEncoder` (Session.swift:336).\n- The `request(_:)` overload (Session.swift:393) creates the `DataRequest` and calls `performEagerlyIfNecessary` ΓåÆ `perform`.\n\n## 2. Send ΓÇö perform \u0026 URLSessionTask\n\n- `Session.perform` (Session.swift:1166) hops onto `rootQueue`, registers the request in `activeRequests`, then onto `requestQueue` ΓåÆ `performSetupOperations` (Session.swift:1246).\n- That method calls `convertible.asURLRequest()` and `try initialRequest.validate()`. On failure ΓåÆ `request.didFailToCreateURLRequest` ΓåÆ retry-or-finish (Session.swift:1253-1259).\n- On success it notifies `didCreateInitialURLRequest`, then if a `RequestAdapter` (interceptor) exists, adapts + re-validates the request (Session.swift:1265-1286).\n- `Session.didCreateURLRequest` (Session.swift:1291) creates the real task via `DataRequest.task(for:using:)` ΓåÆ `session.dataTask(with:)` (Source/Core/DataRequest.swift:119), stores it in `requestTaskMap`, then `Request.didCreateTask` (Source/Core/Request.swift:388) appends it and resumes/suspends/cancels it based on request state.\n- Auto-start: adding a response handler triggers `appendResponseSerializer` (Request.swift:589) ΓåÆ `resume()` (Request.swift:768), which either calls `task.resume()` or, if no task exists yet, `delegate.readyToPerform(request:)` ΓåÆ `Session.perform` (Session.swift:1341). URLSession delegate callbacks flow back through `SessionDelegate` to the `Request`.\n\n## 3. Validate ΓÇö response validation\n\n- `DataRequest.validate(_:)` (DataRequest.swift:144) appends a closure to `validators`; `validate()` chains default checks ΓÇö status code in `200..\u003c300` + content type matching the `Accept` header (Source/Features/Validation.swift:188, 160, 175).\n- On task completion, `Request.didCompleteTask` (Request.swift:515) stores the error, then runs every validator synchronously; a failed validator writes `self.error` (DataRequest.swift:150-152).\n- Finally `retryOrFinish` (Request.swift:543) either lets the retrier re-run `perform` via `retryRequest`, or calls `finish()` ΓåÆ `processNextResponseSerializer` runs the response serializers/completion handlers with the validation error attached.\n\nThe same pipeline is reused by `streamRequest`, `upload`, `download`, and `webSocketRequest` ΓÇö only the concrete task creation (`DataRequest.swift:119`, `DownloadRequest.swift:205`, `UploadRequest.swift:110`) and validation closure signatures differ.",
+                     "final_text_len":  3068,
+                     "arm":  "without",
+                     "run":  1
+                 },
+                 {
+                     "atlas_tools_exposed":  1,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  4,
+                     "atlas_call_names":  [
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore"
+                                          ],
+                     "tool_calls_total":  15,
+                     "tool_calls_by_kind":  {
+                                                "atlas_atlas_explore":  4,
+                                                "grep":  5,
+                                                "read":  5,
+                                                "glob":  1
+                                            },
+                     "counts":  {
+                                    "atlas_atlas_explore":  4,
+                                    "grep":  5,
+                                    "read":  5,
+                                    "glob":  1
+                                },
+                     "reads":  5,
+                     "greps":  5,
+                     "globs":  1,
+                     "bash":  0,
+                     "tasks":  0,
+                     "duration_ms":  53573,
+                     "duration_s":  53.6,
+                     "num_turns":  12,
+                     "input_tokens":  33744,
+                     "fresh_input_tokens":  33744,
+                     "cache_read_input_tokens":  326784,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  1854,
+                     "total_tokens":  362382,
+                     "total_billable_tokens":  35598,
+                     "cost_usd":  0.0032987976000000002,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Here\u0027s the full lifecycle:\n\n## 1. Build ΓÇö URLRequest construction\n- `Session.request(...)` (Source/Core/Session.swift:318, 367) wraps your components into a `RequestConvertible` / `RequestEncodableConvertible` struct (both conform to `URLRequestConvertible`).\n- Their `asURLRequest()` (Session.swift:294) builds a `URLRequest` via the `URLRequest(url:method:headers:)` initializer (Source/Core/URLConvertible+URLRequestConvertible.swift:97), applies the `requestModifier`, then runs the `ParameterEncoder`/`ParameterEncoding` over the parameters.\n\n## 2. Send ΓÇö task creation \u0026 execution\n- The generic `request(_ convertible: URLRequestConvertible...)` overload (Session.swift:393) constructs the concrete `DataRequest`/`UploadRequest`/`DownloadRequest` etc. with `delegate: self`, then calls `performEagerlyIfNecessary`.\n- `Request.resume()` (Source/Core/Request.swift:768) transitions state to `.resumed`; since no `URLSessionTask` exists yet, it asks `delegate?.readyToPerform(request:)` ΓåÆ `Session.readyToPerform` (Session.swift:1341) ΓåÆ `perform` (Session.swift:1166), which dispatches by request subtype (e.g. `performDataRequest` ΓåÆ `performSetupOperations`).\n- `performSetupOperations` (Session.swift:1246): builds `initialRequest`, validates it, calls `didCreateInitialURLRequest`, then runs the interceptor\u0027s `adapter.adapt(...)` (combined session+request adapters, Session.swift:1315).\n- On success, `Session.didCreateURLRequest` (Session.swift:1291) calls `request.task(for:using:)` ΓÇö for `DataRequest` that\u0027s `session.dataTask(with:)` (Source/Core/DataRequest.swift:119) ΓÇö registers it in `requestTaskMap`, and calls `Request.didCreateTask` (Request.swift:388), which resumes/suspends/cancels the task to match request state. `URLSessionDelegate` callbacks then feed data back.\n\n## 3. Validate\n- `validate(_:)` (DataRequest.swift:144) wraps the closure into a `@Sendable` validator appended to the thread-safe `validators` array. Built-in `validate()` chains reuse this: status codes default to `200..\u003c300` (Source/Features/Validation.swift:69) plus content-type checks.\n- When the task finishes, `Request.didCompleteTask(_:with:)` (Request.swift:515) stores the error, **synchronously runs every validator** (each sets `self.error` on failure, e.g. `.responseValidationFailed`), then calls `retryOrFinish(error:)` (Request.swift:543), which either asks the `RequestRetrier` to retry (re-entering `perform` via `Session.retryRequest`, Session.swift:1365) or finishes and fires your response handlers (e.g. `responseDecodable`).",
+                     "final_text_len":  2537,
+                     "arm":  "with",
+                     "run":  2
+                 },
+                 {
+                     "atlas_tools_exposed":  0,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  0,
+                     "atlas_call_names":  [
+
+                                          ],
+                     "tool_calls_total":  16,
+                     "tool_calls_by_kind":  {
+                                                "read":  13,
+                                                "grep":  3
+                                            },
+                     "counts":  {
+                                    "read":  13,
+                                    "grep":  3
+                                },
+                     "reads":  13,
+                     "greps":  3,
+                     "globs":  0,
+                     "bash":  0,
+                     "tasks":  0,
+                     "duration_ms":  59950,
+                     "duration_s":  60,
+                     "num_turns":  15,
+                     "input_tokens":  50678,
+                     "fresh_input_tokens":  50678,
+                     "cache_read_input_tokens":  483968,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  2259,
+                     "total_tokens":  536905,
+                     "total_billable_tokens":  52937,
+                     "cost_usd":  0.004672875199999999,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Here\u0027s the full request lifecycle through Alamofire 5.12:\n\n## 1. Build ΓÇö `Session.request(...)`\n- `AF.request(url, method:parameters:encoding:...)` wraps your inputs in a `RequestConvertible` struct (`Source/Core/Session.swift:286`). Its `asURLRequest()` builds the `URLRequest` via `URLRequest(url:method:headers:)`, applies the optional `requestModifier`, then encodes parameters through the `ParameterEncoding` (e.g. `URLEncoding`) or `ParameterEncoder` (for `Encodable`) ΓÇö `Session.swift:294-299`, `Session.swift:344-349`.\n- That convertible is passed to `DataRequest(...)` (`Session.swift:393`), which stores it and hooks the `Session` up as its `RequestDelegate`.\n\n## 2. Send ΓÇö `perform(...)` on three serial queues\n- When you attach the first response handler, `appendResponseSerializer` (`Request.swift:589`) auto-calls `resume()` ΓåÆ `readyToPerform` ΓåÆ `perform(_:)` (`Session.swift:1166`), which hops: `rootQueue` ΓåÆ `requestQueue` ΓåÆ `performDataRequest` ΓåÆ `performSetupOperations` (`Session.swift:1246`).\n- `performSetupOperations` calls `convertible.asURLRequest()` and validates it (`URLRequest.validate()` at `Extensions/URLRequest+Alamofire.swift:34` ΓÇö only rejects a `GET` with a body). It then runs the interceptor chain (`adapter.adapt(...)`, `Session.swift:1273`) to allow request adaptation.\n- `Session.didCreateURLRequest` (`Session.swift:1291`) creates the actual task: `DataRequest.task(for:using:)` returns a `session.dataTask(with:)` (`DataRequest.swift:119`). `Request.didCreateTask` (`Request.swift:388`) appends it and, since state is `.resumed`, calls `task.resume()`.\n\n## 3. Validate ΓÇö triggered on task completion\n- The `SessionDelegate` routes URLSession callbacks to the `Request` via the `requestTaskMap` (`SessionDelegate.swift:200-285`). Data arrives through `didReceive(data:)` (`DataRequest.swift:86`).\n- On `didCompleteWithError`, Session calls `Request.didCompleteTask` (`Request.swift:515`), which **synchronously runs all stored validators**, then `retryOrFinish` (retriers may retry via `retryRequest`, `Session.swift:1365`).\n- Validators are enqueued by `validate(_:)` (`DataRequest.swift:144`) / `validate(statusCode:)` / `validate(contentType:)` / `validate()` (`Features/Validation.swift:158-193`). They check status code (default `200..\u003c300`) and content type (parsed from the `Accept` header, with wildcard support, `Validation.swift:35-77`). Failures set `Request.error`, which flows into every response serializer.\n- Finally `finish()` runs the serializers on `serializationQueue` (e.g. `responseDecodable`, `DataRequest.swift:243`), building an `AFDataResponse` with `request`, `response`, `data`, `metrics`, and `result`, delivered to your completion handler.",
+                     "final_text_len":  2709,
+                     "arm":  "without",
+                     "run":  2
+                 },
+                 {
+                     "atlas_tools_exposed":  1,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  5,
+                     "atlas_call_names":  [
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore"
+                                          ],
+                     "tool_calls_total":  5,
+                     "tool_calls_by_kind":  {
+                                                "atlas_atlas_explore":  5
+                                            },
+                     "counts":  {
+                                    "atlas_atlas_explore":  5
+                                },
+                     "reads":  0,
+                     "greps":  0,
+                     "globs":  0,
+                     "bash":  0,
+                     "tasks":  0,
+                     "duration_ms":  34520,
+                     "duration_s":  34.5,
+                     "num_turns":  6,
+                     "input_tokens":  35426,
+                     "fresh_input_tokens":  35426,
+                     "cache_read_input_tokens":  133120,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  1017,
+                     "total_tokens":  169563,
+                     "total_billable_tokens":  36443,
+                     "cost_usd":  0.003012268,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Here\u0027s the full lifecycle in Alamofire 5:\n\n## 1. Build\n- `Session.request(_:method:parameters:encoding:headers:...)` wraps the args in a `RequestConvertible` (a `URLRequestConvertible`) and calls the underlying `request(_:interceptor:...)`, which constructs a `DataRequest` with `Session` as its `RequestDelegate` (Session.swift:318, :393).\n- The actual `URLRequest` isn\u0027t built until perform-time: `performSetupOperations` calls `convertible.asURLRequest()` (URLConvertible+URLRequestConvertible.swift:74) then `URLRequest.validate()` (checks for invalid content-length etc.), and if an interceptor exists, runs its `adapter.adapt` to produce the final request (Session.swift:1246-1287).\n\n## 2. Send\n- `performEagerlyIfNecessary` ΓåÆ `perform(_:)` hops to `rootQueue`, inserts the request into `activeRequests`, then on `requestQueue` dispatches to `performDataRequest` ΓåÆ `performSetupOperations` (Session.swift:1157, :1166, :1199).\n- After the URLRequest is ready, `Session.didCreateURLRequest` creates the `URLSessionTask` and calls `request.didCreateTask(task)` (Request.swift:388), which resumes/suspends/cancels the task based on the current `RequestState`.\n- `Request.resume()` (Request.swift:768) transitions state to `.resumed`; if no task exists yet it calls `delegate?.readyToPerform(request:)` so the `Session` performs setup and creates the task.\n\n## 3. Validate\n- `validate(statusCode:)`, `validate(contentType:)`, and default `validate()` (status 200...299 + Accept-header content type) register `Validation` closures that produce a `ValidationResult` (Validation.swift:160-193; DataRequest.swift:144).\n- Validators run when the response arrives ΓÇö they\u0027re `@Sendable` closures executed once `error == nil \u0026\u0026 response != nil`; on `.failure` they set `self.error` as an `AFError.responseValidationFailed` (DataRequest.swift:144-164). Failure then surfaces in the response handlers.\n\n## 4. Response wiring (delegate side)\n- `SessionDelegate` bridges `URLSession` callbacks to requests via the `SessionStateProvider`: `didFinishCollecting` stores `URLSessionTaskMetrics` (SessionDelegate.swift:214), and `didCompleteWithError` routes through `Session.didCompleteTask` ΓåÆ `request.didCompleteTask(task, with:)`, where validators run and the request finishes/retries (SessionDelegate.swift:222, Session.swift:1409).\n- `EventMonitor` receives a `did*` callback at each stage, dispatched on each monitor\u0027s queue.\n\nKey players: `Session` (orchestrator + `RequestDelegate`), `SessionDelegate` (URLSession glue), `Request`/`DataRequest` (state machine + validators), `URLRequestConvertible` (request construction), and `RequestInterceptor` (adapter for request modification).",
+                     "final_text_len":  2676,
+                     "arm":  "with",
+                     "run":  3
+                 },
+                 {
+                     "atlas_tools_exposed":  0,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  0,
+                     "atlas_call_names":  [
+
+                                          ],
+                     "tool_calls_total":  15,
+                     "tool_calls_by_kind":  {
+                                                "read":  12,
+                                                "glob":  1,
+                                                "grep":  2
+                                            },
+                     "counts":  {
+                                    "read":  12,
+                                    "glob":  1,
+                                    "grep":  2
+                                },
+                     "reads":  12,
+                     "greps":  2,
+                     "globs":  1,
+                     "bash":  0,
+                     "tasks":  0,
+                     "duration_ms":  45174,
+                     "duration_s":  45.2,
+                     "num_turns":  11,
+                     "input_tokens":  63444,
+                     "fresh_input_tokens":  63444,
+                     "cache_read_input_tokens":  383232,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  1810,
+                     "total_tokens":  448486,
+                     "total_billable_tokens":  65254,
+                     "cost_usd":  0.005335164800000001,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Alamofire\u0027s request lifecycle spans **build ΓåÆ send ΓåÆ validate**. Here\u0027s the flow:\n\n## 1. Build\n- Entry points like `AF.request(...)` funnel into `Session.request(...)` (Source/Core/Session.swift:318, 393). Components (URL, method, parameters, encoding, headers) are wrapped in `RequestConvertible`/`RequestEncodableConvertible`, which produce the `URLRequest` via `asURLRequest()`: `URLRequest(url:method:headers:)` from `URLConvertible` (Source/Core/URLConvertible+URLRequestConvertible.swift:97), then parameters are encoded (Session.swift:294-299, 344-349).\n- The `Session` constructs a `DataRequest` (inert by default ΓÇö `requestSetup == .lazy`) and returns it (Session.swift:393-407).\n\n## 2. Send\n- On `resume()` (or automatically when the first response handler is added), `Session.readyToPerform` ΓåÆ `perform()` runs on `rootQueue`, inserts the request into `activeRequests`, then hops to `requestQueue` ΓåÆ `performSetupOperations` (Session.swift:1166, 1246).\n- `performSetupOperations` creates the `URLRequest`, validates it (`URLRequest.validate()` ΓÇö GET-with-body check, Source/Extensions/URLRequest+Alamofire.swift:34), optionally runs a `RequestAdapter` (adapters/retriers come from `Session` then per-request interceptors, Session.swift:1315), then calls `didCreateURLRequest`.\n- `Session.didCreateURLRequest` calls `request.task(for:using: session)` ΓåÆ `session.dataTask(with:)` (DataRequest.swift:119), records the task, and `Request.didCreateTask` resumes/suspends/cancels it based on state (Request.swift:388).\n- `URLSession` callbacks go through `SessionDelegate` ΓåÆ back to the `Request`: `didReceive(data:)` accumulates body data (DataRequest.swift:86), `didCompleteWithError` ΓåÆ `request.didCompleteTask(task:with:)` (SessionDelegate.swift:222, Request.swift:515).\n\n## 3. Validate\n- `.validate()` / `.validate(statusCode:)` / `.validate(contentType:)` (Source/Features/Validation.swift) append validator closures to `Request.validators` (DataRequest.swift:144-164). Default `validate()` checks 200ΓÇô299 status and Accept/Content-Type match.\n- Validators run synchronously inside `didCompleteTask` (Request.swift:520-521); any failure sets `error` (e.g. `.responseValidationFailed`).\n- Finally `retryOrFinish` decides retry (via `RequestRetrier`) vs. `finish()` ΓåÆ response serializers run on `serializationQueue`, each serializer can itself trigger retry on failure, and `cleanup` removes the request from `activeRequests` (Request.swift:543-662).",
+                     "final_text_len":  2460,
+                     "arm":  "without",
+                     "run":  3
+                 },
+                 {
+                     "atlas_tools_exposed":  1,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  3,
+                     "atlas_call_names":  [
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore",
+                                              "atlas_atlas_explore"
+                                          ],
+                     "tool_calls_total":  3,
+                     "tool_calls_by_kind":  {
+                                                "atlas_atlas_explore":  3
+                                            },
+                     "counts":  {
+                                    "atlas_atlas_explore":  3
+                                },
+                     "reads":  0,
+                     "greps":  0,
+                     "globs":  0,
+                     "bash":  0,
+                     "tasks":  0,
+                     "duration_ms":  20857,
+                     "duration_s":  20.9,
+                     "num_turns":  4,
+                     "input_tokens":  26487,
+                     "fresh_input_tokens":  26487,
+                     "cache_read_input_tokens":  68608,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  779,
+                     "total_tokens":  95874,
+                     "total_billable_tokens":  27266,
+                     "cost_usd":  0.0021398412,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Here\u0027s the full lifecycle:\n\n**1. Build** ΓÇö `Session.request(_:method:parameters:...)` wraps your inputs in a `RequestConvertible` (`Source/Core/Session.swift:326`), which conforms to `URLRequestConvertible`, then creates a `DataRequest` (`Source/Core/Session.swift:396`). The `DataRequest` init calls `asURLRequest()` on that convertible to produce the `URLRequest` ΓÇö applying `ParameterEncoding`, `headers`, `requestModifier`, and the `RequestInterceptor`\u0027s adapter ΓÇö and notifies the `EventMonitor` via `request(_:didCreateInitialURLRequest:)` / `request(_:didCreateURLRequest:)` (`Source/Features/EventMonitor.swift:103-115`).\n\n**2. Send** ΓÇö When the request resumes, the delegate chain fires `Session.didCreateURLRequest(_:for:)` (`Source/Core/Session.swift:1291`), which asks the request subclass for a task. `DataRequest.task(for:using:)` returns a `URLSessionDataTask` (`Source/Core/DataRequest.swift:119`), which is stored in `requestTaskMap` and resumed. The `Session` (as `URLSessionDelegate`) receives callbacks and funnels response `Data` into `DataRequest.didReceive(data:)` (`Source/Core/DataRequest.swift:86`).\n\n**3. Validate** ΓÇö `validate()` appends closures to the request\u0027s `validators` storage. On completion, each validator runs against the `HTTPURLResponse` (plus body data for `DataRequest`): status codes (`Source/Features/Validation.swift:160`), content types with MIME/wildcard matching (`Source/Features/Validation.swift:105`), or custom closures. A failure sets `self.error` (e.g. `Source/Core/DataStreamRequest.swift:209`), so subsequent response handlers see the `AFError` instead of a value. The result is also reported to the `EventMonitor` (`request(_:didValidateRequest:...)`, `Source/Features/EventMonitor.swift:156-161`).\n\nThe validation types differ per request kind: `DataRequest` checks body data + MIME type (`Validation.swift:149`), `DownloadRequest` checks the file at `fileURL` (`Validation.swift:251`), and `DataStreamRequest` only sees request + response (`Validation.swift:199`).",
+                     "final_text_len":  2024,
+                     "arm":  "with",
+                     "run":  4
+                 },
+                 {
+                     "atlas_tools_exposed":  0,
+                     "mcp_servers":  [
+
+                                     ],
+                     "atlas_calls":  0,
+                     "atlas_call_names":  [
+
+                                          ],
+                     "tool_calls_total":  25,
+                     "tool_calls_by_kind":  {
+                                                "read":  16,
+                                                "bash":  1,
+                                                "grep":  8
+                                            },
+                     "counts":  {
+                                    "read":  16,
+                                    "bash":  1,
+                                    "grep":  8
+                                },
+                     "reads":  16,
+                     "greps":  8,
+                     "globs":  0,
+                     "bash":  1,
+                     "tasks":  0,
+                     "duration_ms":  77100,
+                     "duration_s":  77.1,
+                     "num_turns":  17,
+                     "input_tokens":  48954,
+                     "fresh_input_tokens":  48954,
+                     "cache_read_input_tokens":  501632,
+                     "cache_creation_input_tokens":  0,
+                     "output_tokens":  3361,
+                     "total_tokens":  553947,
+                     "total_billable_tokens":  52315,
+                     "cost_usd":  0.0047582248,
+                     "result_subtype":  "completed",
+                     "failure_kind":  null,
+                     "failure_reason":  null,
+                     "valid_run":  true,
+                     "final_text":  "Here\u0027s the full lifecycle, traced through the source (Alamofire 5.12.0).\n\n## Build\n\n1. **Entry point** ΓÇö `AF.request(...)` is just `Session.default` (`Source/Alamofire.swift:37`). `Session.request(_:method:parameters:encoding:...)` (`Source/Core/Session.swift:318`) wraps your URL/method/params/headers into a `RequestConvertible` or `RequestEncodableConvertible` (both conform to `URLRequestConvertible`).\n2. **URLRequest construction** ΓÇö `RequestEncodableConvertible.asURLRequest()` (`Session.swift:344`) calls `URLRequest(url:method:headers:)` (`Source/Core/URLConvertible+URLRequestConvertible.swift:97`) and then `parameters.map { encoder.encode($0, into: request) }` ΓÇö i.e. the `ParameterEncoder` (JSON, URL-encoded form, or multipart) writes the body/query.\n\n## Send\n\n3. **Session setup** ΓÇö `Session.request(_ convertible: URLRequestConvertible...)` (`Session.swift:393`) creates the `DataRequest` and, if `requestSetup == .eager`, calls `performEagerlyIfNecessary` (`Session.swift:1157`). Default is `.lazy`, so setup happens on `resume()`.\n4. **Resume** ΓÇö `Request.resume()` (`Source/Core/Request.swift:768`) transitions to `.resumed`; if no task exists yet it calls `delegate.readyToPerform` ΓåÆ `Session.perform` (`Session.swift:1166`), which hops to `requestQueue` and dispatches per request type (`performDataRequest`, etc.).\n5. **Setup operations** ΓÇö `performSetupOperations` (`Session.swift:1246`): builds the initial `URLRequest` via `convertible.asURLRequest()`, calls `URLRequest.validate()` (rejects GET-with-body, `Source/Extensions/URLRequest+Alamofire.swift:34`), notifies `didCreateInitialURLRequest`, then runs any `RequestAdapter` (session + request interceptors composed via `adapter(for:)`, `Session.swift:1315`). Adapted request is validated again.\n6. **Task creation** ΓÇö `didCreateURLRequest` (`Session.swift:1291`) calls `request.task(for:using:)`; `DataRequest` overrides this with `session.dataTask(with:)` (`Source/Core/DataRequest.swift:119`). The task is registered in the `RequestTaskMap` and `didCreateTask` resumes/suspends it as needed.\n7. **Network** ΓÇö the `URLSession` runs the task; `SessionDelegate` (the session\u0027s `URLSessionDelegate`, wired in `Session.swift:219`) routes callbacks back to the owning `Request` via the taskΓåÆrequest map.\n\n## Validate\n\n8. **Response data** ΓÇö `urlSession(_:dataTask:didReceive:)` (`Source/Core/SessionDelegate.swift:260`) forwards chunks to `DataRequest.didReceive(data:)` (`DataRequest.swift:86`), which accumulates into `data` and updates download progress.\n9. **Completion + validators** ΓÇö `urlSession(_:task:didCompleteWithError:)` (`SessionDelegate.swift:222`) ΓåÆ `Request.didCompleteTask` (`Request.swift:515`): stores the error, runs every registered validator closure (`validators`), then `retryOrFinish`.\n10. **Validation** ΓÇö `DataRequest.validate(...)` (`DataRequest.swift:144`) appends a validator that runs the supplied `Validation` closure; the convenience overloads (`Validation.swift:160-193`) check status code (default `200..\u003c300`) and content-type against the `Accept` header (`MIMEType` matching, `Validation.swift:57`). A failed validator sets `self.error`.\n11. **Retry or finish** ΓÇö `retryOrFinish` (`Request.swift:543`) asks the `RequestRetrier` via `delegate.retryResult`; on retry it calls `prepareForRetry()` + `perform(forRetry:)`; otherwise `finish(error:)`.\n\n## Finish \u0026 respond\n\n12. `finish` (`Request.swift:563`) ΓåÆ `processNextResponseSerializer` (`Request.swift:613`) runs each appended serializer closure on `serializationQueue`. The `response(queue:completionHandler:)` handler (`DataRequest.swift:220`) snapshots data/error and dispatches your completion to `.main`. State moves to `.finished`, the request is cleaned up, and `finishHandlers`/async `value` continuations are released (`Concurrency.swift`).",
+                     "final_text_len":  3813,
+                     "arm":  "without",
+                     "run":  4
+                 }
+             ]
+}

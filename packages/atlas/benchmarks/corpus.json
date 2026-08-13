@@ -1,0 +1,76 @@
+{
+  "note": "v2 corpus. 7 real-world repos across 6 languages, chosen to span sizes S -> XL and framework styles. All sha=null: clone HEAD, record resolved SHA in the result file. Language spread: TS (vscode, excalidraw), Python (django), Rust (tokio), Java/Kotlin (okhttp), Go (gin), Swift (alamofire).",
+  "corpus_version": "v2",
+  "repos": [
+    {
+      "id": "vscode",
+      "lang": "TypeScript",
+      "framework": "Electron",
+      "size": "XL",
+      "url": "https://github.com/microsoft/vscode.git",
+      "sha": null,
+      "approxFiles": 11000,
+      "provenance": "largest corpus repo -- exercises indexer scale + ranking under heavy volume"
+    },
+    {
+      "id": "excalidraw",
+      "lang": "TypeScript",
+      "framework": "React",
+      "size": "M",
+      "url": "https://github.com/excalidraw/excalidraw.git",
+      "sha": null,
+      "approxFiles": 640,
+      "provenance": "corpus fixture"
+    },
+    {
+      "id": "django",
+      "lang": "Python",
+      "framework": "Django",
+      "size": "L",
+      "url": "https://github.com/django/django.git",
+      "sha": null,
+      "approxFiles": 3000,
+      "provenance": "corpus fixture"
+    },
+    {
+      "id": "tokio",
+      "lang": "Rust",
+      "framework": "Async runtime",
+      "size": "L",
+      "url": "https://github.com/tokio-rs/tokio.git",
+      "sha": null,
+      "approxFiles": 790,
+      "provenance": "corpus fixture"
+    },
+    {
+      "id": "okhttp",
+      "lang": "Kotlin+Java",
+      "framework": "HTTP client",
+      "size": "M",
+      "url": "https://github.com/square/okhttp.git",
+      "sha": null,
+      "approxFiles": 500,
+      "provenance": "corpus fixture"
+    },
+    {
+      "id": "gin",
+      "lang": "Go",
+      "framework": "HTTP router",
+      "size": "S",
+      "url": "https://github.com/gin-gonic/gin.git",
+      "sha": null,
+      "approxFiles": 150,
+      "provenance": "corpus fixture"
+    },
+    {
+      "id": "alamofire",
+      "lang": "Swift",
+      "framework": "HTTP client",
+      "size": "M",
+      "url": "https://github.com/Alamofire/Alamofire.git",
+      "sha": null,
+      "approxFiles": 200,
+      "provenance": "corpus fixture"
+    }
+  ]
+}
