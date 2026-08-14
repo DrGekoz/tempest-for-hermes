@@ -11,6 +11,7 @@ mod automations;
 mod canvas_mcp;
 mod claude_bridge;
 mod quota;
+mod secrets;
 mod service_proxy;
 mod warp_bridge;
 
@@ -4146,6 +4147,9 @@ pub fn run() {
             stop_atlas_daemon,
             write_canvas_mcp_config,
             register_service_route,
+            secrets::secret_get,
+            secrets::secret_set,
+            secrets::secret_delete,
             atlas_mcp_tools,
             atlas_mcp_call,
             git_ls_files,

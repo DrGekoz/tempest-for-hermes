@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatStreamEvent } from "./chat";
 import { WARP_PROVIDER_ENV } from "./chatModels";
+import { byokId, getSecret } from "./secrets";
 
 // Experimental Warp (warpllm) chat backend. Non-streaming: one Tauri round-trip,
 // then we emit the reply as a single token + finish so ChatNode renders it via
@@ -24,14 +25,14 @@ function providerPrefix(modelId: string): string {
   return modelId.split("/")[0] ?? "";
 }
 
-function pickApiKey(modelId: string): { name?: string; key?: string } {
+async function pickApiKey(modelId: string): Promise<{ name?: string; key?: string }> {
   const envName = WARP_PROVIDER_ENV[providerPrefix(modelId)];
   if (!envName) return {};
   // Reuse the same BYOK slot the AI-SDK chat path uses for that provider (openai
   // for openrouter's underlying key too — user only has one; they can override
   // by exporting the env var before launching Tempest).
   const providerBykSlot = providerPrefix(modelId) === "openrouter" ? "openrouter" : providerPrefix(modelId);
-  const key = localStorage.getItem(`tempest-byok-key-${providerBykSlot}`) ?? "";
+  const key = await getSecret(byokId(providerBykSlot));
   return { name: envName, key };
 }
 
@@ -41,7 +42,7 @@ export function streamWarp(options: StreamWarpOptions): { cancel: () => void } {
 
   (async () => {
     try {
-      const { name, key } = pickApiKey(model);
+      const { name, key } = await pickApiKey(model);
       const res = await invoke<WarpChatResult>("warp_chat", {
         args: {
           model,

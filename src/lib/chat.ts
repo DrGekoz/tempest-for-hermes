@@ -7,6 +7,7 @@ import { createXai } from "@ai-sdk/xai";
 import { createGroq } from "@ai-sdk/groq";
 import { streamText, stepCountIs } from "ai";
 import type { LanguageModel, ToolSet, ModelMessage } from "ai";
+import { byokId, getSecret } from "./secrets";
 
 function buildModel(providerId: string, modelId: string, apiKey: string): LanguageModel {
   switch (providerId) {
@@ -53,7 +54,7 @@ export function streamChat(options: StreamChatOptions): { cancel: () => void } {
     try {
       const apiKey = LOCAL_PROVIDERS.has(providerId)
         ? ""
-        : localStorage.getItem(`tempest-byok-key-${providerId}`) ?? "";
+        : await getSecret(byokId(providerId));
       if (!apiKey && !LOCAL_PROVIDERS.has(providerId))
         throw new Error(`No API key for ${providerId}. Add it in Settings → API Keys.`);
 

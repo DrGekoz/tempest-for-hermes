@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pencil, Trash2, Plus, Eye, EyeOff, Check } from "lucide-react";
 import { Tooltip } from "../Tooltip";
+import { byokId, getSecret, setSecret, deleteSecret } from "../../lib/secrets";
 
 const CDN = "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/";
 
@@ -22,19 +23,23 @@ function maskKey(key: string) {
 }
 
 export function ApiKeysSection() {
-  const [keys, setKeys] = useState<Record<string, string>>(() => {
-    const out: Record<string, string> = {};
-    for (const p of API_KEY_PROVIDERS) {
-      const k = localStorage.getItem(`tempest-byok-key-${p.id}`);
-      if (k) out[p.id] = k;
-    }
-    return out;
-  });
+  const [keys, setKeys] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showId, setShowId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    (async () => {
+      const out: Record<string, string> = {};
+      for (const p of API_KEY_PROVIDERS) {
+        const k = await getSecret(byokId(p.id));
+        if (k) out[p.id] = k;
+      }
+      setKeys(out);
+    })();
+  }, []);
 
   useEffect(() => {
     if (editingId) setTimeout(() => inputRef.current?.focus(), 0);
@@ -45,10 +50,10 @@ export function ApiKeysSection() {
     setEditValue(keys[id] ?? "");
   }
 
-  function saveEdit(id: string) {
+  async function saveEdit(id: string) {
     const v = editValue.trim();
     if (v) {
-      localStorage.setItem(`tempest-byok-key-${id}`, v);
+      await setSecret(byokId(id), v);
       setKeys(prev => ({ ...prev, [id]: v }));
       setSavedId(id);
       setTimeout(() => setSavedId(null), 1500);
@@ -57,8 +62,8 @@ export function ApiKeysSection() {
     setEditValue("");
   }
 
-  function removeKey(id: string) {
-    localStorage.removeItem(`tempest-byok-key-${id}`);
+  async function removeKey(id: string) {
+    await deleteSecret(byokId(id));
     setKeys(prev => { const n = { ...prev }; delete n[id]; return n; });
   }
 

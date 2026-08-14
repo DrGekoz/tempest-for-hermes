@@ -59,6 +59,9 @@ base64 = "0.22"
 # canvas chat nodes. Gated behind the "experimental features" setting; if the
 # feature is off, warp_bridge is never invoked and this dep sits idle.
 warpllm = "0.2"
+# OS credential manager for BYOK API keys (Windows Credential Manager, macOS
+# Keychain, Linux Secret Service). Replaces plaintext localStorage.
+keyring = "2"
 # warpllm ships no runtime — chat_completions is async, so we need a full
 # tokio to drive it from the Tauri command.
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

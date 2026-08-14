@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ArrowRight, Eye, EyeOff, ChevronDown, Check } from 'lucide-react';
+import { byokId, setSecret } from '../../lib/secrets';
 
 interface Props {
   onBack: () => void;
@@ -212,9 +213,9 @@ export default function BYOKPage({ onBack, onComplete }: Props) {
     setShowKey(false);
   }
 
-  function handleComplete() {
+  async function handleComplete() {
     if (selected && apiKey.trim()) {
-      localStorage.setItem(`tempest-byok-key-${selected.id}`, apiKey.trim());
+      await setSecret(byokId(selected.id), apiKey.trim());
       if (selectedModel) localStorage.setItem(`tempest-byok-model-${selected.id}`, selectedModel);
       localStorage.setItem('tempest-byok-provider', selected.id);
     }
