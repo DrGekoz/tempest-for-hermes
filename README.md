@@ -110,15 +110,13 @@ See [ROADMAP.md](ROADMAP.md) for the full picture. **Star this repo** — we ann
 
 Pre-built binaries are available for Windows, macOS, and Linux.
 
+Prerequisites: Node.js 18+, Rust 1.77+. Windows also requires the [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+
 ```bash
-# Prerequisites: Node.js 18+, Rust 1.77+
-# Windows also requires WebView2 Runtime:
-# https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 git clone https://github.com/tempestai-dev/tempest
 cd tempest
 npm install
-npm run dev        # development with hot reload
-npm run build      # production build -> dist-installers/
+npm run dev
 ```
 
 ## Star History
