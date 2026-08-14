@@ -26,6 +26,10 @@ export const EMBEDDABLE_KINDS = [
   // Asset embed-text comes from the truncated extracted text stored in docstring;
   // syncEmbeddings' generic path handles both without a branch.
   'asset',
+  // Note #9: inline rationale comments carry the "why" — semantic queries like
+  // "why does X do Y" should surface them. Embed-text is the comment prose
+  // stored in docstring, same generic path as assets.
+  'rationale',
 ] as const;
 
 /** Model-download progress event, as reported by @xenova/transformers. */

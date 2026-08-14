@@ -39,6 +39,10 @@ export const NODE_KINDS = [
   'route',
   'component',
   'asset',
+  // Note #9: inline rationale comments (WHY / NOTE / HACK / TODO) promoted to
+  // first-class nodes by the extractor. Linked to the nearest enclosing symbol
+  // by an `explains` edge. Extracted from source, not human-declared.
+  'rationale',
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];
@@ -59,7 +63,8 @@ export type EdgeKind =
   | 'instantiates'    // Creates instance of class
   | 'overrides'       // Method overrides parent method
   | 'decorates'       // Decorator applied to symbol
-  | 'describes';      // Asset node describes a code symbol (atlas-extension-plan Rung 3)
+  | 'describes'       // Asset node describes a code symbol (atlas-extension-plan Rung 3)
+  | 'explains';       // Rationale node (WHY/NOTE/HACK/TODO comment) explains its enclosing symbol (note #9)
 
 /**
  * Supported programming languages. See NODE_KINDS for why this is a

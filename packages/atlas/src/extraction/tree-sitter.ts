@@ -29,6 +29,7 @@ import { AstroExtractor } from './astro-extractor';
 import { DfmExtractor } from './dfm-extractor';
 import { VueExtractor } from './vue-extractor';
 import { MyBatisExtractor } from './mybatis-extractor';
+import { extractRationale } from './rationale';
 import {
   getAllFrameworkResolvers,
   getApplicableFrameworks,
@@ -5773,6 +5774,22 @@ export function extractFromSource(
         });
       }
     }
+  }
+
+  // Note #9: promote `WHY:` / `NOTE:` / `HACK:` / `TODO:` comments to
+  // first-class rationale nodes linked to their enclosing symbol. Runs on the
+  // just-extracted node set so `enclosingNode` sees every language extractor's
+  // output. Language-agnostic regex pass — no per-grammar wiring needed.
+  try {
+    const rat = extractRationale(filePath, source, detectedLanguage, result.nodes);
+    result.nodes.push(...rat.nodes);
+    result.edges.push(...rat.edges);
+  } catch (err) {
+    result.errors.push({
+      message: `Rationale extraction failed: ${err instanceof Error ? err.message : String(err)}`,
+      filePath,
+      severity: 'warning',
+    });
   }
 
   return result;

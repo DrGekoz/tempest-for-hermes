@@ -612,7 +612,11 @@ export class ContextBuilder {
              // alongside code, so `atlas_explore` surfaces a linked design doc when
              // its text hits the query terms. Vector + grep channels already include
              // assets (EMBEDDABLE_KINDS, no kind filter respectively).
-             'asset'] as NodeKind[];
+             'asset',
+             // Note #9: rationale nodes (WHY / NOTE / HACK / TODO comments) — the
+             // "why" behind a symbol. Same reasoning as assets: FTS should surface
+             // them when their prose hits the query terms.
+             'rationale'] as NodeKind[];
         for (const term of searchTerms) {
           const termResults = this.queries.searchNodes(term, {
             limit: opts.searchLimit * 2,
