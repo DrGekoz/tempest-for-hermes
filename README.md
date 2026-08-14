@@ -123,6 +123,14 @@ npm run dev
 
 [![Star Trail](https://star-trail.fun/api/chart/tempestai-dev/tempest)](https://star-trail.fun/tempestai-dev/tempest)
 
+## Contributors
+
+Thanks to everyone who has contributed to Tempest. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+
+<a href="https://github.com/tempestai-dev/tempest/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=tempestai-dev/tempest" alt="Tempest contributors" />
+</a>
+
 ## Community
 
 [X (Twitter)](https://x.com/usetempest) — @usetempest
