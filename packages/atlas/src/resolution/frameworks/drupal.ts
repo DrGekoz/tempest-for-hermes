@@ -260,7 +260,7 @@ function extractDrupalHooks(
   // Strategy A: docblock `Implements hook_X().` followed by function definition.
   // The docblock and function may be separated by blank lines.
   const docblockPattern =
-    /\/\*\*[\s\S]*?(?:@|\*\s+)Implements\s+(hook_\w+)\s*\(\)[\s\S]*?\*\/\s*\n(?:\s*\n)*function\s+(\w+)\s*\(/g;
+    /\/\*\*[\s\S]*?(?:@|\*\s+)Implements\s+(hook_\w+)\s*\(\)[\s\S]*?\*\/\s*function\s+(\w+)\s*\(/g;
   const docblockMatched = new Set<string>();
   let match: RegExpExecArray | null;
   while ((match = docblockPattern.exec(content)) !== null) {

@@ -367,7 +367,9 @@ export const vaporResolver: FrameworkResolver = {
     // (`BlogUser.parameter`, `:id`, a path constant) so accept any comma-separated
     // args before `use:` — the label keeps only the string parts. `use:`
     // discriminates a real route from Environment.get("X")/req.parameters.get("X").
-    const routeRegex = /\b(\w+)\.(get|post|put|patch|delete|head|options)\s*\(\s*((?:[^,()]+,\s*)*)use:\s*([A-Za-z_][\w.]*)/g;
+    // Each arg must start with a non-space/non-comma/non-paren char so all-whitespace
+    // arg runs have a single unambiguous split (avoids exponential backtracking).
+    const routeRegex = /\b(\w+)\.(get|post|put|patch|delete|head|options)\s*\(\s*((?:[^,()\s][^,()]*,\s*)*)use:\s*([A-Za-z_][\w.]*)/g;
     let match: RegExpExecArray | null;
     while ((match = routeRegex.exec(safe)) !== null) {
       const [, receiver, method, segsStr, handlerExpr] = match;

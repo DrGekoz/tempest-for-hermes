@@ -188,7 +188,7 @@ export function stripAgentDirectives(context: string): string {
     out.push(ln);
     i++;
   }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/(\n\s*---\s*)+\s*$/, '').trimEnd();
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/(?:\n[ \t]*---[ \t]*)+\s*$/, '').trimEnd();
 }
 
 /**
