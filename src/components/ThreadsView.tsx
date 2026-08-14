@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { MessagesSquare, StickyNote, Bot, SquareTerminal, LayoutGrid, Minimize2, Maximize2, Trash2, Trash } from "lucide-react";
+import {
+  MessagesSquare, StickyNote, Bot, SquareTerminal, LayoutGrid, Minimize2, Maximize2, Trash2, Trash,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
+} from "lucide-react";
 import {
   ReactFlow, Background, Controls, MiniMap, Panel,
   applyNodeChanges, applyEdgeChanges, addEdge, ConnectionMode,
@@ -79,6 +84,13 @@ const KIND_SIZE: Record<string, { w: number; h: number }> = {
 // Compact width of a collapsed node — a single-row gist pill. Its height is left
 // to React Flow to measure (like auto-height kinds), so it hugs the one row.
 const COLLAPSED_W = 260;
+
+// A node's real on-canvas footprint: explicit width/height (from creation) if
+// set, else React Flow's measured size, else a sane fallback. Neither field is
+// guaranteed (auto-height kinds only get width; freshly-created nodes may not
+// have been measured yet), so every consumer of node size goes through this.
+const dimW = (n: Node) => n.width ?? n.measured?.width ?? COLLAPSED_W;
+const dimH = (n: Node) => n.height ?? n.measured?.height ?? 160;
 
 function toFlowNode(n: DbThreadNode): Node {
   let title = n.kind;
@@ -296,8 +308,6 @@ export function ThreadsView({
       // Circle radius per node from its real footprint (half the diagonal) so big
       // nodes claim proportional space in the sim; point-particles would clip.
       type SimNode = SimulationNodeDatum & { id: string; r: number };
-      const dimW = (n: Node) => n.width ?? n.measured?.width ?? COLLAPSED_W;
-      const dimH = (n: Node) => n.height ?? n.measured?.height ?? 160;
       const sim: SimNode[] = prev
         .filter((n) => connected.has(n.id))
         .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, r: Math.hypot(dimW(n), dimH(n)) / 2 }));
@@ -330,6 +340,60 @@ export function ThreadsView({
     });
     setTimeout(() => rfRef.current?.fitView({ duration: 400, padding: 0.2 }), 50);
   }, [edges]);
+
+  type AlignMode = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom" | "distributeH" | "distributeV";
+
+  // Multi-select alignment/distribution — a bulk, non-drag reposition of the
+  // currently-selected nodes (same shape as tidy(): compute new positions,
+  // persist each via saveThreadNode, then setNodes so React Flow reflects them).
+  const alignSelection = useCallback((mode: AlignMode) => {
+    setNodes((prev) => {
+      const sel = prev.filter((n) => n.selected);
+      if (sel.length < 2) return prev;
+      const boxes = sel.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, w: dimW(n), h: dimH(n) }));
+      const pos = new Map<string, { x: number; y: number }>();
+
+      if (mode === "distributeH" || mode === "distributeV") {
+        // Even gaps between edges, ordered along the axis — the outermost two
+        // nodes anchor the span, interior nodes are spaced to fill it evenly.
+        const axis = mode === "distributeH" ? "x" : "y";
+        const size = mode === "distributeH" ? "w" : "h";
+        const sorted = [...boxes].sort((a, b) => a[axis] - b[axis]);
+        const first = sorted[0], last = sorted[sorted.length - 1];
+        const span = (last[axis] + last[size]) - first[axis];
+        const totalSize = sorted.reduce((s, b) => s + b[size], 0);
+        const gap = (span - totalSize) / (sorted.length - 1);
+        let cursor = first[axis];
+        for (const b of sorted) {
+          pos.set(b.id, mode === "distributeH" ? { x: Math.round(cursor), y: b.y } : { x: b.x, y: Math.round(cursor) });
+          cursor += b[size] + gap;
+        }
+      } else {
+        const minX = Math.min(...boxes.map((b) => b.x));
+        const maxRight = Math.max(...boxes.map((b) => b.x + b.w));
+        const minY = Math.min(...boxes.map((b) => b.y));
+        const maxBottom = Math.max(...boxes.map((b) => b.y + b.h));
+        const centerX = (minX + maxRight) / 2;
+        const centerY = (minY + maxBottom) / 2;
+        for (const b of boxes) {
+          let x = b.x, y = b.y;
+          if (mode === "left") x = minX;
+          else if (mode === "right") x = maxRight - b.w;
+          else if (mode === "hcenter") x = centerX - b.w / 2;
+          else if (mode === "top") y = minY;
+          else if (mode === "bottom") y = maxBottom - b.h;
+          else if (mode === "vcenter") y = centerY - b.h / 2;
+          pos.set(b.id, { x: Math.round(x), y: Math.round(y) });
+        }
+      }
+
+      for (const [id, p] of pos) {
+        const row = getThreadNode(id);
+        if (row) saveThreadNode({ ...row, x: p.x, y: p.y });
+      }
+      return prev.map((n) => (pos.has(n.id) ? { ...n, position: pos.get(n.id)! } : n));
+    });
+  }, []);
 
   const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
     e.preventDefault();
@@ -426,6 +490,9 @@ export function ThreadsView({
   let defaultViewport: Viewport | undefined;
   try { if (thread?.viewport) defaultViewport = JSON.parse(thread.viewport); } catch { /* none */ }
 
+  // Drives the alignment toolbar's visibility — only meaningful with 2+ nodes.
+  const selectedCount = useMemo(() => nodes.reduce((n, node) => n + (node.selected ? 1 : 0), 0), [nodes]);
+
   const nodeCtx = useMemo(
     () => ({
       projectId, projectPath, atlasIndexed,
@@ -519,6 +586,56 @@ export function ThreadsView({
             )}
           </div>
         </Panel>
+
+        {selectedCount >= 2 && (
+          <Panel position="bottom-center">
+            <div
+              style={{
+                display: "flex", alignItems: "center", gap: 2, padding: 3, borderRadius: 999,
+                background: "var(--tempest-bg-elevated, #161616)",
+                border: "1px solid var(--tempest-border-subtle, #2a2a2a)",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+              }}
+            >
+              <span style={{ padding: "0 8px", color: "var(--tempest-fg-muted, #888)", font: '12px "Geist", system-ui, sans-serif' }}>
+                {selectedCount} selected
+              </span>
+              <div style={{ width: 1, alignSelf: "stretch", margin: "2px 1px", background: "var(--tempest-border-subtle, #2a2a2a)" }} />
+              {([
+                { title: "Align left", Icon: AlignStartVertical, onClick: () => alignSelection("left") },
+                { title: "Align center horizontally", Icon: AlignCenterVertical, onClick: () => alignSelection("hcenter") },
+                { title: "Align right", Icon: AlignEndVertical, onClick: () => alignSelection("right") },
+                "sep",
+                { title: "Align top", Icon: AlignStartHorizontal, onClick: () => alignSelection("top") },
+                { title: "Align middle", Icon: AlignCenterHorizontal, onClick: () => alignSelection("vcenter") },
+                { title: "Align bottom", Icon: AlignEndHorizontal, onClick: () => alignSelection("bottom") },
+                "sep",
+                { title: "Distribute horizontally", Icon: AlignHorizontalDistributeCenter, onClick: () => alignSelection("distributeH") },
+                { title: "Distribute vertically", Icon: AlignVerticalDistributeCenter, onClick: () => alignSelection("distributeV") },
+              ] as const).map((b, i) =>
+                b === "sep" ? (
+                  <div key={i} style={{ width: 1, alignSelf: "stretch", margin: "2px 3px", background: "var(--tempest-border-subtle, #2a2a2a)" }} />
+                ) : (
+                  <Tooltip key={b.title} content={b.title} placement="top">
+                    <button
+                      onClick={b.onClick}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        width: 28, height: 28, border: "none", borderRadius: 5,
+                        background: "transparent", color: "var(--tempest-fg-default, #e6e6e6)", cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--tempest-bg-hover, #232323)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <b.Icon size={15} />
+                    </button>
+                  </Tooltip>
+                )
+              )}
+            </div>
+          </Panel>
+        )}
+
         <ClickConnectLine />
       </ReactFlow>
 
