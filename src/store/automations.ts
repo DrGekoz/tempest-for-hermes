@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { computeNextRunAt } from "../lib/automationSchedule";
+import { getProjectPath } from "./sessions";
 
 export interface Automation {
   id: string;
@@ -80,8 +81,18 @@ async function _handleDispatch(id: string) {
   const runId = crypto.randomUUID();
   await upsertAutomationRun({ id: runId, automationId: id, status: "dispatching", triggeredBy: "scheduler" });
 
+  // The PTY spawn (and the Hephaestus sandbox spec inside it) requires an
+  // absolute cwd — an empty string trips "root path must be absolute". A
+  // project-scoped automation resolves to the project root; a global one has
+  // nowhere to run and is failed loudly so the user sees why.
+  const cwd = automation.projectId ? getProjectPath(automation.projectId) : undefined;
+  if (!cwd) {
+    await upsertAutomationRun({ id: runId, automationId: id, status: "dispatch_failed", triggeredBy: "scheduler" });
+    return;
+  }
+
   try {
-    await _openSession(automation.name, "", automation.projectId ?? "", automation.agent, automation.prompt, automation.model ?? undefined);
+    await _openSession(automation.name, cwd, automation.projectId ?? "", automation.agent, automation.prompt, automation.model ?? undefined);
     await upsertAutomationRun({ id: runId, automationId: id, status: "dispatched", triggeredBy: "scheduler" });
   } catch {
     await upsertAutomationRun({ id: runId, automationId: id, status: "dispatch_failed", triggeredBy: "scheduler" });

@@ -11,7 +11,6 @@ import { promptBucketAt, computeNextRunAt, humanizeRrule } from "../../lib/autom
 import { useAgents, getAgent } from "../../lib/agentRegistry";
 import { SpSelect } from "../ui/SpSelect";
 import { AgentIcon } from "../NewSessionMenu";
-import { CLAUDE_CODE_MODELS } from "../../lib/chatModels";
 
 interface Props {
   automation: Automation;
@@ -32,6 +31,7 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
   const agents = useAgents();
   const [prompt, setPrompt] = useState(automation.prompt);
   const [schedule, setSchedule] = useState(automation.schedule);
+  const [modelDraft, setModelDraft] = useState(automation.model ?? "");
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [versions, setVersions] = useState<PromptVersion[]>([]);
   const [showVersions, setShowVersions] = useState(false);
@@ -72,8 +72,10 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
     onUpdate(updated);
   }
 
-  async function handleModelChange(model: string) {
-    const updated = await updateAutomation(automation.id, { model });
+  async function commitModel() {
+    const trimmed = modelDraft.trim();
+    if (trimmed === (automation.model ?? "")) return;
+    const updated = await updateAutomation(automation.id, { model: trimmed });
     onUpdate(updated);
   }
 
@@ -153,15 +155,20 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
 
           {(() => {
             const cfg = getAgent(automation.agent);
-            const opts = automation.agent === "claude" ? CLAUDE_CODE_MODELS : [];
-            if (!cfg?.modelArgs || opts.length === 0) return null;
+            // Show the model input for any agent whose manifest declares `--model`
+            // flags. Free-text so the user types whatever the CLI accepts (alias
+            // like haiku/sonnet/opus/fable, or a full `provider/model`).
+            if (!cfg?.modelArgs) return null;
             return (
               <div className="am-sidebar-section">
                 <div className="am-sidebar-label">Model</div>
-                <SpSelect
-                  value={automation.model ?? ""}
-                  onChange={(v) => void handleModelChange(v)}
-                  options={[{ value: "", label: "Default" }, ...opts.map((m) => ({ value: m.id, label: m.label }))]}
+                <input
+                  className="am-field-input"
+                  value={modelDraft}
+                  onChange={(e) => setModelDraft(e.target.value)}
+                  onBlur={() => void commitModel()}
+                  onKeyDown={(e) => { if (e.key === "Enter") void commitModel(); }}
+                  placeholder="Leave blank for the CLI default"
                 />
               </div>
             );

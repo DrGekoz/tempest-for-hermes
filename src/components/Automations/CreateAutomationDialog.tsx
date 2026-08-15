@@ -7,7 +7,6 @@ import { computeNextRunAt } from "../../lib/automationSchedule";
 import { useAgents, getAgent } from "../../lib/agentRegistry";
 import { SpSelect } from "../ui/SpSelect";
 import { AgentIcon } from "../NewSessionMenu";
-import { CLAUDE_CODE_MODELS } from "../../lib/chatModels";
 
 interface Template {
   category: string;
@@ -55,8 +54,11 @@ export function CreateAutomationDialog({ projectId, onCreated, onClose }: Props)
   const [saving, setSaving] = useState(false);
 
   const agentCfg = getAgent(agent);
-  const modelOptions = agent === "claude" ? CLAUDE_CODE_MODELS : [];
-  const showModelPicker = !!agentCfg?.modelArgs && modelOptions.length > 0;
+  // Any agent whose manifest declares `--model` flags can accept a model. The
+  // field is free-text so the user can type whatever the CLI accepts — a bare
+  // alias (haiku/sonnet/opus/fable) or a full `provider/model` string — without
+  // us maintaining a hardcoded catalog per agent.
+  const showModelPicker = !!agentCfg?.modelArgs;
 
   function applyTemplate(t: Template) {
     setName(t.name);
@@ -72,7 +74,7 @@ export function CreateAutomationDialog({ projectId, onCreated, onClose }: Props)
     try {
       const nextRunAt = computeNextRunAt(schedule) ?? undefined;
       const req: CreateAutomationReq = { projectId, name: name.trim(), agent, schedule, prompt, nextRunAt };
-      if (showModelPicker && model) req.model = model;
+      if (showModelPicker && model.trim()) req.model = model.trim();
       await createAutomation(req);
       onCreated();
     } finally {
@@ -131,10 +133,12 @@ export function CreateAutomationDialog({ projectId, onCreated, onClose }: Props)
             {showModelPicker && (
               <>
                 <label className="am-field-label">Model</label>
-                <SpSelect
+                <input
+                  className="am-field-input"
                   value={model}
-                  onChange={setModel}
-                  options={[{ value: "", label: "Default" }, ...modelOptions.map((m) => ({ value: m.id, label: m.label }))]}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="Leave blank for the CLI default"
+                  disabled={saving}
                 />
               </>
             )}

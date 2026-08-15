@@ -12,6 +12,7 @@
       "downloadUrl": "https://antigravity.google",
       "flags": {
         "resume": ["--continue"],
+        "model": ["--model", "{MODEL}"],
         "autoApprove": ["--dangerously-skip-permissions"]
       }
     },
@@ -67,7 +68,10 @@
       "adapter": "cli",
       "icon": "cursor",
       "mono": true,
-      "downloadUrl": "https://cursor.com/cli"
+      "downloadUrl": "https://cursor.com/cli",
+      "flags": {
+        "model": ["--model", "{MODEL}"]
+      }
     },
     {
       "id": "gemini",
@@ -90,7 +94,10 @@
       "adapter": "cli",
       "icon": "goose",
       "mono": true,
-      "downloadUrl": "https://block.github.io/goose"
+      "downloadUrl": "https://block.github.io/goose",
+      "flags": {
+        "model": ["--model", "{MODEL}"]
+      }
     },
     {
       "id": "opencode",
@@ -100,6 +107,9 @@
       "icon": "opencode",
       "mono": true,
       "downloadUrl": "https://opencode.ai",
+      "flags": {
+        "model": ["--model", "{MODEL}"]
+      },
       "capture": {
         "pattern": "\\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\b",
         "flags": "i",

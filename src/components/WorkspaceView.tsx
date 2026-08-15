@@ -2821,7 +2821,12 @@ export function WorkspaceView({ zen, name, path }: Props) {
             {!activeSessionId && activeSection === "automations" && (
               <AutomationsPage
                 onRunAutomation={(a) => {
-                  void openSession(a.name, "", a.projectId ?? "", a.agent, a.prompt);
+                  // Resolve project root → cwd. Hephaestus rejects a non-absolute
+                  // root path, so an unscoped automation (no projectId) or one
+                  // whose project isn't loaded here has no valid place to run.
+                  const cwd = a.projectId ? getProjectPath(a.projectId) : undefined;
+                  if (!cwd) { setPolicyError("This automation isn't tied to a loaded project — open its project first."); return; }
+                  void openSession(a.name, cwd, a.projectId ?? "", a.agent, a.prompt, undefined, undefined, undefined, undefined, false, undefined, undefined, a.model ?? undefined);
                 }}
               />
             )}
