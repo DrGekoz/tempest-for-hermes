@@ -27,7 +27,8 @@
         "session": ["--session-id", "{UUID}"],
         "resume": ["--resume", "{UUID}"],
         "model": ["--model", "{MODEL}"],
-        "autoApprove": ["--dangerously-skip-permissions"]
+        "autoApprove": ["--dangerously-skip-permissions"],
+        "print": ["-p", "{PROMPT}"]
       }
     },
     {
@@ -108,7 +109,9 @@
       "mono": true,
       "downloadUrl": "https://opencode.ai",
       "flags": {
-        "model": ["--model", "{MODEL}"]
+        "model": ["--model", "{MODEL}"],
+        "autoApprove": ["--auto"],
+        "print": ["run", "{PROMPT}"]
       },
       "capture": {
         "pattern": "\\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\b",
