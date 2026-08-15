@@ -88,7 +88,7 @@ import { startAgentHooks } from "../store/agentHooks";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
 import { AutomationsPage } from "./Automations/AutomationsPage";
-import { registerOpenSession } from "../store/automations";
+import { runAutomationNow } from "../store/automations";
 import { Toolbar } from "./Toolbar";
 import AgentTabs from "./AgentTabs";
 import IconCapsule from "./IconCapsule";
@@ -1048,10 +1048,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
       spawningPaths.current.delete(cwd);
     }
   }
-
-  registerOpenSession(async (name, cwd, projectId, agent, prompt, model) => {
-    await openSession(name, cwd, projectId, agent, prompt, undefined, undefined, undefined, undefined, false, undefined, undefined, model);
-  });
 
   function openDiffTab(cwd: string, projectId: string, initialDiffPath?: string) {
     // If a diff tab for this cwd is already open, just focus it.
@@ -2821,12 +2817,10 @@ export function WorkspaceView({ zen, name, path }: Props) {
             {!activeSessionId && activeSection === "automations" && (
               <AutomationsPage
                 onRunAutomation={(a) => {
-                  // Resolve project root → cwd. Hephaestus rejects a non-absolute
-                  // root path, so an unscoped automation (no projectId) or one
-                  // whose project isn't loaded here has no valid place to run.
-                  const cwd = a.projectId ? getProjectPath(a.projectId) : undefined;
-                  if (!cwd) { setPolicyError("This automation isn't tied to a loaded project — open its project first."); return; }
-                  void openSession(a.name, cwd, a.projectId ?? "", a.agent, a.prompt, undefined, undefined, undefined, undefined, false, undefined, undefined, a.model ?? undefined);
+                  // Background job — no session/tab is created. Errors (unsupported
+                  // agent, unloaded project) are surfaced as an in-app banner; the
+                  // run record itself records the dispatch outcome either way.
+                  runAutomationNow(a, "manual").catch((e) => setPolicyError(String(e?.message ?? e)));
                 }}
               />
             )}

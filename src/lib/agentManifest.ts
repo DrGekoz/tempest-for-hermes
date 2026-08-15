@@ -47,6 +47,10 @@ export interface AgentConfig {
   // supplies only the syntax; agentArgs.ts decides application — a manifest can
   // never force Auto on.
   autoApproveArgs?: string[];
+  // Headless / print flags for one-shot non-interactive runs (e.g. claude -p
+  // "prompt"). Automations require this — an interactive-only agent has no safe
+  // way to receive a prompt without a TTY. "{PROMPT}" is substituted.
+  printArgs?: string[];
   // URL to download/install the agent when it isn't on PATH.
   downloadUrl?: string;
   // User-added local agent (Settings → Agents → Add). Bundled + signed-remote
@@ -132,6 +136,8 @@ function sanitizeEntry(a: unknown): RemotePatch | null {
   if (model) patch.modelArgs = model;
   const autoApprove = strList(f.autoApprove);
   if (autoApprove) patch.autoApproveArgs = autoApprove;
+  const print = strList(f.print);
+  if (print) patch.printArgs = print;
   const dl = typeof e.downloadUrl === "string" && /^https:\/\//i.test(e.downloadUrl) ? e.downloadUrl : undefined;
   if (dl) patch.downloadUrl = dl;
   const capture = captureSpec(e.capture);
@@ -182,6 +188,8 @@ export function sanitizeCustomAgent(a: unknown): RemotePatch | null {
   if (model) patch.modelArgs = model;
   const autoApprove = strList(e.autoApproveArgs);
   if (autoApprove) patch.autoApproveArgs = autoApprove;
+  const print = strList(e.printArgs);
+  if (print) patch.printArgs = print;
   const dl = typeof e.downloadUrl === "string" && /^https:\/\//i.test(e.downloadUrl) ? e.downloadUrl : undefined;
   if (dl) patch.downloadUrl = dl;
   const capture = captureSpec(e.capture);

@@ -4195,6 +4195,7 @@ pub fn run() {
             automations::upsert_automation_run,
             automations::list_prompt_versions,
             automations::save_prompt_version,
+            automations::run_automation_command,
             claude_bridge::claude_stream_start,
             claude_bridge::claude_permission_decision,
             claude_bridge::claude_stream_cancel,
