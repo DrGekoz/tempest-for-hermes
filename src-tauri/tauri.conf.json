@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tempest",
+  "productName": "Tempest for Hermes",
   "version": "0.1.17",
-  "identifier": "com.user.tempest",
+  "identifier": "com.drgekoz.tempest-for-hermes",
   "build": {
     "beforeDevCommand": "npm run dev:frontend",
     "devUrl": "http://localhost:1420",

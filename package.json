@@ -2,6 +2,7 @@
   "name": "tempest",
   "private": true,
   "version": "0.1.17",
+  "description": "Tempest for Hermes — run Hermes and any other CLI Agent with up to 86% fewer tokens via a shared atlas code-knowledge graph (Token Intelligence), and as a Hermes plugin for parallel worktree-isolated agents.",
   "type": "module",
   "workspaces": [
     "web",

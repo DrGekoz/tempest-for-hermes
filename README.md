@@ -1,10 +1,19 @@
-![Tempest — parallel AI agent sessions](media/banner.png)
+![Tempest for Hermes — parallel AI agent sessions](media/banner.png)
 
 <div align="center">
 
-[Download](https://tempestai.dev/download) · [Docs](https://tempestai.dev/docs) · [Releases](https://github.com/tempestai-dev/tempest/releases/latest) · [Benchmarks](#why-tempest-uses-far-fewer-tokens) · [Discord](https://discord.gg/bRQhAKKVa8) · [Contributing](CONTRIBUTING.md)
+[Download](https://tempestai.dev/download) · [Docs](https://tempestai.dev/docs) · [Hermes Plugin](hermes-plugin/README.md) · [Benchmarks](#why-tempest-uses-far-fewer-tokens) · [Discord](https://discord.gg/bRQhAKKVa8) · [Contributing](CONTRIBUTING.md)
 
 </div>
+
+> **This is a fork for Hermes.** It keeps Tempest's core — the `@usetempest/atlas`
+> shared code-knowledge graph (Token Intelligence) and worktree-isolated parallel
+> agent orchestration — and ships it as a **Hermes plugin** (`hermes-plugin/`):
+> index a codebase once, then Hermes agents pull surgical token-cheap context via
+> the `tempest_context` tool, and you can spawn N parallel Hermes agents in
+> isolated git worktrees from an HTTP dashboard. No Rust/Tauri build required for
+> the plugin. See [hermes-plugin/README.md](hermes-plugin/README.md).
+
 
 <br>
 

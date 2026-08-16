@@ -1,0 +1,17 @@
+{
+  "name": "tempest-for-hermes-atlas-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Node runtime for the Tempest for Hermes plugin — wraps @usetempest/atlas (semantic code knowledge graph) so Hermes agents get surgical context.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0 <25.0.0"
+  },
+  "dependencies": {
+    "@usetempest/atlas": "^1.3.2"
+  },
+  "scripts": {
+    "bridge": "node atlas-bridge.mjs",
+    "test": "node test-bridge.mjs"
+  }
+}

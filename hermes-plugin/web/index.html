@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tempest for Hermes</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #12151d;
+    --panel2: #181c26;
+    --border: #232838;
+    --border2: #2c3247;
+    --text: #dbe1ef;
+    --sub: #8b93a8;
+    --accent: #5b8cff;
+    --green: #3ddc97;
+    --red: #ff5d5d;
+    --yellow: #ffce54;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+  .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, #10131b, #0b0d12); position: sticky; top: 0; z-index: 5; }
+  .logo { font-weight: 800; letter-spacing: .5px; font-size: 15px; display: flex; align-items: center; gap: 9px; }
+  .logo .bolt { color: var(--accent); font-size: 20px; }
+  .logo .sub { color: var(--sub); font-weight: 500; margin-left: 2px; }
+  .topright { margin-left: auto; display: flex; align-items: center; gap: 14px; color: var(--sub); font-size: 12px; }
+  .pill { border: 1px solid var(--border2); background: var(--panel); border-radius: 20px; padding: 4px 11px; font-size: 12px; color: var(--text); }
+  .pill.ok { color: var(--green); border-color: rgba(61,220,151,.4); }
+  .pill.bad { color: var(--red); border-color: rgba(255,93,93,.4); }
+  .tabs { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); }
+  .tab { background: transparent; border: 1px solid transparent; color: var(--sub); font-size: 13px; font-weight: 600; padding: 9px 16px; cursor: pointer; border-radius: 8px 8px 0 0; transition: .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.on { color: var(--text); background: var(--panel); border-color: var(--border); border-bottom-color: var(--panel); }
+  main { max-width: 1060px; margin: 0 auto; padding: 24px; }
+  .view { display: none; }
+  .view.on { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--sub); margin-bottom: 14px; font-weight: 700; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=text], textarea { background: var(--panel2); border: 1px solid var(--border2); color: var(--text); border-radius: 8px; padding: 9px 12px; font-size: 13px; font-family: var(--mono); width: 100%; }
+  textarea { min-height: 90px; resize: vertical; }
+  label { font-size: 11px; color: var(--sub); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 5px; display: block; }
+  .field { flex: 1; min-width: 200px; }
+  button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; white-space: nowrap; }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: var(--panel2); border: 1px solid var(--border2); color: var(--text); }
+  button.danger { background: var(--red); }
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+  .stat { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .stat .n { font-size: 22px; font-weight: 800; color: var(--accent); font-family: var(--mono); }
+  .stat .l { font-size: 11px; color: var(--sub); text-transform: uppercase; letter-spacing: .5px; margin-top: 4px; }
+  .projlist { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .proj { display: flex; align-items: center; gap: 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; }
+  .proj .name { font-weight: 700; font-size: 13px; }
+  .proj .path { color: var(--sub); font-size: 11px; font-family: var(--mono); }
+  .proj .meta { margin-left: auto; color: var(--sub); font-size: 11px; text-align: right; }
+  .proj.active { border-color: var(--accent); }
+  .out { background: #07090d; border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-top: 12px; white-space: pre-wrap; font-family: var(--mono); font-size: 12px; line-height: 1.6; max-height: 420px; overflow: auto; }
+  .out .dim { color: var(--sub); }
+  .err { color: var(--red); }
+  .msg { font-size: 12px; margin-top: 8px; color: var(--sub); }
+  .msg.err { color: var(--red); }
+  .agent { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .agent .h { display: flex; align-items: center; gap: 10px; }
+  .agent .st { width: 9px; height: 9px; border-radius: 50%; background: var(--yellow); }
+  .agent .st.done { background: var(--green); }
+  .agent .st.failed, .agent .st.killed { background: var(--red); }
+  .agent .st.running { background: var(--yellow); animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .agent .nm { font-weight: 700; font-size: 13px; }
+  .agent .branch { color: var(--sub); font-size: 11px; font-family: var(--mono); }
+  .agent .actions { margin-left: auto; display: flex; gap: 6px; }
+  .agent .body { display: none; margin-top: 10px; }
+  .agent .body.open { display: block; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .muted { color: var(--sub); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><span class="bolt">⚡</span>Tempest <span class="sub">for Hermes</span></div>
+    <div class="topright">
+      <span id="healthPill" class="pill">checking…</span>
+      <span id="ver" class="pill"></span>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-view="projects">Projects</button>
+    <button class="tab" data-view="context">Context</button>
+    <button class="tab" data-view="agents">Parallel Agents</button>
+  </div>
+  <main>
+    <!-- PROJECTS -->
+    <section class="view on" id="view-projects">
+      <div class="card">
+        <h2>Index a codebase (Token Intelligence)</h2>
+        <div class="row">
+          <div class="field" style="flex:3"><label>Project path</label><input type="text" id="projPath" placeholder="C:\path\to\repo  (indexed once, shared by every agent)" /></div>
+          <button id="btnIndex" style="align-self:flex-end">Index</button>
+        </div>
+        <div id="indexMsg" class="msg"></div>
+      </div>
+      <div class="card">
+        <h2>Indexed projects</h2>
+        <div id="projlist" class="projlist"></div>
+      </div>
+      <div class="card">
+        <h2>Knowledge graph stats</h2>
+        <div id="stats" class="statgrid"></div>
+      </div>
+    </section>
+
+    <!-- CONTEXT -->
+    <section class="view" id="view-context">
+      <div class="card">
+        <h2>Surgical context (buildContext)</h2>
+        <div class="row">
+          <div class="field" style="flex:1"><label>Project</label><select id="ctxProj" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;font-size:13px"></select></div>
+        </div>
+        <div style="margin-top:10px"><label>Task / question</label><textarea id="ctxQuery" placeholder="e.g. how does the cart apply a discount and compute a total?"></textarea></div>
+        <div class="row" style="margin-top:10px">
+          <button id="btnCtx">Get context</button>
+          <button id="btnSearch" class="ghost">Search symbols</button>
+        </div>
+        <div id="ctxMsg" class="msg"></div>
+        <div id="ctxOut" class="out"></div>
+      </div>
+    </section>
+
+    <!-- AGENTS -->
+    <section class="view" id="view-agents">
+      <div class="card">
+        <h2>Spawn parallel Hermes agents (isolated git worktrees)</h2>
+        <div class="row">
+          <div class="field" style="flex:1"><label>Project</label><select id="agProj" style="width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;font-size:13px"></select></div>
+        </div>
+        <div style="margin-top:10px"><label>Tasks (one prompt per line = one agent)</label><textarea id="agTasks" placeholder="add a --dry-run flag to the CLI&#10;write a test for the discount logic&#10;document the Cart class"></textarea></div>
+        <div class="row" style="margin-top:10px">
+          <button id="btnAgents">Spawn agents</button>
+          <button id="btnRefresh" class="ghost">Refresh status</button>
+        </div>
+        <div id="agMsg" class="msg"></div>
+      </div>
+      <div class="card">
+        <h2>Agent sessions</h2>
+        <div id="agents"></div>
+      </div>
+    </section>
+  </main>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const state = { projects: [], active: null, sessions: [] };
+
+function esc(s) { return String(s ?? "").replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    method: opts.method || "GET",
+    headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  return r.json();
+}
+
+function refreshHealth() {
+  api("/state").then(d => {
+    const p = $("#healthPill");
+    if (d.ok && d.bridge_ready) { p.textContent = "atlas ready"; p.className = "pill ok"; }
+    else { p.textContent = d.ok ? "node missing" : "offline"; p.className = "pill bad"; }
+    $("#ver").textContent = "v" + (d.version || "?");
+    state.projects = d.projects || [];
+    state.active = d.activeProject;
+    state.sessions = d.sessions || [];
+    renderProjects();
+    renderStats();
+    renderAgents();
+    populateSelects();
+  }).catch(() => { $("#healthPill").textContent = "offline"; $("#healthPill").className = "pill bad"; });
+}
+
+function populateSelects() {
+  const opts = state.projects.map(p => `<option value="${esc(p.path)}" ${p.path === state.active ? "selected" : ""}>${esc(p.name)}</option>`).join("") || `<option value="">(no projects indexed)</option>`;
+  ["#ctxProj", "#agProj"].forEach(sel => { $(sel).innerHTML = opts; });
+}
+
+function renderProjects() {
+  const el = $("#projlist");
+  if (!state.projects.length) { el.innerHTML = `<div class="muted" style="font-size:13px">Nothing indexed yet. Paste a repo path above and click Index.</div>`; return; }
+  el.innerHTML = state.projects.map(p => `
+    <div class="proj ${p.path === state.active ? "active" : ""}" onclick="setActive('${esc(p.path)}')">
+      <div><div class="name">${esc(p.name)}</div><div class="path">${esc(p.path)}</div></div>
+      <div class="meta">${p.nodeCount} nodes · ${p.fileCount} files</div>
+    </div>`).join("");
+}
+
+function renderStats() {
+  const el = $("#stats");
+  if (!state.projects.length) { el.innerHTML = `<div class="muted" style="font-size:13px">Index a project to see graph stats.</div>`; return; }
+  const p = state.projects.find(x => x.path === state.active) || state.projects[0];
+  el.innerHTML = `
+    <div class="stat"><div class="n">${p.nodeCount}</div><div class="l">nodes</div></div>
+    <div class="stat"><div class="n">${p.edgeCount}</div><div class="l">edges</div></div>
+    <div class="stat"><div class="n">${p.fileCount}</div><div class="l">files</div></div>
+    <div class="stat"><div class="n">${esc(p.name)}</div><div class="l">active project</div></div>`;
+}
+
+function renderAgents() {
+  const el = $("#agents");
+  if (!state.sessions.length) { el.innerHTML = `<div class="muted" style="font-size:13px">No agents spawned yet.</div>`; return; }
+  el.innerHTML = state.sessions.slice().reverse().map(s => `
+    <div class="agent" id="agent-${esc(s.id)}">
+      <div class="h">
+        <span class="st ${esc(s.status)}"></span>
+        <span class="nm">${esc(s.name)}</span>
+        <span class="branch">${esc(s.branch)}</span>
+        <div class="actions">
+          <button class="ghost" onclick="toggleBody('${esc(s.id)}')">details</button>
+          <button class="ghost" onclick="showDiff('${esc(s.id)}')">diff</button>
+        </div>
+      </div>
+      <div class="body" id="body-${esc(s.id)}">
+        <div class="out" id="out-${esc(s.id)}">${esc(s.status)}${s.exit_code != null ? " · exit " + s.exit_code : ""}</div>
+      </div>
+    </div>`).join("");
+}
+window.toggleBody = (id) => {
+  const b = $("#body-" + id); b.classList.toggle("open");
+  if (b.classList.contains("open")) loadLog(id);
+};
+window.showDiff = async (id) => {
+  const b = $("#body-" + id); b.classList.add("open");
+  $("#out-" + id).textContent = "loading diff…";
+  const d = await api("/api/agents/" + id + "/diff");
+  $("#out-" + id).textContent = d.diff || "(no changes)";
+};
+async function loadLog(id) {
+  $("#out-" + id).textContent = "loading…";
+  const d = await api("/api/agents/" + id + "/log");
+  $("#out-" + id).textContent = d.log || "(empty log)";
+}
+window.setActive = async (path) => { await api("/api/active-project", { method: "POST", body: { project: path } }); state.active = path; renderProjects(); renderStats(); };
+
+$("#btnIndex").onclick = async () => {
+  const path = $("#projPath").value.trim();
+  if (!path) { $("#indexMsg").textContent = "Enter a project path."; return; }
+  $("#btnIndex").disabled = true; $("#btnIndex").innerHTML = '<span class="spinner"></span> indexing…';
+  $("#indexMsg").textContent = "Indexing " + path + " (first pass builds the graph)…";
+  try {
+    const d = await api("/api/index", { method: "POST", body: { project: path } });
+    if (!d.ok) throw new Error(d.error || "index failed");
+    $("#indexMsg").textContent = "Indexed " + d.name + " — " + (d.stats && d.stats.nodeCount) + " nodes, " + (d.stats && d.stats.fileCount) + " files.";
+    refreshHealth();
+  } catch (e) {
+    $("#indexMsg").className = "msg err"; $("#indexMsg").textContent = "Error: " + e.message;
+  } finally { $("#btnIndex").disabled = false; $("#btnIndex").textContent = "Index"; }
+};
+
+$("#btnCtx").onclick = async () => {
+  const query = $("#ctxQuery").value.trim(), project = $("#ctxProj").value;
+  if (!query) { $("#ctxMsg").textContent = "Enter a query."; return; }
+  $("#btnCtx").disabled = true;
+  $("#ctxMsg").textContent = "querying atlas…";
+  try {
+    const d = await api("/api/context", { method: "POST", body: { project, query, format: "markdown" } });
+    if (!d.ok) throw new Error(d.error || "context failed");
+    $("#ctxMsg").textContent = "project=" + (d.project || "") + (d.stats ? " · " + d.stats.nodeCount + " nodes · " + d.stats.fileCount + " files" : "");
+    $("#ctxOut").textContent = d.markdown || (d.summary || JSON.stringify(d));
+    $("#ctxMsg").className = "msg";
+  } catch (e) {
+    $("#ctxMsg").className = "msg err"; $("#ctxMsg").textContent = "Error: " + e.message;
+  } finally { $("#btnCtx").disabled = false; }
+};
+
+$("#btnSearch").onclick = async () => {
+  const query = $("#ctxQuery").value.trim(), project = $("#ctxProj").value;
+  if (!query) { $("#ctxMsg").textContent = "Enter a query."; return; }
+  const d = await api("/api/search?project=" + encodeURIComponent(project) + "&query=" + encodeURIComponent(query));
+  if (!d.ok) { $("#ctxMsg").className = "msg err"; $("#ctxMsg").textContent = "Error: " + (d.error || ""); return; }
+  $("#ctxOut").textContent = (d.hits && d.hits.length ? d.hits.map(h => `${h.kind}\t${h.name}\t${h.file}:${h.line}`).join("\n") : "(no symbol matches)");
+  $("#ctxMsg").className = "msg";
+};
+
+$("#btnAgents").onclick = async () => {
+  const project = $("#agProj").value;
+  const lines = $("#agTasks").value.split("\n").map(s => s.trim()).filter(Boolean);
+  if (!project) { $("#agMsg").textContent = "No project selected."; return; }
+  if (!lines.length) { $("#agMsg").textContent = "Enter at least one task prompt."; return; }
+  $("#btnAgents").disabled = true;
+  try {
+    const tasks = lines.map((p, i) => ({ name: "agent-" + (i + 1), prompt: p }));
+    const d = await api("/api/agents", { method: "POST", body: { project, tasks } });
+    if (!d.ok) throw new Error(d.error || "spawn failed");
+    const n = (d.spawned || []).filter(x => x.ok).length;
+    $("#agMsg").textContent = "Spawned " + n + " agent(s) in isolated worktrees.";
+    refreshHealth();
+  } catch (e) {
+    $("#agMsg").className = "msg err"; $("#agMsg").textContent = "Error: " + e.message;
+  } finally { $("#btnAgents").disabled = false; }
+};
+$("#btnRefresh").onclick = refreshHealth;
+
+// Tabs
+document.querySelectorAll(".tab").forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("on"));
+    document.querySelectorAll(".view").forEach(x => x.classList.remove("on"));
+    t.classList.add("on");
+    $("#view-" + t.dataset.view).classList.add("on");
+  };
+});
+
+refreshHealth();
+setInterval(refreshHealth, 3000);
+</script>
+</body>
+</html>
