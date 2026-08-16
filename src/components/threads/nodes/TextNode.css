@@ -170,6 +170,26 @@
   color: #fff;
 }
 
+.thread-edge-comet {
+  stroke: #fff6d6;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 16 78;
+  filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px var(--tempest-accent-yellow, #f5c518));
+  animation: thread-edge-comet-flow 0.6s linear infinite;
+  pointer-events: none;
+}
+@keyframes thread-edge-comet-flow {
+  from { stroke-dashoffset: 100; }
+  to   { stroke-dashoffset: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thread-edge-comet {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* Divider fencing the left (incoming) connector off from the title. */
 .tnode-connector-sep {
   flex: 0 0 auto;

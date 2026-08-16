@@ -1,14 +1,16 @@
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, useReactFlow, type EdgeProps } from "@xyflow/react";
 import { X } from "lucide-react";
+import { useNodeGenerating } from "../../store/nodeActivity";
 
 // Removable connection edge. React Flow has no built-in "disconnect" gesture, so
 // each edge carries a midpoint × button. deleteElements routes through the same
 // onEdgesChange the canvas already uses (controlled edges), so the button and a
 // Backspace on a selected edge both remove it the same way.
 export function ThreadEdge({
-  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd,
+  id, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd,
 }: EdgeProps) {
   const { deleteElements } = useReactFlow();
+  const generating = useNodeGenerating(target);
   const [path, labelX, labelY] = getBezierPath({
     sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   });
@@ -16,6 +18,7 @@ export function ThreadEdge({
   return (
     <>
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} />
+      {generating && <path d={path} className="thread-edge-comet" pathLength={100} fill="none" />}
       <EdgeLabelRenderer>
         <button
           className="thread-edge-del nodrag nopan"

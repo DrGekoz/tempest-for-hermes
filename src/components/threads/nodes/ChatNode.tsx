@@ -5,6 +5,7 @@ import { Trash2, Pencil, Plus, ArrowUp, ChevronDown, Search, Terminal } from "lu
 import { NodeConnector } from "./NodeConnector";
 import { CollapsedNode } from "./CollapsedNode";
 import { getNodeData, patchNodeData, getThreadNode, getThreadNodes, getThreadEdges } from "../../../store/threads";
+import { setNodeGenerating } from "../../../store/nodeActivity";
 import { getBranch } from "../../../store/sessions";
 import { sessionManager } from "../../../store/sessionManager";
 import { getNodeMessages, loadNodeMessages, saveNodeMessages } from "../../../store/threadMessages";
@@ -224,6 +225,12 @@ export function ChatNode({ id, data }: { id: string; data?: { collapsed?: boolea
 
   // thread_messages is a separate table, loaded lazily when the node mounts.
   useEffect(() => { loadNodeMessages(id).then(setMessages); }, [id]);
+
+  // Publish streaming state so ThreadEdge can animate the edges feeding this
+  // node while it generates. Cleared on unmount separately from the
+  // toggle effect so a mid-stream unmount doesn't leave a stale "generating" flag.
+  useEffect(() => { setNodeGenerating(id, isLoading); }, [id, isLoading]);
+  useEffect(() => () => setNodeGenerating(id, false), [id]);
 
   function commitTitle() {
     setEditingTitle(false);
