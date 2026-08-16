@@ -2,14 +2,6 @@ use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use tauri::Emitter;
 
-fn home_dir_cwd() -> String {
-    #[cfg(windows)]
-    let key = "USERPROFILE";
-    #[cfg(not(windows))]
-    let key = "HOME";
-    std::env::var(key).unwrap_or_else(|_| ".".into())
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Automation {
     pub id: String,
@@ -355,67 +347,6 @@ pub fn save_prompt_version(
     Ok(())
 }
 
-/// Fire an agent CLI as a detached background subprocess for an automation run.
-/// No PTY, no session/tab — automations are jobs, not interactive workspaces.
-///
-/// Args are quoted with single quotes for pwsh / sh (matches create_pty_session)
-/// and joined into a shell -c string. stdin/stdout/stderr are closed so the
-/// child neither reads nor spams the parent. A watcher thread emits
-/// `automation:done` when the child exits so the frontend can flip the run
-/// status to success/failed.
-///
-/// An empty cwd falls back to the user's home dir — used by global-scope
-/// automations that aren't tied to any project.
-#[tauri::command(async)]
-pub fn run_automation_command(
-    app: tauri::AppHandle,
-    run_id: String,
-    cwd: String,
-    program: String,
-    args: Vec<String>,
-) -> Result<(), String> {
-    let cwd = if cwd.trim().is_empty() { home_dir_cwd() } else { cwd };
-
-    let mut parts: Vec<String> = vec![program];
-    for arg in &args {
-        if arg.is_empty() || arg.contains(' ') || arg.contains('\'') || arg.contains('\n') {
-            // Single-quote-escape for pwsh / POSIX sh. Matches create_pty_session.
-            parts.push(format!("'{}'", arg.replace('\'', "'''")));
-        } else {
-            parts.push(arg.clone());
-        }
-    }
-    let invocation = parts.join(" ");
-
-    #[cfg(windows)]
-    let spawn_result = std::process::Command::new("powershell")
-        .args(["-NoLogo", "-NoProfile", "-Command", &invocation])
-        .current_dir(&cwd)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-    #[cfg(not(windows))]
-    let spawn_result = std::process::Command::new("sh")
-        .args(["-c", &invocation])
-        .current_dir(&cwd)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-
-    let mut child = spawn_result.map_err(|e| e.to_string())?;
-
-    std::thread::spawn(move || {
-        let ok = child.wait().map(|s| s.success()).unwrap_or(false);
-        let _ = app.emit("automation:done", serde_json::json!({
-            "runId": run_id,
-            "ok": ok,
-        }));
-    });
-
-    Ok(())
-}
 
 pub fn start_scheduler(app: tauri::AppHandle, db_path: PathBuf) {
     std::thread::spawn(move || {

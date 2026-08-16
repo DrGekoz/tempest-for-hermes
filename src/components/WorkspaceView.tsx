@@ -88,7 +88,6 @@ import { startAgentHooks } from "../store/agentHooks";
 import { AtlasIndexModal } from "./AtlasIndexModal";
 import { KnowledgeBasePage } from "./KnowledgeBasePage";
 import { AutomationsPage } from "./Automations/AutomationsPage";
-import { runAutomationNow } from "../store/automations";
 import { Toolbar } from "./Toolbar";
 import AgentTabs from "./AgentTabs";
 import IconCapsule from "./IconCapsule";
@@ -1963,7 +1962,6 @@ export function WorkspaceView({ zen, name, path }: Props) {
             <button className={navBtn("automations")} onClick={() => goTo("automations")}>
               <Workflow size={16} />
               <span>Automations</span>
-              <span className="sidebar-nav-badge">Beta</span>
             </button>
           </div>
 
@@ -2815,14 +2813,7 @@ export function WorkspaceView({ zen, name, path }: Props) {
               <KnowledgeBasePage />
             )}
             {!activeSessionId && activeSection === "automations" && (
-              <AutomationsPage
-                onRunAutomation={(a) => {
-                  // Background job — no session/tab is created. Errors (unsupported
-                  // agent, unloaded project) are surfaced as an in-app banner; the
-                  // run record itself records the dispatch outcome either way.
-                  runAutomationNow(a, "manual").catch((e) => setPolicyError(String(e?.message ?? e)));
-                }}
-              />
+              <AutomationsPage />
             )}
             {!activeSessionId && activeSection === "overview" && (
               <div className="overview-page">

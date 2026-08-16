@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -19,6 +19,7 @@ interface Props {
   sessionId: string;
   hidden?: boolean;
   isAgent?: boolean;
+  readOnly?: boolean;
 }
 
 function getTerminalTheme() {
@@ -49,7 +50,14 @@ function getTerminalTheme() {
   };
 }
 
-export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = false, isAgent = false }: Props) {
+export interface TerminalPaneHandle {
+  clear: () => void;
+}
+
+export const TerminalPane = memo(forwardRef<TerminalPaneHandle, Props>(function TerminalPane(
+  { sessionId, hidden = false, isAgent = false, readOnly = false },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -61,6 +69,10 @@ export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = fal
   const [searchQuery, setSearchQuery] = useState("");
   const { theme } = useTheme();
   const settings = useSettings();
+
+  useImperativeHandle(ref, () => ({
+    clear: () => { termRef.current?.reset(); },
+  }), []);
 
   // Single fit path: reflow xterm to the container AND tell the PTY the new size.
   // Fitting the frontend without resizing the backend desyncs cols/rows and makes
@@ -105,6 +117,7 @@ export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = fal
       cursorBlink: s.terminalCursorBlink,
       scrollback: s.terminalScrollback,
       allowProposedApi: true,
+      disableStdin: readOnly,
     });
     termRef.current = term;
 
@@ -140,13 +153,13 @@ export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = fal
       requestAnimationFrame(() => requestAnimationFrame(fitIfVisible)),
     );
 
-    term.onData((data) => {
-      const bytes = Array.from(new TextEncoder().encode(data));
-      invoke("write_to_pty", { sessionId, data: bytes }).catch(() => {});
-      // Signal Enter to the Manager so it can arm the work-done timer. Manager
-      // checks isAgent internally — this is a no-op for plain terminal sessions.
-      if (isAgent && data.includes("\r")) sessionManager.markUserInput(sessionId);
-    });
+    if (!readOnly) {
+      term.onData((data) => {
+        const bytes = Array.from(new TextEncoder().encode(data));
+        invoke("write_to_pty", { sessionId, data: bytes }).catch(() => {});
+        if (isAgent && data.includes("\r")) sessionManager.markUserInput(sessionId);
+      });
+    }
 
     // Feed OSC 0/2 title changes into the Session Manager so it can classify
     // the agent's busy/idle state from the title (e.g. Claude Code's ✳ glyph).
@@ -306,4 +319,4 @@ export const TerminalPane = memo(function TerminalPane({ sessionId, hidden = fal
       <div ref={containerRef} className="terminal-pane" />
     </div>
   );
-});
+}));

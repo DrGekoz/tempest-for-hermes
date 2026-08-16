@@ -5,6 +5,8 @@ import type { StoredProject } from "../../store/openProjects";
 import { type Automation, loadAutomations, updateAutomation, deleteAutomation } from "../../store/automations";
 import { CreateAutomationDialog } from "./CreateAutomationDialog";
 import { humanizeRrule } from "../../lib/automationSchedule";
+import { AgentIcon } from "../NewSessionMenu";
+import { getAgent } from "../../lib/agentRegistry";
 
 interface Props {
   projects: StoredProject[];
@@ -119,6 +121,7 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
                 <th className="am-th"></th>
                 <th className="am-th">Name</th>
                 <th className="am-th">Agent</th>
+                <th className="am-th">Model</th>
                 <th className="am-th">Schedule</th>
                 <th className="am-th">Next run</th>
                 <th className="am-th">Enabled</th>
@@ -132,7 +135,13 @@ export function AutomationsList({ projects, scope, onSelectScope, onOpen }: Prop
                     <span className={`am-dot ${a.enabled ? "am-dot--running" : "am-dot--idle"}`} />
                   </td>
                   <td className="am-td am-td--name">{a.name}</td>
-                  <td className="am-td am-td--agent">{a.agent}</td>
+                  <td className="am-td am-td--agent">
+                    <span className="am-agent-badge">
+                      <AgentIcon hint={a.agent} size={12} />
+                      <span className="am-agent-badge-label">{getAgent(a.agent)?.name ?? a.agent}</span>
+                    </span>
+                  </td>
+                  <td className="am-td am-td--model">{a.model || "—"}</td>
                   <td className="am-td am-td--schedule">{humanizeRrule(a.schedule)}</td>
                   <td className="am-td am-td--next">{fmtDate(a.nextRunAt)}</td>
                   <td className="am-td am-td--toggle" onClick={(e) => e.stopPropagation()}>

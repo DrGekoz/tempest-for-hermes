@@ -5,11 +5,7 @@ import { AutomationDetailPage } from "./AutomationDetailPage";
 import type { Automation } from "../../store/automations";
 import "./AutomationsPage.css";
 
-interface Props {
-  onRunAutomation: (a: Automation) => void;
-}
-
-export function AutomationsPage({ onRunAutomation }: Props) {
+export function AutomationsPage() {
   const projects = getOpenProjects();
   const [scope, setScope] = useState<string | null>(null);
   const [detail, setDetail] = useState<Automation | null>(null);
@@ -19,7 +15,6 @@ export function AutomationsPage({ onRunAutomation }: Props) {
       <AutomationDetailPage
         automation={detail}
         onBack={() => setDetail(null)}
-        onRunNow={onRunAutomation}
         onUpdate={(updated) => setDetail(updated)}
       />
     );

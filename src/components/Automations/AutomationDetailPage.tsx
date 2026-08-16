@@ -1,23 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ChevronLeft, Clock, Loader, Play, RotateCcw } from "lucide-react";
+import { ChevronLeft, Loader, Play } from "lucide-react";
 import {
-  type Automation, type AutomationRun, type PromptVersion,
-  updateAutomation, listAutomationRuns, upsertAutomationRun,
-  listPromptVersions, savePromptVersion,
+  type Automation, type AutomationRun,
+  updateAutomation, listAutomationRuns, runAutomationNow,
 } from "../../store/automations";
 import { SchedulePicker } from "./SchedulePicker";
-import { promptBucketAt, computeNextRunAt, humanizeRrule } from "../../lib/automationSchedule";
+import { computeNextRunAt, humanizeRrule } from "../../lib/automationSchedule";
 import { useAgents, getAgent } from "../../lib/agentRegistry";
 import { SpSelect } from "../ui/SpSelect";
 import { AgentIcon } from "../NewSessionMenu";
+import { TerminalPane, type TerminalPaneHandle } from "../TerminalPane";
+import { sessionManager } from "../../store/sessionManager";
 
 interface Props {
   automation: Automation;
   onBack: () => void;
-  onRunNow: (a: Automation) => void;
   onUpdate: (a: Automation) => void;
 }
+
+// ponytail: in-memory only, resets on app reload — persist to localStorage if that matters.
+const clearedTerminals = new Set<string>();
 
 function timeAgo(iso: string): string {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -27,20 +29,27 @@ function timeAgo(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }: Props) {
+export function AutomationDetailPage({ automation, onBack, onUpdate }: Props) {
   const agents = useAgents();
   const [prompt, setPrompt] = useState(automation.prompt);
   const [schedule, setSchedule] = useState(automation.schedule);
   const [modelDraft, setModelDraft] = useState(automation.model ?? "");
   const [runs, setRuns] = useState<AutomationRun[]>([]);
-  const [versions, setVersions] = useState<PromptVersion[]>([]);
-  const [showVersions, setShowVersions] = useState(false);
   const [runningNow, setRunningNow] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+  // Which run's PTY the terminal panel is showing. Set on Run Now, and on mount
+  // to the most recent run that still has a live sessionManager buffer.
+  const [terminalRunId, setTerminalRunId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const termRef = useRef<TerminalPaneHandle | null>(null);
 
   useEffect(() => {
-    listAutomationRuns(automation.id).then(setRuns);
-    listPromptVersions(automation.id).then(setVersions);
+    listAutomationRuns(automation.id).then((rs) => {
+      setRuns(rs);
+      if (clearedTerminals.has(automation.id)) return;
+      const live = rs.find((r) => sessionManager.has(r.id));
+      if (live) setTerminalRunId(live.id);
+    });
   }, [automation.id]);
 
   function scheduleDebounce(newPrompt: string, newSchedule: string) {
@@ -48,9 +57,6 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
     saveTimer.current = setTimeout(async () => {
       const updated = await updateAutomation(automation.id, { prompt: newPrompt, schedule: newSchedule });
       onUpdate(updated);
-      await savePromptVersion({ automationId: automation.id, prompt: newPrompt, bucketAt: promptBucketAt() });
-      const fresh = await listPromptVersions(automation.id);
-      setVersions(fresh);
     }, 800);
   }
 
@@ -81,23 +87,18 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
 
   async function handleRunNow() {
     setRunningNow(true);
-    const runId = crypto.randomUUID();
-    const run: AutomationRun = { id: runId, automationId: automation.id, status: "dispatching", triggeredBy: "manual" };
-    await upsertAutomationRun(run);
-    setRuns((prev) => [run, ...prev]);
-    onRunNow(automation);
-    await upsertAutomationRun({ ...run, status: "dispatched" });
-    setRuns((prev) => prev.map((r) => r.id === runId ? { ...r, status: "dispatched" } : r));
-    setRunningNow(false);
-  }
-
-  async function handleRestore(v: PromptVersion) {
-    setPrompt(v.prompt);
-    setShowVersions(false);
-    await updateAutomation(automation.id, { prompt: v.prompt });
-    await savePromptVersion({ automationId: automation.id, prompt: v.prompt, source: "restore", bucketAt: promptBucketAt() });
-    const fresh = await listPromptVersions(automation.id);
-    setVersions(fresh);
+    setRunError(null);
+    try {
+      const runId = await runAutomationNow(automation, "manual");
+      clearedTerminals.delete(automation.id);
+      setTerminalRunId(runId);
+      // Refresh run list so the new "dispatched" row shows up in the sidebar.
+      listAutomationRuns(automation.id).then(setRuns);
+    } catch (e) {
+      setRunError(String((e as { message?: string })?.message ?? e));
+    } finally {
+      setRunningNow(false);
+    }
   }
 
   return (
@@ -110,10 +111,6 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
         <span className="am-builder-sep">/</span>
         <span className="am-builder-name">{automation.name}</span>
         <div className="am-detail-topbar-actions">
-          <button className="am-act" onClick={() => setShowVersions(true)} title="Version history">
-            <Clock size={13} />
-            History
-          </button>
           <button
             className="am-act am-act--primary"
             onClick={() => void handleRunNow()}
@@ -139,8 +136,28 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
             value={prompt}
             onChange={(e) => handlePromptChange(e.target.value)}
             placeholder="What should the agent do each time this runs?"
-            rows={12}
+            rows={6}
           />
+
+          <div className="am-label-row" style={{ marginTop: 20 }}>
+            <label className="am-field-label" style={{ marginBottom: 0 }}>Output</label>
+            {terminalRunId && sessionManager.has(terminalRunId) && (
+              <button
+                type="button"
+                className="am-label-action"
+                onClick={() => { clearedTerminals.add(automation.id); setTerminalRunId(null); }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className={`am-terminal-panel${terminalRunId && sessionManager.has(terminalRunId) ? "" : " am-terminal-panel--muted"}`}>
+            {terminalRunId && sessionManager.has(terminalRunId) ? (
+              <TerminalPane ref={termRef} key={terminalRunId} sessionId={terminalRunId} isAgent readOnly />
+            ) : (
+              <div className="am-terminal-idle">No run in progress</div>
+            )}
+          </div>
         </div>
 
         <div className="am-detail-sidebar">
@@ -187,43 +204,29 @@ export function AutomationDetailPage({ automation, onBack, onRunNow, onUpdate }:
               <div className="am-sidebar-empty">No runs yet</div>
             ) : (
               <div className="am-run-list">
-                {runs.slice(0, 8).map((r) => (
-                  <div key={r.id} className="am-run-item">
-                    <span className={`am-run-badge am-run-badge--${r.status}`}>{r.status}</span>
-                    <span className="am-run-meta">{r.createdAt ? timeAgo(r.createdAt) : ""}</span>
-                  </div>
-                ))}
+                {runs.slice(0, 8).map((r) => {
+                  const live = sessionManager.has(r.id);
+                  const isActive = terminalRunId === r.id;
+                  return (
+                    <div
+                      key={r.id}
+                      className={`am-run-item${live ? " am-run-item--clickable" : ""}${isActive ? " am-run-item--active" : ""}`}
+                      onClick={live ? () => { clearedTerminals.delete(automation.id); setTerminalRunId(r.id); } : undefined}
+                      role={live ? "button" : undefined}
+                    >
+                      <span className={`am-run-badge am-run-badge--${r.status}`}>{r.status}</span>
+                      <span className="am-run-meta">{r.createdAt ? timeAgo(r.createdAt) : ""}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {showVersions && createPortal(
-        <div className="am-versions-overlay" onClick={() => setShowVersions(false)}>
-          <div className="am-versions-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="am-versions-header">
-              <RotateCcw size={14} />
-              <span>Version history</span>
-              <button className="am-versions-close" onClick={() => setShowVersions(false)}>✕</button>
-            </div>
-            <div className="am-versions-list">
-              {versions.length === 0 ? (
-                <div className="am-versions-empty">No saved versions yet</div>
-              ) : versions.map((v) => (
-                <div key={v.id} className="am-version-item">
-                  <div className="am-version-meta">
-                    <span className="am-version-bucket">{v.bucketAt}</span>
-                    <span className="am-version-source">{v.source}</span>
-                  </div>
-                  <pre className="am-version-prompt">{v.prompt.slice(0, 120)}{v.prompt.length > 120 ? "…" : ""}</pre>
-                  <button className="am-act" onClick={() => void handleRestore(v)}>Restore</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>,
-        document.body,
+      {runError && (
+        <div className="am-run-error" role="alert">{runError}</div>
       )}
     </div>
   );
