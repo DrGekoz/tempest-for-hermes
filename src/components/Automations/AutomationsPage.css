@@ -1,4 +1,4 @@
-/* ── Root ─────────────────────────────────────────────────────────────────── */
+﻿/* -- Root ------------------------------------------------------------------- */
 
 .am-root {
   flex: 1;
@@ -16,7 +16,7 @@
   font-family: "Geist", sans-serif !important;
 }
 
-/* ── Header ───────────────────────────────────────────────────────────────── */
+/* -- Header ----------------------------------------------------------------- */
 
 .am-header {
   flex-shrink: 0;
@@ -57,7 +57,7 @@
 
 .am-header-right { display: flex; align-items: center; gap: 8px; }
 
-/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+/* -- Tabs ------------------------------------------------------------------- */
 
 .am-tabs {
   flex-shrink: 0;
@@ -65,7 +65,7 @@
   align-items: center;
   gap: 4px;
   padding: 10px 40px 0;
-  border-bottom: 1px solid var(--tempest-border);
+  border-bottom: 1px solid var(--tempest-border-default);
   overflow-x: auto;
 }
 
@@ -104,7 +104,7 @@
 .am-tab-icon { opacity: 0.7; }
 .am-tab-label { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 
-/* ── New button ───────────────────────────────────────────────────────────── */
+/* -- New button ------------------------------------------------------------- */
 
 .am-new-btn {
   display: inline-flex;
@@ -124,7 +124,7 @@
 .am-new-btn:hover { opacity: 0.9; }
 .am-new-btn:focus-visible { outline: 2px solid var(--tempest-accent); outline-offset: 2px; }
 
-/* ── List / table ─────────────────────────────────────────────────────────── */
+/* -- List / table ----------------------------------------------------------- */
 
 .am-list {
   flex: 1;
@@ -143,24 +143,40 @@
   color: var(--tempest-fg-subtle);
   font-weight: 500;
   font-size: 11px;
-  border-bottom: 1px solid var(--tempest-border);
+  border-bottom: 1px solid var(--tempest-border-default);
   white-space: nowrap;
 }
 .am-tr {
   cursor: pointer;
-  border-bottom: 1px solid var(--tempest-border);
+  border-bottom: 1px solid var(--tempest-border-default);
 }
 .am-tr:hover td { background: var(--tempest-bg-hover); }
 .am-td { padding: 10px 12px; color: var(--tempest-fg-default); vertical-align: middle; }
 .am-td--dot { width: 24px; padding-right: 0; }
 .am-td--name { font-weight: 500; }
-.am-td--agent { color: var(--tempest-fg-subtle); font-family: "Geist Mono", monospace; font-size: 11px; }
+.am-td--agent { color: var(--tempest-fg-subtle); font-size: 11px; }
+.am-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px 0 6px;
+  border-radius: 9999px;
+  border: 1px solid var(--tempest-border-default);
+  background: var(--tempest-bg-hover);
+  color: var(--tempest-fg-default);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.am-agent-badge-label { display: inline-block; }
 .am-td--schedule { color: var(--tempest-fg-muted); font-size: 12px; }
 .am-td--next { color: var(--tempest-fg-muted); font-size: 12px; }
 .am-td--toggle { width: 48px; }
 .am-td--actions { width: 40px; text-align: right; }
 
-/* ── Status dot ───────────────────────────────────────────────────────────── */
+/* -- Status dot ------------------------------------------------------------- */
 
 .am-dot {
   display: inline-block;
@@ -172,18 +188,19 @@
 .am-dot--running { background: #22c55e; }
 .am-dot--idle    { background: var(--tempest-fg-subtle); opacity: 0.5; }
 
-/* ── Toggle switch ────────────────────────────────────────────────────────── */
+/* -- Toggle switch ---------------------------------------------------------- */
 
 .am-toggle { position: relative; display: inline-block; width: 32px; height: 18px; }
 .am-toggle input { opacity: 0; width: 0; height: 0; }
 .am-toggle-track {
   position: absolute;
   inset: 0;
-  border-radius: 9px;
-  background: var(--tempest-bg-hover);
-  border: 1px solid var(--tempest-border);
+  border-radius: 9999px;
+  background: var(--tempest-fg-muted);
+  border: 0.5px solid var(--tempest-border-default);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
+  opacity: 0.5;
 }
 .am-toggle-track::after {
   content: "";
@@ -194,13 +211,19 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--tempest-fg-subtle);
-  transition: transform 0.15s, background 0.15s;
+  background: var(--tempest-bg-editor);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s;
 }
-.am-toggle input:checked + .am-toggle-track { background: var(--tempest-accent); border-color: var(--tempest-accent); }
-.am-toggle input:checked + .am-toggle-track::after { transform: translate(14px, -50%); background: #fff; }
+[data-theme="dark"] .am-toggle-track::after { background: var(--tempest-fg-default); }
+.am-toggle input:checked + .am-toggle-track {
+  background: var(--tempest-accent-green);
+  border-color: var(--tempest-border-default);
+  opacity: 1;
+}
+.am-toggle input:checked + .am-toggle-track::after { transform: translate(14px, -50%); }
 
-/* ── Action buttons ───────────────────────────────────────────────────────── */
+/* -- Action buttons --------------------------------------------------------- */
 
 .am-act {
   display: inline-flex;
@@ -208,7 +231,7 @@
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 6px;
   background: transparent;
   color: var(--tempest-fg-default);
@@ -229,7 +252,7 @@
 }
 .am-act--primary:hover { opacity: 0.9; background: var(--tempest-fg-default); }
 
-/* ── Loading / empty ──────────────────────────────────────────────────────── */
+/* -- Loading / empty -------------------------------------------------------- */
 
 .am-loading { display: flex; justify-content: center; padding: 48px; }
 .am-spin { animation: am-spin 0.8s linear infinite; }
@@ -262,7 +285,7 @@
 }
 .am-empty-cta:hover { opacity: 0.9; }
 
-/* ── Builder topbar ───────────────────────────────────────────────────────── */
+/* -- Builder topbar --------------------------------------------------------- */
 
 .am-builder-topbar {
   flex-shrink: 0;
@@ -270,7 +293,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px 20px;
-  border-bottom: 1px solid var(--tempest-border);
+  border-bottom: 1px solid var(--tempest-border-default);
   background: var(--tempest-bg-editor);
 }
 .am-back-btn {
@@ -288,7 +311,7 @@
 .am-builder-name { font-size: 13px; font-weight: 500; color: var(--tempest-fg-default); }
 .am-detail-topbar-actions { margin-left: auto; display: flex; gap: 8px; }
 
-/* ── Detail layout ────────────────────────────────────────────────────────── */
+/* -- Detail layout ---------------------------------------------------------- */
 
 .am-detail-layout {
   flex: 1;
@@ -309,7 +332,7 @@
 .am-detail-sidebar {
   width: 240px;
   flex-shrink: 0;
-  border-left: 1px solid var(--tempest-border);
+  border-left: 1px solid var(--tempest-border-default);
   padding: 20px 16px;
   overflow-y: auto;
   display: flex;
@@ -322,13 +345,14 @@
 .am-sidebar-value { font-size: 12px; color: var(--tempest-fg-muted); }
 .am-sidebar-empty { font-size: 12px; color: var(--tempest-fg-subtle); }
 
-/* ── Prompt editor ────────────────────────────────────────────────────────── */
+/* -- Prompt editor ---------------------------------------------------------- */
 
 .am-prompt-editor {
-  flex: 1;
-  resize: vertical;
+  resize: none;
+  max-height: 150px;
+  overflow-y: auto;
   padding: 12px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 8px;
   background: var(--tempest-bg-elevated);
   color: var(--tempest-fg-default);
@@ -336,9 +360,9 @@
   font-size: 13px;
   line-height: 1.6;
 }
-.am-prompt-editor:focus { outline: none; border-color: var(--tempest-accent); }
+.am-prompt-editor:focus { outline: none; }
 
-/* ── Field helpers ────────────────────────────────────────────────────────── */
+/* -- Field helpers ---------------------------------------------------------- */
 
 .am-field-label {
   display: block;
@@ -349,12 +373,29 @@
 }
 .am-field-hint { font-size: 11px; color: var(--tempest-fg-subtle); margin-top: 4px; display: block; }
 
+.am-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.am-label-action {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--tempest-fg-muted);
+  cursor: pointer;
+}
+.am-label-action:hover { color: var(--tempest-fg-default); }
+
 .am-field-input,
 .am-field-select,
 .am-field-textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 6px;
   background: var(--tempest-bg-editor);
   color: var(--tempest-fg-default);
@@ -372,10 +413,10 @@
 }
 .am-field-textarea { resize: vertical; line-height: 1.5; }
 
-/* ── Run list ─────────────────────────────────────────────────────────────── */
+/* -- Run list --------------------------------------------------------------- */
 
-.am-run-list { display: flex; flex-direction: column; gap: 6px; }
-.am-run-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.am-run-list { display: flex; flex-direction: column; gap: 12px; }
+.am-run-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .am-run-meta { color: var(--tempest-fg-subtle); font-size: 11px; }
 
 .am-run-badge {
@@ -390,19 +431,75 @@
 }
 .am-run-badge--dispatched    { background: #dcfce7; color: #166534; }
 .am-run-badge--dispatching   { background: #fef9c3; color: #854d0e; }
+.am-run-badge--succeeded     { background: #dcfce7; color: #166534; }
+.am-run-badge--failed        { background: #fee2e2; color: #991b1b; }
 .am-run-badge--dispatch_failed { background: #fee2e2; color: #991b1b; }
 
-/* ── Schedule picker (shadcn-flavored) ────────────────────────────────────── */
+.am-run-item--clickable { cursor: pointer; padding: 4px 6px; margin: -4px -6px; border-radius: 4px; }
+.am-run-item--clickable:hover { background: var(--tempest-bg-hover); }
+.am-run-item--active { background: var(--tempest-bg-active); }
+
+/* -- Terminal panel (live run output) --------------------------------------- */
+
+.am-run-error {
+  margin: 12px 24px 0;
+  padding: 8px 12px;
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: "Geist Mono", monospace;
+}
+
+.am-terminal-panel {
+  flex: 1;
+  min-height: 240px;
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 8px;
+  background: var(--tempest-bg-editor);
+  overflow: hidden;
+  position: relative;
+}
+.am-terminal-panel--muted { opacity: 0.55; }
+.am-terminal-panel .terminal-pane-wrapper { position: absolute; inset: 0; }
+.am-terminal-idle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Geist Mono", monospace;
+  font-size: 12px;
+  color: var(--tempest-fg-subtle);
+}
+
+/* -- Schedule picker (shadcn-flavored) -------------------------------------- */
 
 .sched { display: flex; flex-direction: column; gap: 10px; }
 
-.sched-row { display: flex; align-items: center; gap: 8px; }
-.sched-label { font-size: 12px; color: var(--tempest-fg-muted); }
+.sched-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+}
+.sched-lbl { font-size: 12px; color: var(--tempest-fg-muted); }
+.sched-ctrl { min-width: 0; }
+.sched-ctrl-inline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sched-unit { font-size: 12px; color: var(--tempest-fg-muted); }
+.sched-tz {
+  font-size: 11px;
+  color: var(--tempest-fg-subtle);
+  padding-left: 2px;
+  font-variant-numeric: tabular-nums;
+}
 
-.sched-num, .sched-time {
+.sched-num, .sched-time-input {
   height: 30px;
   padding: 0 10px;
-  border: 1px solid var(--tempest-border-default, var(--tempest-border));
+  border: 1px solid var(--tempest-border-default);
   border-radius: 6px;
   background: var(--tempest-bg-elevated);
   color: var(--tempest-fg-default);
@@ -410,17 +507,24 @@
   font-family: inherit;
   transition: border-color 0.1s, box-shadow 0.1s;
 }
-.sched-num { width: 68px; }
-.sched-num:focus, .sched-time:focus {
+.sched-num { width: 72px; }
+.sched-time-input { width: 110px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.sched-num:focus, .sched-time-input:focus {
   outline: none;
   border-color: var(--tempest-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--tempest-accent) 18%, transparent);
 }
 
-.sched-days { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--tempest-border-default, var(--tempest-border)); border-radius: 6px; background: var(--tempest-bg-elevated); align-self: flex-start; }
-.sched-day {
-  min-width: 36px;
-  height: 26px;
+.sched-hfmt {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--tempest-border-default);
+  border-radius: 6px;
+  background: var(--tempest-bg-elevated);
+}
+.sched-hfmt-btn {
+  height: 24px;
   padding: 0 8px;
   border: none;
   border-radius: 4px;
@@ -431,59 +535,44 @@
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
-.sched-day:hover { background: var(--tempest-bg-hover); color: var(--tempest-fg-default); }
-.sched-day--on {
+.sched-hfmt-btn:hover { color: var(--tempest-fg-default); background: var(--tempest-bg-hover); }
+.sched-hfmt-btn--on {
   background: var(--tempest-bg-active, var(--tempest-bg-hover));
   color: var(--tempest-fg-default);
-  box-shadow: inset 0 0 0 1px var(--tempest-border-default, var(--tempest-border));
+  box-shadow: inset 0 0 0 1px var(--tempest-border-default);
 }
 
-.sched-summary {
+.sched-presets {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--tempest-border-default, var(--tempest-border));
-  border-radius: 6px;
-  background: var(--tempest-bg-subtle, var(--tempest-bg-elevated));
-  font-size: 12px;
-  color: var(--tempest-fg-default);
+  gap: 4px 12px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--tempest-border-default);
 }
-.sched-summary-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--tempest-accent);
-  flex-shrink: 0;
-}
-
-.sched-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.sched-quick-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.sched-presets-label {
+  font-size: 11px;
   color: var(--tempest-fg-subtle);
   margin-right: 2px;
 }
-.sched-quick-btn {
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--tempest-border-default, var(--tempest-border));
-  border-radius: 999px;
+.sched-preset {
+  border: none;
   background: transparent;
+  padding: 0;
   color: var(--tempest-fg-muted);
   font-size: 11px;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  transition: color 0.1s;
 }
-.sched-quick-btn:hover {
-  background: var(--tempest-bg-hover);
-  color: var(--tempest-fg-default);
-  border-color: var(--tempest-fg-subtle);
+.sched-preset:hover {
+  color: var(--tempest-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-/* ── Create dialog ────────────────────────────────────────────────────────── */
+/* -- Create dialog ---------------------------------------------------------- */
 
 .am-dialog-overlay {
   position: fixed;
@@ -501,7 +590,7 @@
   display: flex;
   flex-direction: column;
   background: var(--tempest-bg-elevated);
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.12);
@@ -511,7 +600,7 @@
   align-items: center;
   gap: 8px;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--tempest-border);
+  border-bottom: 1px solid var(--tempest-border-default);
   font-size: 13px;
   font-weight: 500;
   color: var(--tempest-fg-default);
@@ -545,7 +634,7 @@
   gap: 6px;
   height: 32px;
   padding: 0 14px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 6px;
   background: transparent;
   color: var(--tempest-fg-default);
@@ -565,7 +654,7 @@
 .am-dialog-btn--create:disabled { opacity: 0.5; cursor: not-allowed; }
 .am-dialog-btn--cancel { }
 
-/* ── Gallery ──────────────────────────────────────────────────────────────── */
+/* -- Gallery ---------------------------------------------------------------- */
 
 .am-gallery { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 20px; }
 .am-gallery-category { font-size: 11px; font-weight: 600; color: var(--tempest-fg-subtle); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
@@ -575,7 +664,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 10px 12px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 8px;
   background: var(--tempest-bg-editor);
   text-align: left;
@@ -585,7 +674,7 @@
 .am-gallery-item-name { font-size: 13px; font-weight: 500; color: var(--tempest-fg-default); }
 .am-gallery-item-prompt { font-size: 12px; color: var(--tempest-fg-subtle); }
 
-/* ── Version history sheet ────────────────────────────────────────────────── */
+/* -- Version history sheet -------------------------------------------------- */
 
 .am-versions-overlay {
   position: fixed;
@@ -600,14 +689,14 @@
   display: flex;
   flex-direction: column;
   background: var(--tempest-bg-elevated);
-  border-left: 1px solid var(--tempest-border);
+  border-left: 1px solid var(--tempest-border-default);
 }
 .am-versions-header {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--tempest-border);
+  border-bottom: 1px solid var(--tempest-border-default);
   font-size: 13px;
   font-weight: 500;
   color: var(--tempest-fg-default);
@@ -619,7 +708,7 @@
 .am-version-item {
   display: flex; flex-direction: column; gap: 6px;
   padding: 10px 12px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 8px;
   background: var(--tempest-bg-editor);
 }
@@ -635,7 +724,7 @@
   overflow: hidden;
 }
 
-/* ── Modal (shared with other pages) ─────────────────────────────────────── */
+/* -- Modal (shared with other pages) --------------------------------------- */
 
 .naming-modal-overlay {
   position: fixed;
@@ -650,7 +739,7 @@
   width: 400px;
   max-width: calc(100vw - 48px);
   background: var(--tempest-bg-elevated);
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 10px;
   padding: 20px;
   display: flex;
@@ -668,7 +757,7 @@
 .naming-modal-desc { margin: 0; font-size: 13px; color: var(--tempest-fg-muted); }
 .naming-modal-input {
   padding: 8px 10px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 7px;
   background: var(--tempest-bg-editor);
   color: var(--tempest-fg-default);
@@ -680,7 +769,7 @@
 .naming-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .naming-modal-btn {
   padding: 7px 14px;
-  border: 1px solid var(--tempest-border);
+  border: 1px solid var(--tempest-border-default);
   border-radius: 7px;
   background: var(--tempest-bg-elevated);
   color: var(--tempest-fg-default);
@@ -698,3 +787,4 @@
 .naming-modal-btn--create:hover,
 .naming-modal-btn--delete:hover { opacity: 0.85; }
 .naming-modal-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+

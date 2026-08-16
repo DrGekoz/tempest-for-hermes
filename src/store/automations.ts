@@ -1,10 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { homeDir } from "@tauri-apps/api/path";
 import { computeNextRunAt } from "../lib/automationSchedule";
 import { getProjectPath } from "./sessions";
 import { getAgent } from "../lib/agentRegistry";
 import type { AgentConfig } from "../lib/agentManifest";
 import { getSettings } from "./appSettings";
+import { sessionManager } from "./sessionManager";
 
 export interface Automation {
   id: string;
@@ -59,10 +61,9 @@ export interface UpdateAutomationReq {
 
 let _automations: Automation[] = [];
 let _dispatchUnlisten: (() => void) | null = null;
-let _doneUnlisten: (() => void) | null = null;
-// Tracks the automationId + triggeredBy for each in-flight background run so the
-// `automation:done` handler can attribute the exit-status upsert without another
-// DB round-trip. Cleared as soon as the run completes.
+// Tracks the automationId + triggeredBy for each in-flight run so the
+// sessionManager onDone callback can attribute the succeeded upsert without an
+// extra DB round-trip. Cleared when the run completes.
 const _runMeta = new Map<string, { automationId: string; triggeredBy: string }>();
 
 export async function loadAutomations(projectId?: string): Promise<Automation[]> {
@@ -70,20 +71,6 @@ export async function loadAutomations(projectId?: string): Promise<Automation[]>
   if (!_dispatchUnlisten) {
     _dispatchUnlisten = await listen<string>("automation:dispatch", (ev) => {
       void _handleScheduledDispatch(ev.payload);
-    });
-  }
-  if (!_doneUnlisten) {
-    _doneUnlisten = await listen<{ runId: string; ok: boolean }>("automation:done", (ev) => {
-      const { runId, ok } = ev.payload;
-      const meta = _runMeta.get(runId);
-      if (!meta) return;
-      _runMeta.delete(runId);
-      void upsertAutomationRun({
-        id: runId,
-        automationId: meta.automationId,
-        status: ok ? "succeeded" : "failed",
-        triggeredBy: meta.triggeredBy,
-      });
     });
   }
   return _automations;
@@ -110,23 +97,38 @@ async function _handleScheduledDispatch(id: string) {
 /// through the flag that's designed to receive it — not as a bare positional,
 /// which several CLIs (claude included) treat as a project path.
 function buildHeadlessArgs(cfg: AgentConfig, prompt: string, model?: string): string[] {
-  const args: string[] = [];
+  const print = cfg.printArgs ?? [];
+  const flags: string[] = [];
   if (model && cfg.modelArgs) {
-    for (const a of cfg.modelArgs) args.push(a.replace("{MODEL}", model));
+    for (const a of cfg.modelArgs) flags.push(a.replace("{MODEL}", model));
   }
   if (cfg.autoApproveArgs && getSettings().autoApprove) {
-    for (const a of cfg.autoApproveArgs) args.push(a);
+    for (const a of cfg.autoApproveArgs) flags.push(a);
   }
-  for (const a of cfg.printArgs ?? []) args.push(a.replace("{PROMPT}", prompt));
+  // If printArgs starts with a subcommand (e.g. opencode's `run`), the subcommand
+  // must be argv[1] or yargs routes to the default command and treats it as a
+  // positional (opencode has `[project]` on default → prints --help). Insert
+  // model/auto flags AFTER the subcommand. For flag-style print (claude's `-p
+  // {PROMPT}`), keep the original order so flags don't split the -p/value pair.
+  const args: string[] = [];
+  if (print.length > 0 && !print[0].startsWith("-")) {
+    args.push(print[0]);
+    args.push(...flags);
+    for (let i = 1; i < print.length; i++) args.push(print[i].replace("{PROMPT}", prompt));
+  } else {
+    args.push(...flags);
+    for (const a of print) args.push(a.replace("{PROMPT}", prompt));
+  }
   return args;
 }
 
-/// Dispatch an automation as a background subprocess. Never opens a tab or
-/// PTY-backed session — automations are jobs. On spawn success the run is
-/// marked `dispatched`; `automation:done` later flips it to `succeeded` /
-/// `failed`. Throws only when spawn setup fails; the caller decides whether to
-/// surface that (manual runs do; the scheduler swallows).
-export async function runAutomationNow(a: Automation, triggeredBy: "manual" | "scheduler" = "manual"): Promise<void> {
+/// Dispatch an automation into a PTY session. No workspace tab, no PowerShell
+/// spawn — the same `create_pty_session` the workspace uses, consumed by the
+/// Automations detail page's TerminalPane. On spawn success the run is marked
+/// `dispatched`; sessionManager's work-done heuristics flip it to `succeeded`.
+/// Throws only when spawn setup fails; manual runs surface it, the scheduler
+/// swallows.
+export async function runAutomationNow(a: Automation, triggeredBy: "manual" | "scheduler" = "manual"): Promise<string> {
   const runId = crypto.randomUUID();
   await upsertAutomationRun({ id: runId, automationId: a.id, status: "dispatching", triggeredBy });
 
@@ -136,8 +138,8 @@ export async function runAutomationNow(a: Automation, triggeredBy: "manual" | "s
     throw new Error(`${a.agent} does not support headless runs (no print/-p flag in its manifest).`);
   }
 
-  // Project-scoped: cwd = project path (fails if the project isn't loaded).
-  // Global: cwd = "" — Rust falls back to the user's home dir.
+  // Project-scoped needs the project to be loaded (its on-disk path is only
+  // known when open). Global-scoped runs use the user's home dir.
   let cwd = "";
   if (a.projectId) {
     const p = getProjectPath(a.projectId);
@@ -146,18 +148,56 @@ export async function runAutomationNow(a: Automation, triggeredBy: "manual" | "s
       throw new Error("This automation's project isn't loaded — open it first.");
     }
     cwd = p;
+  } else {
+    cwd = await homeDir();
   }
 
   const args = buildHeadlessArgs(cfg, a.prompt, a.model ?? undefined);
   _runMeta.set(runId, { automationId: a.id, triggeredBy });
+
+  const channel = new Channel<{ session_id: string; data: string }>();
   try {
-    await invoke("run_automation_command", { runId, cwd, program: cfg.hint, args });
-    await upsertAutomationRun({ id: runId, automationId: a.id, status: "dispatched", triggeredBy });
+    await invoke<void>("create_pty_session", {
+      sessionId: runId,
+      cwd,
+      rows: 40,
+      cols: 120,
+      command: cfg.hint,
+      args,
+      sandbox: null,
+      // No policy for automations: creating the automation IS the opt-in.
+      policy: null,
+      dbIsolation: false,
+      env: { TEMPEST_SESSION: runId },
+      onEvent: channel,
+    });
   } catch (e) {
     _runMeta.delete(runId);
     await upsertAutomationRun({ id: runId, automationId: a.id, status: "dispatch_failed", triggeredBy });
     throw e;
   }
+
+  sessionManager.register(
+    runId,
+    channel,
+    true,
+    () => {
+      const meta = _runMeta.get(runId);
+      if (!meta) return;
+      _runMeta.delete(runId);
+      void upsertAutomationRun({
+        id: runId,
+        automationId: meta.automationId,
+        status: "succeeded",
+        triggeredBy: meta.triggeredBy,
+      });
+    },
+    undefined,
+    cfg.hint,
+  );
+
+  await upsertAutomationRun({ id: runId, automationId: a.id, status: "dispatched", triggeredBy });
+  return runId;
 }
 
 export async function createAutomation(req: CreateAutomationReq): Promise<Automation> {
