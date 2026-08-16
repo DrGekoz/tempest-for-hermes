@@ -68,6 +68,9 @@
   .agent .st { width: 9px; height: 9px; border-radius: 50%; background: var(--yellow); }
   .agent .st.done { background: var(--green); }
   .agent .st.failed, .agent .st.killed { background: var(--red); }
+  .agent .st.interrupted, .agent .st.merge-conflict { background: var(--red); }
+  .agent .st.merged { background: var(--green); }
+  .agent .st.cleaned { background: var(--sub); }
   .agent .st.running { background: var(--yellow); animation: blink 1s infinite; }
   @keyframes blink { 50% { opacity: .3; } }
   .agent .nm { font-weight: 700; font-size: 13px; }
@@ -213,21 +216,28 @@ function renderStats() {
 function renderAgents() {
   const el = $("#agents");
   if (!state.sessions.length) { el.innerHTML = `<div class="muted" style="font-size:13px">No agents spawned yet.</div>`; return; }
-  el.innerHTML = state.sessions.slice().reverse().map(s => `
+  el.innerHTML = state.sessions.slice().reverse().map(s => {
+    const running = s.status === "running";
+    const reviewable = !running && s.status !== "cleaned" && s.status !== "merged" && s.project && s.branch;
+    const actions = `
+      <button class="ghost" onclick="toggleBody('${esc(s.id)}')">details</button>
+      <button class="ghost" onclick="showDiff('${esc(s.id)}')">diff</button>
+      ${running ? `<button class="danger" onclick="killAgent('${esc(s.id)}')">kill</button>` : ""}
+      ${(reviewable || s.status === "merge-conflict") ? `<button class="ghost" onclick="mergeAgent('${esc(s.id)}')">merge</button>` : ""}
+      ${(s.status !== "cleaned" && s.status !== "running") ? `<button class="ghost" onclick="cleanupAgent('${esc(s.id)}')">cleanup</button>` : ""}`;
+    return `
     <div class="agent" id="agent-${esc(s.id)}">
       <div class="h">
         <span class="st ${esc(s.status)}"></span>
         <span class="nm">${esc(s.name)}</span>
         <span class="branch">${esc(s.branch)}</span>
-        <div class="actions">
-          <button class="ghost" onclick="toggleBody('${esc(s.id)}')">details</button>
-          <button class="ghost" onclick="showDiff('${esc(s.id)}')">diff</button>
-        </div>
+        <div class="actions">${actions}</div>
       </div>
       <div class="body" id="body-${esc(s.id)}">
-        <div class="out" id="out-${esc(s.id)}">${esc(s.status)}${s.exit_code != null ? " · exit " + s.exit_code : ""}</div>
+        <div class="out" id="out-${esc(s.id)}">${esc(s.status)}${s.exit_code != null ? " · exit " + s.exit_code : ""}${s.note ? "\n" + esc(s.note) : ""}</div>
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 window.toggleBody = (id) => {
   const b = $("#body-" + id); b.classList.toggle("open");
@@ -238,6 +248,26 @@ window.showDiff = async (id) => {
   $("#out-" + id).textContent = "loading diff…";
   const d = await api("/api/agents/" + id + "/diff");
   $("#out-" + id).textContent = d.diff || "(no changes)";
+};
+window.killAgent = async (id) => {
+  if (!confirm("Kill this agent? Its worktree and branch stay for review.")) return;
+  const d = await api("/api/agents/" + id + "/kill", { method: "POST" });
+  if (!d.ok) alert(d.error || "kill failed");
+  refreshHealth();
+};
+window.mergeAgent = async (id) => {
+  if (!confirm("Merge this agent's branch into the project base branch?")) return;
+  const b = $("#body-" + id); b.classList.add("open");
+  $("#out-" + id).textContent = "merging…";
+  const d = await api("/api/agents/" + id + "/merge", { method: "POST" });
+  $("#out-" + id).textContent = (d.merged ? "Merged into " + d.target : "Merge failed:") + "\n" + (d.message || d.error || "");
+  refreshHealth();
+};
+window.cleanupAgent = async (id) => {
+  if (!confirm("Remove the worktree and delete the branch?")) return;
+  const d = await api("/api/agents/" + id + "/cleanup", { method: "POST" });
+  if (!d.ok) alert(d.error || "cleanup failed");
+  refreshHealth();
 };
 async function loadLog(id) {
   $("#out-" + id).textContent = "loading…";

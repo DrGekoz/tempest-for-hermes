@@ -1,5 +1,5 @@
 name: tempest-for-hermes
-version: "1.0.0"
+version: "1.1.0"
 description: "Tempest for Hermes — brings Tempest's Token Intelligence (the @usetempest/atlas semantic code knowledge graph) and parallel worktree-isolated agent orchestration to Hermes. Index a codebase once, then agents pull surgical token-cheap context via the tempest_context tool instead of reading the whole repo. Ships an HTTP dashboard (projects + graph stats, context playground, parallel Hermes agents in isolated git worktrees with diffs). Reuses Tempest's atlas system; 100% local."
 author: "DrGekoz"
 license: "Apache-2.0"

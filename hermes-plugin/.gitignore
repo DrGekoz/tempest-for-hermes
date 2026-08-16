@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 runtime/node_modules/
 web/node_modules/
+.tempest/

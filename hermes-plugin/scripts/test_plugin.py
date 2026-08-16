@@ -187,6 +187,87 @@ def main():
     d = plug._agent_diff(s)
     check("agent diff returns (no changes ok)", isinstance(d, str))
 
+    # --- 5. v1.1 features: persistent bridge, cwd resolution, staleness, kill, merge/cleanup ---
+    print("\n[5] v1.1 features")
+    # Persistent bridge: one Node process serves every call.
+    pid1 = plug._bridge.pid()
+    check("persistent bridge alive", pid1 is not None, str(pid1))
+    plug._bridge_cmd("version")
+    pid2 = plug._bridge.pid()
+    check("bridge process reused across calls", pid2 == pid1, f"{pid1} vs {pid2}")
+    st = plug._bridge_state()
+    check("bridge state reports persistent", st.get("mode") == "persistent" and st.get("pid") == pid1, str(st))
+
+    # cwd-aware project resolution.
+    plug._set_active_project("")
+    os.chdir(str(proj))
+    resolved = plug._resolve_project(None)
+    check("cwd-aware resolution finds sample-repo", resolved == str(proj), str(resolved))
+    os.chdir(REPO)
+    # active project still wins when set; explicit arg wins over everything.
+    plug._set_active_project(str(proj))
+    check("active project wins over cwd", plug._resolve_project(None) == str(proj))
+    check("explicit project wins", plug._resolve_project("C:/nope") == "C:/nope")
+
+    # Staleness: clean repo -> no resync; dirty repo -> flagged.
+    plug._stale_checked.clear()
+    check("clean repo not stale", plug._needs_resync(str(proj)) is False)
+    (proj / "src" / "untracked.py").write_text("x = 1\n", encoding="utf-8")
+    plug._stale_checked.clear()
+    check("dirty repo flagged stale", plug._needs_resync(str(proj)) is True)
+    (proj / "src" / "untracked.py").unlink()
+
+    # Kill a running agent (sys.executable instead of `sleep` so PATH quirks
+    # on Windows can't break the spawn; taskkill /T takes the whole tree).
+    k = plug._spawn_agent(str(proj), "killer", "hi",
+                          command=[sys.executable, "-c", "import time; time.sleep(60)"])
+    kid = k["session"]["id"]
+    time.sleep(1.5)
+    kr = plug._kill_agent(kid)
+    check("kill ok", kr.get("ok"), str(kr))
+    ks = plug._sessions.get(kid)
+    check("session killed", ks and ks["status"] == "killed", str(ks))
+    check("pid recorded", ks and ks.get("pid") is not None, str(ks))
+
+    # Merge + cleanup a successful agent.
+    m = plug._spawn_agent(
+        str(proj), "merger", "hi",
+        command=["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                 "commit", "--allow-empty", "-qm", "test-change"],
+    )
+    mid = m["session"]["id"]
+    ms = plug._sessions.get(mid)
+    for _ in range(40):
+        ms = plug._sessions.get(mid)
+        if ms and ms["status"] != "running":
+            break
+        time.sleep(0.25)
+    mr = plug._agent_merge(ms)
+    check("merge ok", mr.get("ok") and mr.get("merged"), str(mr))
+    merged_s = plug._sessions.get(mid)
+    check("session merged", merged_s["status"] == "merged", str(merged_s))
+    mwt = Path(merged_s["worktree"])
+    cr = plug._agent_cleanup(merged_s)
+    check("cleanup ok", cr.get("ok") and "worktree removed" in cr.get("message", ""), str(cr))
+    check("worktree removed", not mwt.exists())
+    rc, out = plug._git(["branch", "--list", merged_s["branch"]], str(proj))
+    check("branch deleted", rc == 0 and merged_s["branch"] not in out, out)
+
+    # Session process-alive checks (used to reap orphans after a restart).
+    check("dead pid not alive", plug._session_process_alive({"pid": 999999999}) is False)
+    alive_proc = plug._spawn_agent(str(proj), "alive", "hi",
+                                   command=[sys.executable, "-c", "import time; time.sleep(30)"])
+    alive_sid = alive_proc["session"]["id"]
+    # pid lands ~0.3s after spawn (worker thread); poll for it, then assert.
+    for _ in range(20):
+        if (plug._sessions.get(alive_sid) or {}).get("pid"):
+            break
+        time.sleep(0.25)
+    check("live pid alive", plug._session_process_alive(plug._sessions.get(alive_sid)) is True)
+    kr2 = plug._kill_agent(alive_sid)
+    check("live agent kill ok", kr2.get("ok"), str(kr2))
+    check("live agent killed for cleanup", plug._sessions.get(alive_sid)["status"] == "killed")
+
     # --- summary ---
     print(f"\n===== {PASS} passed, {FAIL} failed =====")
     if not args.keep:

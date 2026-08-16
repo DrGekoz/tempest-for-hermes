@@ -2,27 +2,35 @@
 /**
  * atlas-bridge.mjs — Tempest for Hermes: Atlas knowledge-graph bridge.
  *
- * A thin, dependency-light CLI that wraps the `@usetempest/atlas` semantic code
+ * A thin, dependency-light wrapper around the `@usetempest/atlas` semantic code
  * knowledge graph (Tempest's "Token Intelligence") so the Python plugin can
  * index a codebase once and serve surgical, token-cheap context to Hermes
  * agents — without needing a Tauri/Rust runtime.
  *
- * Usage (args are passed as a single JSON string on argv[2], so no shell
- * quoting issues and no truncation on long queries):
+ * Two modes:
  *
- *   node atlas-bridge.mjs <cmd> '<json>'
+ *   ONE-SHOT (CLI, same as v1.0):
+ *     node atlas-bridge.mjs <cmd> '<json>'
+ *     Prints one JSON object to stdout and exits.
  *
- * Commands:
+ *   SERVER (persistent, default for the plugin since v1.1):
+ *     node atlas-bridge.mjs
+ *     Reads JSON-lines requests from stdin:  {"id":N,"cmd":"context","args":{...}}
+ *     Writes one JSON-lines response per request: {"id":N,"ok":true,...}
+ *     Node and the @usetempest/atlas module stay resident, so every request
+ *     skips the Node boot + module load + graph open cold start.
+ *     Shuts down on stdin EOF.
+ *
+ * Commands (both modes):
  *   version                    -> { ok, node, atlasVersion }
  *   projects                   -> { ok, projects: [{path,name,indexed,nodeCount,edgeCount,fileCount,lastIndexedAt}] }
  *   index   {project, sync}    -> create-or-refresh the index; { ok, stats }
- *   context {project, query, maxNodes?, maxCodeBlocks?, format?, ...} -> { ok, markdown, summary, stats, relatedFiles }
- *   search  {project, query, limit?}                                  -> { ok, hits: [{name,kind,file,line}] }
+ *   context {project, query, maxNodes?, maxCodeBlocks?, format?, syncIfStale?, staleAfterMs?} ->
+ *                                { ok, markdown, summary, stats, relatedFiles }
+ *   search  {project, query, limit?}   -> { ok, hits }
  *   stats   {project}          -> { ok, stats }
  *
- * Every command prints a JSON object to stdout and exits 0. On failure it
- * prints { ok:false, error, step } to stdout and exits 1. All logs go to
- * stderr so stdout stays machine-parseable.
+ * All logs go to stderr so stdout stays machine-parseable.
  */
 
 import { createRequire } from 'node:module';
@@ -52,7 +60,7 @@ function jsonOut(obj, code = 0) {
 
 function fail(step, error) {
   log(`FAIL at step "${step}":`, error && error.stack ? error.stack : error);
-  jsonOut({ ok: false, step, error: String(error && error.message ? error.message : error) }, 1);
+  return { ok: false, step, error: String(error && error.message ? error.message : error) };
 }
 
 // Registry of known projects — persisted so `projects` works even before the
@@ -103,20 +111,15 @@ function loadAtlas() {
   return _Atlas;
 }
 
-function registryEntry(path_, name) {
-  return loadRegistry().find((p) => p.path === path_ || p.name === name);
-}
-
 // ---------------------------------------------------------------------------
-// Command implementations
+// Command implementations — each returns a plain object (no process.exit).
 // ---------------------------------------------------------------------------
 
-async function cmdVersion() {
-  const Atlas = loadAtlas();
-  jsonOut({ ok: true, node: process.version, platform: `${process.platform}/${process.arch}`, atlas: '1.3.2' });
+function cmdVersion() {
+  return { ok: true, node: process.version, platform: `${process.platform}/${process.arch}`, atlas: '1.3.2' };
 }
 
-async function cmdProjects() {
+function cmdProjects() {
   const Atlas = loadAtlas();
   const out = [];
   for (const p of loadRegistry()) {
@@ -136,7 +139,22 @@ async function cmdProjects() {
       lastIndexedAt: stats?.lastUpdated ?? p.lastIndexedAt ?? null,
     });
   }
-  jsonOut({ ok: true, projects: out });
+  return { ok: true, projects: out };
+}
+
+function touchRegistry(abs, name, stats, sync = false) {
+  const reg = loadRegistry().filter((r) => r.path !== abs);
+  reg.push({
+    path: abs,
+    name,
+    indexed: true,
+    nodeCount: stats?.nodeCount ?? 0,
+    edgeCount: stats?.edgeCount ?? 0,
+    fileCount: stats?.fileCount ?? 0,
+    lastIndexedAt: stats?.lastUpdated ?? Date.now(),
+    lastSyncedAt: sync ? Date.now() : (loadRegistry().find((r) => r.path === abs)?.lastSyncedAt ?? null),
+  });
+  saveRegistry(reg);
 }
 
 async function cmdIndex({ project, sync }) {
@@ -162,11 +180,8 @@ async function cmdIndex({ project, sync }) {
   const lastUpdated = stats?.lastUpdated ?? Date.now();
   atlas.close?.();
 
-  const reg = loadRegistry().filter((r) => r.path !== abs);
-  reg.push({ path: abs, name, indexed: true, nodeCount, edgeCount, fileCount, lastIndexedAt: lastUpdated });
-  saveRegistry(reg);
-
-  jsonOut({ ok: true, project: abs, name, stats: stats ?? {} });
+  touchRegistry(abs, name, stats, sync === true);
+  return { ok: true, project: abs, name, stats: { ...(stats ?? {}), nodeCount, edgeCount, fileCount, lastUpdated } };
 }
 
 async function openForQuery(abs) {
@@ -184,7 +199,33 @@ async function cmdContext({ project, query, ...opts }) {
   if (!project) return fail('context/args', 'missing "project"');
   if (!query) return fail('context/args', 'missing "query"');
   const Atlas = loadAtlas();
-  const { abs } = projectName(project);
+  const { abs, name } = projectName(project);
+
+  // Optional auto-sync: if the caller asked for it and the index is older than
+  // staleAfterMs (default 5 min), run an incremental refresh first so context
+  // reflects recent edits. mtime/git-level staleness detection is done on the
+  // Python side; this is the cheap time-based backstop for non-git repos.
+  let synced = false;
+  if (opts.syncIfStale) {
+    const staleAfterMs = opts.staleAfterMs ?? 5 * 60 * 1000;
+    const entry = loadRegistry().find((r) => r.path === abs);
+    const last = entry?.lastIndexedAt ?? 0;
+    if (!last || Date.now() - new Date(last).getTime() > staleAfterMs) {
+      try {
+        if (Atlas.isInitialized(abs)) {
+          const a = await Atlas.open(abs, { sync: true });
+          const st = a.getStats?.();
+          const lua = st?.lastUpdated ?? Date.now();
+          a.close?.();
+          touchRegistry(abs, name, st, true);
+          synced = true;
+        }
+      } catch (e) {
+        log('auto-sync failed (continuing with existing index):', e && e.message);
+      }
+    }
+  }
+
   const atlas = await openForQuery(abs);
   try {
     // IMPORTANT: only forward options the caller actually provided. Passing
@@ -199,17 +240,17 @@ async function cmdContext({ project, query, ...opts }) {
     bo.format = opts.format || 'markdown';
     const result = await atlas.buildContext(query, bo);
     if (typeof result === 'string') {
-      jsonOut({ ok: true, project: abs, markdown: result, summary: '', stats: null, relatedFiles: [] });
-      return;
+      return { ok: true, project: abs, markdown: result, summary: '', stats: null, relatedFiles: [], synced };
     }
-    jsonOut({
+    return {
       ok: true,
       project: abs,
       markdown: '',
       summary: result.summary,
       relatedFiles: result.relatedFiles || [],
       stats: result.stats || {},
-    });
+      synced,
+    };
   } finally {
     atlas.close?.();
   }
@@ -222,7 +263,7 @@ async function cmdStats({ project }) {
   const atlas = await openForQuery(abs);
   try {
     const stats = atlas.getStats ? atlas.getStats() : {};
-    jsonOut({ ok: true, project: abs, stats: stats ?? {} });
+    return { ok: true, project: abs, stats: stats ?? {} };
   } finally {
     atlas.close?.();
   }
@@ -243,17 +284,30 @@ async function cmdSearch({ project, query, limit }) {
       line: h?.node?.startLine ?? h?.node?.line ?? null,
       score: h?.score ?? null,
     }));
-    jsonOut({ ok: true, project: abs, hits: out });
+    return { ok: true, project: abs, hits: out };
   } finally {
     atlas.close?.();
   }
 }
 
+async function runCommand(cmd, args) {
+  switch (cmd) {
+    case 'version': return cmdVersion();
+    case 'projects': return cmdProjects();
+    case 'index': return cmdIndex(args || {});
+    case 'context': return cmdContext(args || {});
+    case 'stats': return cmdStats(args || {});
+    case 'search': return cmdSearch(args || {});
+    default:
+      return fail('dispatch/cmd', `unknown command "${cmd}" (expected version|projects|index|context|stats|search)`);
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Dispatch
+// One-shot mode (v1.0 compatible)
 // ---------------------------------------------------------------------------
 
-async function main() {
+async function oneShot() {
   const cmd = process.argv[2];
   let args = {};
   if (process.argv[3]) {
@@ -264,16 +318,56 @@ async function main() {
     }
   }
   log(`cmd=${cmd} args=${JSON.stringify(Object.keys(args))}`);
-  switch (cmd) {
-    case 'version': return cmdVersion();
-    case 'projects': return cmdProjects();
-    case 'index': return cmdIndex(args);
-    case 'context': return cmdContext(args);
-    case 'stats': return cmdStats(args);
-    case 'search': return cmdSearch(args);
-    default:
-      return fail('dispatch/cmd', `unknown command "${cmd}" (expected version|projects|index|context|stats|search)`);
-  }
+  return runCommand(cmd, args);
 }
 
-main().catch((e) => fail('main', e));
+// ---------------------------------------------------------------------------
+// Server mode (persistent, v1.1+)
+// ---------------------------------------------------------------------------
+
+function serveMode() {
+  log(`server mode: node ${process.version}, atlas ready to serve`);
+  let buf = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    buf += chunk;
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      if (!line.trim()) continue;
+      let req;
+      try {
+        req = JSON.parse(line);
+      } catch {
+        process.stdout.write(JSON.stringify({ id: null, ok: false, error: 'bad JSON line' }) + '\n');
+        continue;
+      }
+      Promise.resolve()
+        .then(() => runCommand(req.cmd, req.args || {}))
+        .then((r) => process.stdout.write(JSON.stringify({ id: req.id, ...r }) + '\n'))
+        .catch((e) => {
+          const err = fail('serve', e);
+          process.stdout.write(JSON.stringify({ id: req.id, ...err }) + '\n');
+        });
+    }
+  });
+  process.stdin.on('end', () => {
+    log('stdin EOF, shutting down');
+    process.exit(0);
+  });
+  process.stdin.on('error', () => process.exit(0));
+}
+
+// ---------------------------------------------------------------------------
+// Entry
+// ---------------------------------------------------------------------------
+
+const argv = process.argv.slice(2);
+if (argv.length === 0) {
+  serveMode();
+} else {
+  oneShot()
+    .then((r) => jsonOut(r))
+    .catch((e) => jsonOut(fail('main', e), 1));
+}

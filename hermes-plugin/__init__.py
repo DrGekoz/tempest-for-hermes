@@ -35,6 +35,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -102,11 +103,14 @@ def _node() -> Optional[str]:
 
 
 def _runtime_dir() -> Path:
+    env = os.environ.get("TEMPEST_RUNTIME_DIR")
+    if env:
+        return Path(env)
     return _plugin_dir() / "runtime"
 
 
-def _bridge_cmd(cmd: str, args: Optional[dict] = None) -> Dict[str, Any]:
-    """Run ``node atlas-bridge.mjs <cmd> '<json>'`` and return its JSON object."""
+def _bridge_cmd_oneshot(cmd: str, args: Optional[dict] = None) -> Dict[str, Any]:
+    """Run ``node atlas-bridge.mjs <cmd> '<json>'`` once (v1.0 fallback path)."""
     node = _node()
     if not node:
         return {"ok": False, "error": "node is not installed (required for the atlas bridge)"}
@@ -132,8 +136,186 @@ def _bridge_cmd(cmd: str, args: Optional[dict] = None) -> Dict[str, Any]:
         return {"ok": False, "error": f"bad bridge output: {e}\n{out[-2000:]}", "returncode": proc.returncode}
 
 
+class _PersistentBridge:
+    """A long-lived ``node atlas-bridge.mjs`` process speaking JSON-lines over
+    stdin/stdout, so Node, the @usetempest/atlas module and the warm require
+    cache survive between requests — no per-call cold start (the v1.0 bridge
+    spawned a fresh Node subprocess for every request)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._proc: Optional[subprocess.Popen] = None
+        self._pending = threading.Condition(self._lock)
+        self._responses: Dict[int, Dict[str, Any]] = {}
+        self._next_id = 0
+        self._stderr_tail: List[str] = []
+        self._stderr_lock = threading.Lock()
+        self._last_error: Optional[str] = None
+
+    def pid(self) -> Optional[int]:
+        with self._lock:
+            return self._proc.pid if self._proc and self._proc.poll() is None else None
+
+    def last_error(self) -> Optional[str]:
+        return self._last_error
+
+    def _note_stderr(self, line: str) -> None:
+        with self._stderr_lock:
+            self._stderr_tail.append(line)
+            if len(self._stderr_tail) > 80:
+                del self._stderr_tail[:-80]
+
+    def _ensure(self) -> bool:
+        with self._lock:
+            if self._proc and self._proc.poll() is None:
+                return True
+            node = _node()
+            bridge = _runtime_dir() / "atlas-bridge.mjs"
+            if not node:
+                self._last_error = "node is not installed (required for the atlas bridge)"
+                return False
+            if not bridge.exists():
+                self._last_error = f"atlas bridge not found: {bridge}"
+                return False
+            try:
+                proc = subprocess.Popen(
+                    [node, str(bridge)],
+                    cwd=str(_runtime_dir()),
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+                )
+            except Exception as e:  # noqa: BLE001
+                self._last_error = f"bridge spawn failed: {e}"
+                return False
+            self._proc = proc
+            self._responses = {}
+            self._next_id = 0
+            threading.Thread(target=self._read_loop, daemon=True, name="tempest-bridge-reader").start()
+            threading.Thread(target=self._drain_stderr, daemon=True, name="tempest-bridge-stderr").start()
+            return True
+
+    def _read_loop(self) -> None:
+        proc = self._proc
+        if not proc or not proc.stdout:
+            return
+        try:
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except Exception:  # noqa: BLE001
+                    continue
+                rid = msg.get("id")
+                with self._pending:
+                    self._responses[rid] = msg
+                    self._pending.notify_all()
+        except Exception:  # noqa: BLE001
+            pass
+        # stdout closed -> process exited; wake any waiters so they time out fast
+        with self._pending:
+            self._pending.notify_all()
+
+    def _drain_stderr(self) -> None:
+        proc = self._proc
+        if not proc or not proc.stderr:
+            return
+        try:
+            for line in proc.stderr:
+                self._note_stderr(line.rstrip("\r\n"))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def call(self, cmd: str, args: Optional[dict] = None, timeout: Optional[int] = None) -> Dict[str, Any]:
+        timeout = timeout or _BRIDGE_TIMEOUTS.get(cmd, 120)
+        with self._lock:
+            if not self._ensure():
+                return {"ok": False, "error": self._last_error or "bridge unavailable"}
+            rid = self._next_id
+            self._next_id += 1
+            proc = self._proc
+            if not proc or not proc.stdin:
+                return {"ok": False, "error": "bridge process missing stdin"}
+            try:
+                proc.stdin.write(json.dumps({"id": rid, "cmd": cmd, "args": args or {}}) + "\n")
+                proc.stdin.flush()
+            except Exception as e:  # noqa: BLE001
+                self._note_stderr(f"stdin write failed: {e}")
+                self._teardown()
+                return self.call(cmd, args, timeout)  # one retry on a fresh process
+            deadline = time.time() + timeout
+            while True:
+                remain = deadline - time.time()
+                if remain <= 0:
+                    self._note_stderr(f"bridge timeout after {timeout}s for cmd={cmd}")
+                    self._teardown()
+                    return {"ok": False, "error": f"bridge timeout after {timeout}s for cmd={cmd}"}
+                with self._pending:
+                    if rid in self._responses:
+                        return self._responses.pop(rid)
+                    self._pending.wait(remain)
+
+    def _teardown(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc and proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            if proc and proc.stdin:
+                proc.stdin.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def shutdown(self) -> None:
+        with self._lock:
+            proc = self._proc
+            if proc and proc.poll() is None:
+                try:
+                    proc.stdin.write("\n")
+                    proc.stdin.flush()
+                    proc.stdin.close()  # EOF -> bridge exits cleanly
+                except Exception:  # noqa: BLE001
+                    self._teardown()
+                    return
+                try:
+                    proc.wait(timeout=5)
+                except Exception:  # noqa: BLE001
+                    self._teardown()
+            self._proc = None
+            self._responses = {}
+
+
+_bridge = _PersistentBridge()
+
+
+def _bridge_cmd(cmd: str, args: Optional[dict] = None) -> Dict[str, Any]:
+    """Call the atlas bridge — through the persistent process by default
+    (TEMPEST_BRIDGE=oneshot forces the v1.0 one-shot subprocess path)."""
+    if os.environ.get("TEMPEST_BRIDGE", "").lower() in ("oneshot", "cli"):
+        return _bridge_cmd_oneshot(cmd, args)
+    r = _bridge.call(cmd, args)
+    if not r.get("ok") and "bridge spawn failed" in (r.get("error") or ""):
+        return _bridge_cmd_oneshot(cmd, args)
+    return r
+
+
 def _bridge_ok(result: Dict[str, Any]) -> bool:
     return bool(result.get("ok"))
+
+
+def _bridge_state() -> Dict[str, Any]:
+    mode = "one-shot"
+    if os.environ.get("TEMPEST_BRIDGE", "").lower() not in ("oneshot", "cli"):
+        mode = "persistent"
+    return {"mode": mode, "pid": _bridge.pid(), "lastError": _bridge.last_error()}
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +323,35 @@ def _bridge_ok(result: Dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 def _hermes_python() -> Optional[str]:
-    for cand in _HERMES_PY_CANDIDATES:
+    cands = list(_HERMES_PY_CANDIDATES)
+    # Probe uv's tool dir (works wherever uv installed hermes-agent).
+    uv = shutil.which("uv")
+    if uv:
+        try:
+            out = subprocess.run(
+                [uv, "tool", "dir"],
+                capture_output=True, text=True, timeout=15,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            )
+            tool_dir = (out.stdout or "").strip()
+            if tool_dir:
+                cands.append(str(Path(tool_dir) / "hermes-agent" / "Scripts" / "python.exe"))
+        except Exception:  # noqa: BLE001
+            pass
+    # Resolve the `hermes` shim: python.exe usually sits next to hermes.exe
+    # (a Scripts/ dir) or one level up inside the hermes-agent tool install.
+    h = shutil.which("hermes")
+    if h:
+        p = Path(h)
+        cands.append(str(p.parent / "python.exe"))
+        cands.append(str(p.parent.parent / "hermes-agent" / "Scripts" / "python.exe"))
+    # The current interpreter can run the CLI if hermes_cli is importable here.
+    try:
+        import hermes_cli  # noqa: F401
+        cands.append(sys.executable)
+    except Exception:  # noqa: BLE001
+        pass
+    for cand in cands:
         if cand and Path(cand).exists():
             return cand
     return None
@@ -187,17 +397,99 @@ def _set_active_project(path_: str) -> None:
 
 
 def _resolve_project(requested: Optional[str]) -> Optional[str]:
-    """Resolve the project for a request: explicit path, active project, or the
-    first indexed project (falling back to walking up from cwd)."""
+    """Resolve the project for a request: explicit path, the stored active
+    project, the indexed project containing the current working directory
+    (walking up — TEMPEST_CWD overrides cwd), or the first indexed project."""
     if requested:
         return requested
     active = _get_active_project()
     if active:
         return active
     projs = _projects()
-    if projs:
-        return projs[0]["path"]
-    return None
+    if not projs:
+        return None
+    cwd = os.environ.get("TEMPEST_CWD") or os.getcwd()
+    try:
+        cwdp = Path(cwd).resolve()
+    except Exception:  # noqa: BLE001
+        cwdp = Path(cwd)
+    best: Optional[str] = None
+    best_len = -1
+    for p in projs:
+        try:
+            pp = Path(p["path"]).resolve()
+        except Exception:  # noqa: BLE001
+            pp = Path(p["path"])
+        if cwdp == pp or pp in cwdp.parents:
+            if len(str(pp)) > best_len:  # deepest match wins
+                best, best_len = p["path"], len(str(pp))
+    if best:
+        return best
+    return projs[0]["path"]
+
+
+# ---------------------------------------------------------------------------
+# Index staleness (auto-sync before context pulls)
+# ---------------------------------------------------------------------------
+
+# project path -> last time we ran a staleness check / an auto-sync (cooldown)
+_stale_checked: Dict[str, float] = {}
+_STALE_CHECK_COOLDOWN = 30.0   # seconds between git status checks per project
+_AUTO_SYNC_COOLDOWN = 60.0     # seconds between auto-sync index refreshes
+
+
+def _needs_resync(project: str) -> bool:
+    """Cheap staleness probe. Git repos: ``git status --porcelain`` (fast,
+    mtime-native), ignoring atlas's own ``.tempest`` graph storage so a fresh
+    index never looks "dirty". Non-git projects fall back to a time-based
+    check against the index's lastIndexedAt (TEMPEST_STALE_MS, default 5 min)."""
+    now = time.time()
+    if now - _stale_checked.get(project, 0.0) < _STALE_CHECK_COOLDOWN:
+        return False
+    _stale_checked[project] = now
+    try:
+        rc, out = _git(["status", "--porcelain"], project, timeout=15)
+        if rc == 0:
+            lines = [ln for ln in out.splitlines() if ln.strip() and ".tempest" not in ln]
+            return bool(lines)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        stale_ms = int(os.environ.get("TEMPEST_STALE_MS", "300000"))
+    except ValueError:
+        stale_ms = 300000
+    for p in _projects():
+        if p.get("path") == project:
+            last = p.get("lastIndexedAt")
+            if last:
+                try:
+                    last = float(last)
+                    if last > 1e12:  # JS epoch millis
+                        last /= 1000.0
+                    return (now - last) > stale_ms / 1000.0
+                except Exception:  # noqa: BLE001
+                    return False
+    return False
+
+
+_auto_synced: Dict[str, float] = {}
+
+
+def _maybe_resync(project: str) -> None:
+    """If the project changed since the last index, refresh it incrementally
+    (atlas sync) before serving context. Cooldown-capped; failures are logged
+    and ignored — the stale index still answers."""
+    if not _needs_resync(project):
+        return
+    now = time.time()
+    if now - _auto_synced.get(project, 0.0) < _AUTO_SYNC_COOLDOWN:
+        return
+    _auto_synced[project] = now
+    r = _bridge_cmd("index", {"project": project, "sync": True})
+    if _bridge_ok(r):
+        logger.info("tempest: auto-synced index for %s", project)
+    else:
+        logger.warning("tempest: auto-sync failed for %s: %s", project, r.get("error"))
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +509,20 @@ class _SessionStore:
         try:
             if self._file().exists():
                 data = json.loads(self._file().read_text(encoding="utf-8"))
-                self.sessions = {k: v for k, v in data.items() if not self._done_since(v)}
+                kept = {}
+                for k, v in data.items():
+                    if self._done_since(v):
+                        continue
+                    # Reap sessions left "running" by a previous Hermes process:
+                    # if the recorded pid is gone (or missing), the process can no
+                    # longer be killed — mark the session interrupted so the
+                    # dashboard shows the worktree as orphaned, not live.
+                    if v.get("status") == "running" and not _session_process_alive(v):
+                        v["status"] = "interrupted"
+                        v["finished"] = v.get("finished") or time.time()
+                        v["note"] = "process no longer alive (Hermes restarted?) — worktree may be orphaned"
+                    kept[k] = v
+                self.sessions = kept
         except Exception as e:
             logger.warning("tempest sessions load failed: %s", e)
             self.sessions = {}
@@ -258,6 +563,81 @@ class _SessionStore:
 
 
 _sessions = _SessionStore()
+
+# In-process map of session id -> Popen for live agents (killed on restart;
+# sessions.json keeps the pid so stale ones can be reaped on next load).
+_procs: Dict[str, subprocess.Popen] = {}
+
+
+def _session_process_alive(s: dict) -> bool:
+    pid = s.get("pid")
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _kill_proc_tree(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            capture_output=True, text=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    else:
+        import signal
+        proc.kill()
+
+
+def _kill_proc_tree_pid(pid: int) -> None:
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True, text=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    else:
+        import signal
+        os.kill(pid, signal.SIGKILL)
+
+
+def _kill_agent(sid: str) -> Dict[str, Any]:
+    """Kill a running agent (process tree on Windows). The worktree and branch
+    stay on disk for review — cleanup with the cleanup action."""
+    s = _sessions.get(sid)
+    if not s:
+        return {"ok": False, "error": "session not found"}
+    proc = _procs.get(sid)
+    if proc and proc.poll() is None:
+        try:
+            _kill_proc_tree(proc)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": f"kill failed: {e}"}
+        try:
+            proc.wait(timeout=15)
+        except Exception:  # noqa: BLE001
+            pass
+        _procs.pop(sid, None)
+    elif s.get("pid") and _session_process_alive(s):
+        try:
+            _kill_proc_tree_pid(int(s["pid"]))
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": f"kill failed: {e}"}
+    else:
+        return {"ok": False, "error": "agent is not running"}
+    s["status"] = "killed"
+    s["exit_code"] = s.get("exit_code", -9)
+    s["finished"] = time.time()
+    s["note"] = "killed from dashboard"
+    _sessions.put(s)
+    return {"ok": True, "id": sid}
 
 
 def _git(args: List[str], cwd: str, timeout: int = 60) -> tuple[int, str]:
@@ -309,11 +689,13 @@ def _spawn_agent(project: str, name: str, prompt: str, command: Optional[List[st
         "started": time.time(),
         "finished": None,
         "exit_code": None,
+        "pid": None,
         "log_path": str(log_path),
     }
     _sessions.put(session)
 
     def run() -> None:
+        proc = None
         try:
             proc = subprocess.Popen(
                 argv,
@@ -324,6 +706,11 @@ def _spawn_agent(project: str, name: str, prompt: str, command: Optional[List[st
                 encoding="utf-8",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
             )
+            _procs[sid] = proc
+            cur = _sessions.get(sid)
+            if cur:
+                cur["pid"] = proc.pid
+                _sessions.put(cur)
             code = proc.wait()
         except Exception as e:  # noqa: BLE001
             code = -1
@@ -332,6 +719,13 @@ def _spawn_agent(project: str, name: str, prompt: str, command: Optional[List[st
                     f.write(f"\n[orchestrator] spawn failed: {e}\n")
             except Exception:  # noqa: BLE001
                 pass
+        finally:
+            _procs.pop(sid, None)
+            if proc is not None:
+                try:
+                    proc.stdout = None  # release the log file handle
+                except Exception:  # noqa: BLE001
+                    pass
         cur = _sessions.get(sid)
         if cur:
             cur["status"] = "done" if code == 0 else ("failed" if code != -1 else "failed")
@@ -344,14 +738,78 @@ def _spawn_agent(project: str, name: str, prompt: str, command: Optional[List[st
     return {"ok": True, "session": session}
 
 
-def _agent_diff(session: dict) -> str:
+def _project_base_branch(project: str) -> str:
+    """Best guess at the default branch of a project repo."""
+    rc, out = _git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], project)
+    if rc == 0 and out.strip().startswith("origin/"):
+        return out.strip()[len("origin/"):]
+    rc, out = _git(["rev-parse", "--abbrev-ref", "HEAD"], project)
+    if rc == 0 and out.strip() and out.strip() != "HEAD":
+        return out.strip()
+    return "main"
+
+
+def _agent_diff(session: dict, full: bool = True) -> str:
+    """Diff of the agent's branch vs the project base branch: a stat line plus
+    (by default) the full diff, capped to 200 KB so the dashboard stays snappy."""
     project, branch, wt = session.get("project"), session.get("branch"), session.get("worktree")
     if not project or not branch or not wt or not Path(wt).exists():
         return "(worktree missing)"
-    rc, out = _git(["diff", f"main...{branch}", "--stat"], project)
+    base = _project_base_branch(project)
+    rc, stat = _git(["diff", f"{base}...{branch}", "--stat"], project)
     if rc != 0:
-        rc, out = _git(["diff", f"HEAD...{branch}", "--stat"], project)
-    return out.strip() or "(no changes)"
+        rc, stat = _git(["diff", f"HEAD...{branch}", "--stat"], project)
+    stat_txt = stat.strip() or "(no changes)"
+    if not full or not rc == 0:
+        return stat_txt
+    rc, body = _git(["diff", f"{base}...{branch}"], project, timeout=120)
+    if rc != 0:
+        rc, body = _git(["diff", f"HEAD...{branch}"], project, timeout=120)
+    body_txt = body.strip()
+    cap = 200 * 1024
+    if len(body_txt) > cap:
+        body_txt = body_txt[:cap] + "\n… (diff truncated)"
+    return stat_txt + "\n\n" + (body_txt or "(no changes)")
+
+
+def _agent_merge(session: dict) -> Dict[str, Any]:
+    """Merge the agent's branch into the project's base branch (--no-ff). On
+    conflict the session is marked merge-conflict and nothing is lost."""
+    project, branch = session.get("project"), session.get("branch")
+    if not project or not branch:
+        return {"ok": False, "error": "session has no project/branch"}
+    target = _project_base_branch(project)
+    msg = f"tempest-for-hermes: merge {branch} ({session.get('name', 'agent')}, {session.get('id')})"
+    rc, out = _git(["merge", "--no-ff", "-m", msg, branch], project, timeout=120)
+    ok = rc == 0
+    session["status"] = "merged" if ok else "merge-conflict"
+    session["finished"] = time.time()
+    session["note"] = f"merged into {target}" if ok else "merge conflicts — resolve manually"
+    _sessions.put(session)
+    return {"ok": ok, "merged": ok, "target": target, "message": (out.strip() or "merged")[-2000:]}
+
+
+def _agent_cleanup(session: dict, delete_branch: bool = True) -> Dict[str, Any]:
+    """Remove the agent's worktree (forced) and optionally its branch."""
+    project, branch, wt = session.get("project"), session.get("branch"), session.get("worktree")
+    if not project or not branch or not wt:
+        return {"ok": False, "error": "session has no project/branch/worktree"}
+    msgs = []
+    rc, out = _git(["worktree", "remove", "--force", str(wt)], project, timeout=120)
+    if rc == 0:
+        msgs.append("worktree removed")
+    else:
+        msgs.append("worktree remove failed: " + (out.strip()[-400:] or str(rc)))
+    if delete_branch:
+        rc2, out2 = _git(["branch", "-D", branch], project, timeout=60)
+        if rc2 == 0:
+            msgs.append("branch deleted")
+        else:
+            msgs.append("branch delete failed: " + (out2.strip()[-400:] or str(rc2)))
+    session["status"] = "cleaned"
+    session["note"] = "; ".join(msgs)
+    _sessions.put(session)
+    return {"ok": True, "message": "; ".join(msgs)}
 
 
 # ---------------------------------------------------------------------------
@@ -492,6 +950,7 @@ class _Handler:
                 "port": self.port,
                 "node": bool(_node()),
                 "bridge_ready": bool(_node()),
+                "bridge": _bridge_state(),
                 "projects": projs,
                 "activeProject": _get_active_project(),
                 "sessions": _sessions.all(),
@@ -511,6 +970,7 @@ class _Handler:
             project = _resolve_project(b.get("project"))
             if not project:
                 return self._json(conn, 400, {"ok": False, "error": "no project (index one or set active project)"})
+            _maybe_resync(project)  # auto-refresh the index if the repo changed
             r = _bridge_cmd("context", {
                 "project": project, "query": b.get("query"),
                 "maxNodes": b.get("maxNodes"), "maxCodeBlocks": b.get("maxCodeBlocks"),
@@ -571,8 +1031,23 @@ class _Handler:
                     log_txt = ""
                 return self._json(conn, 200, {"ok": True, "id": sid, "log": log_txt})
             if action == "diff":
-                return self._json(conn, 200, {"ok": True, "id": sid, "diff": _agent_diff(s)})
+                d = _agent_diff(s)
+                stat = d.split("\n\n", 1)[0] if "\n\n" in d else d
+                return self._json(conn, 200, {"ok": True, "id": sid, "stat": stat, "diff": d})
             return self._json(conn, 200, {"ok": True, "session": s})
+        if method == "POST" and target.startswith("/api/agents/"):
+            rest = target[len("/api/agents/"):].split("/")
+            sid, action = rest[0], (rest[1] if len(rest) > 1 else "status")
+            s = _sessions.get(sid)
+            if not s:
+                return self._json(conn, 404, {"ok": False, "error": "session not found"})
+            if action == "kill":
+                return self._json(conn, 200, _kill_agent(sid))
+            if action == "merge":
+                return self._json(conn, 200, _agent_merge(s))
+            if action == "cleanup":
+                return self._json(conn, 200, _agent_cleanup(s))
+            return self._json(conn, 404, {"ok": False, "error": "unknown action"})
         if method == "POST" and target.startswith("/api/active-project"):
             b = self._read_body(body_raw)
             _set_active_project(b.get("project") or "")
@@ -610,7 +1085,9 @@ def _serve_forever() -> None:
             continue
         except OSError:
             break
-        handler.handle(conn)
+        # One thread per connection so a slow bridge call (e.g. a long
+        # context/index request) never blocks /state, /health or the dashboard.
+        threading.Thread(target=handler.handle, args=(conn,), daemon=True, name="tempest-http").start()
 
 
 def _ensure_server() -> None:
@@ -636,6 +1113,7 @@ def _tool_handler(args: dict, **kw: Any) -> str:
         indexed = [p["name"] for p in _projects()]
         hint = "indexed projects: " + (", ".join(indexed) if indexed else "none yet")
         return json.dumps({"ok": False, "error": f"no project set — {hint}"})
+    _maybe_resync(project)  # auto-refresh the index if the repo changed
     r = _bridge_cmd("context", {
         "project": project,
         "query": query,
