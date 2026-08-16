@@ -168,7 +168,7 @@ export async function runAutomationNow(a: Automation, triggeredBy: "manual" | "s
       // No policy for automations: creating the automation IS the opt-in.
       policy: null,
       dbIsolation: false,
-      env: { ...(cfg.env ?? {}), TEMPEST_SESSION: runId },
+      env: { TEMPEST_SESSION: runId },
       onEvent: channel,
     });
   } catch (e) {
